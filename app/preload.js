@@ -11,8 +11,6 @@ contextBridge.exposeInMainWorld('v2p', {
   // 滚轮缩放宠物窗（+1 放大 / -1 缩小）
   petScale: (dir) => ipcRenderer.invoke('v2p:pet-scale', dir),
   // 耳机校准：Alt+拖动/Alt+滚轮 标定的锚点写回配置；null 恢复内置基准
-  setHeadphoneTweak: (hp) => ipcRenderer.invoke('v2p:set-hp-tweak', hp),
-  resetHeadphoneTweak: () => ipcRenderer.invoke('v2p:reset-hp-tweak'),
   petImage: () => ipcRenderer.invoke('v2p:pet-image'),
   petModel: () => ipcRenderer.invoke('v2p:pet-model'),
   petModelList: () => ipcRenderer.invoke('v2p:pet-model-list'),
@@ -33,11 +31,8 @@ contextBridge.exposeInMainWorld('v2p', {
   // ✨ 生成皮肤：渲染层烘焙好的贴图页 → 主进程拷基座落盘成可用皮肤
   paintCreateSkin: (payload) => ipcRenderer.invoke('v2p:paint-create-skin', payload),
   petModelDelete: (name) => ipcRenderer.invoke('v2p:pet-model-delete', { name }),
-  setEyes: (cfg) => ipcRenderer.invoke('v2p:set-eyes', cfg),
   setMouseRecord: (on) => ipcRenderer.invoke('v2p:set-mouse-record', on),
-  onEyesChanged: (cb) => ipcRenderer.on('v2p:pet-eyes-changed', (_e, cfg) => cb(cfg)),
   petModelTextureBase: (name) => ipcRenderer.invoke('v2p:pet-model-texture-base', { name }),
-  onHeadphoneEnabledChanged: (cb) => ipcRenderer.on('v2p:pet-headphone-changed', (_e, p) => cb(p.enabled)),
   onModelListChanged: (cb) => ipcRenderer.on('v2p:pet-model-list-changed', () => cb()),
   onPaintSwitchJob: (cb) => ipcRenderer.on('v2p:paint-switch-job', (_e, p) => cb(p.job)),
   onSettingsRefresh: (cb) => ipcRenderer.on('v2p:settings-refresh', () => cb()),
@@ -49,7 +44,6 @@ contextBridge.exposeInMainWorld('v2p', {
   onHotkeyStart: (cb) => ipcRenderer.on('v2p:hotkey-start', () => cb()),
   onHotkeyStop: (cb) => ipcRenderer.on('v2p:hotkey-stop', () => cb()),
   onTriggerModeChanged: (cb) => ipcRenderer.on('v2p:trigger-mode-changed', (_e, p) => cb(p.mode)),
-  onHeadphoneChanged: (cb) => ipcRenderer.on('v2p:pet-hp-changed', (_e, hp) => cb(hp)),
   setHotkeyCapturing: (on) => ipcRenderer.invoke('v2p:hotkey-capturing', on),
   onPetImageChanged: (cb) => ipcRenderer.on('v2p:pet-image-changed', (_e, p) => cb(p.dataUrl)),
   onPetModelChanged: (cb) => ipcRenderer.on('v2p:pet-model-changed', (_e, p) => cb(p.name))

@@ -55,9 +55,6 @@ function defaultConfig() {
     petImage: '',           // 用户自定义宠物图片文件名（存 userData/pet/）
     petModel: 'keyboard',   // assets/models/ 下的 Live2D 皮肤目录名，空字符串=回退静态图
     petScale: 1,            // 宠物窗缩放系数（滚轮调节，0.6~2.5）
-    petHeadphone: null,     // 耳机校准覆盖 {cx,cy,targetSpan,rotDeg}（Alt 拖动/滚轮标定，null=用内置基准）
-    petHeadphoneEnabled: true, // 录音时显示耳机配件（可在设置里关掉）
-    petEyes: null,          // 向量眼睛贴片 {colorL,colorR,r,cxL,cyL,cxR,cyR}（画布归一化坐标；null=不显示）
   };
 }
 

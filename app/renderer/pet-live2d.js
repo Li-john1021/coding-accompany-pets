@@ -14,26 +14,6 @@
   const BASE_W = 612, BASE_H = 354;      // 键盘图层原生尺寸（也是 moc3 native 尺寸）
   const VIEW_W = 284, VIEW_H = Math.round(VIEW_W * BASE_H / BASE_W);
   const L2D = { bgScale: VIEW_W / BASE_W, modelScale: 1 };
-  // 耳机锚点（相对画布），按官方基座的头部位置标定
-  // 耳机佩戴基准：以素材自身的「耳罩跨距 / 耳罩质心」去对齐猫耳根部。
-  // 素材侧常数由 tools 实测 headphones.png 暗像素分布得出（耳罩中心 L=(40,99) R=(208,99)，240x160）；
-  // 画布侧常数由渲染-截图迭代标定：cx/cy=耳罩中点落点，targetSpan=两耳罩中心距/画布宽。
-  const HP = {
-    earSpan: 0.6989,     // 素材内两耳罩中心距 / 素材宽
-    cupCx: 0.5167,       // 素材内耳罩质心（归一化）——拿它当 anchor，定位即“把耳罩放到哪”
-    cupCy: 0.6205,
-    targetSpan: 0.252,    // 目标跨距 / 画布宽
-    cx: 0.50, cy: 0.283   // 耳罩连线中点应落在画布的位置
-  };
-  // 用户校准覆盖（Alt+拖动移位 / Alt+滚轮缩放，存 config.petHeadphone）。
-  // 内置基准只对当前皮肤准，换皮肤头位不同，所以留运行时微调入口
-  let hpOverride = null;
-  let hpApplied;         // 上次应用静态量的 override 引用（变更检测）
-  let calibrating = false;   // 耳机校准模式：耳机强制显形、头部定格，方便对位
-  let hpEnabled = true;      // 耳机配件总开关（设置里可关；关了录音也不戴）
-  let eyesCfg = null;        // 向量眼睛贴片（config.petEyes）；随头部动作移动，无眨眼
-  let eyesG = null;
-  const effHP = () => ({ ...HP, ...(hpOverride || {}) });
   const ANGLE_RANGE = 30;                // ParamAngle* 的取值范围
 
   // 状态 → 表演配方。tap=每秒敲击次数（0=不敲），hp=是否戴耳机，head=头部动作
@@ -50,10 +30,9 @@
 
   let app = null, model = null;
   let layers = null;
-  let hpSprite = null;
   const keyPool = [];
+  let loud = 0, loudTarget = 0;
   let state = 'idle', clock = 0, tapT = 0, lastBeat = -1;
-  let loud = 0, loudTarget = 0, hpAlpha = 0;
   let ax = 0, ay = 0, az = 0;
   let override = null;     // 探针：--probe=Param3=30 强制盖写参数，用于实测哪个参数才是敲击轴
 
@@ -159,11 +138,7 @@
       model.x = 0; model.y = 0;
       layers.model.addChild(model);
 
-      eyesG = new PIXI.Graphics();
-      layers.acc.addChild(eyesG);
-
       await setupBackground(dirUrl);
-      await setupHeadphones();
       await setupKeyCaps(dirUrl);
 
       stageEl.classList.add('live2d');
@@ -185,22 +160,6 @@
       bg.scale.set(L2D.bgScale);
       layers.bg.addChild(bg);
     } catch (e) { console.warn('[live2d] 无 background 图层：' + e.message); }
-  }
-
-  async function setupHeadphones() {
-    try {
-      hpSprite = await loadSprite('res://accessories/headphones.png');
-      // anchor 钉在耳罩质心上：position 就等于“耳罩中点”，缩放与旋转都绕它，不用再手推偏移
-      const hp = effHP();
-      const texW = hpSprite.texture.frame.width;
-      hpSprite.anchor.set(hp.cupCx, hp.cupCy);
-      hpSprite.scale.set((hp.targetSpan / hp.earSpan) * VIEW_W / texW);
-      hpSprite.x = VIEW_W * hp.cx;
-      hpSprite.y = VIEW_H * hp.cy;
-      hpSprite.alpha = 0;
-      hpSprite.visible = false;
-      layers.acc.addChild(hpSprite);
-    } catch (e) { console.warn('[live2d] 无耳机配件：' + e.message); }
   }
 
   async function setupKeyCaps(dirUrl) {
@@ -240,11 +199,10 @@
       // 容器一并摘走，切肤后新模型挂到脱离舞台的 layers.model 上，画布永远空白
       if (layers) for (const k in layers) layers[k].removeChildren();
     }
-    eyesG = null;
     try { if (model) model.destroy(); } catch { /* 旧模型可能已处于坏状态 */ }
-    model = null; hpSprite = null; keyPool.length = 0;
+    model = null; keyPool.length = 0;
     P = null;   // 旧 core 已销，参数访问器不能继续指向它（切肤后会静默失效）
-    tapT = 0; lastBeat = -1; hpAlpha = 0;
+    tapT = 0; lastBeat = -1;
     stageEl.classList.remove('live2d');
   }
 
@@ -261,8 +219,7 @@
     loudTarget *= 0.88;
 
     // ---- 头部 ----
-    if (calibrating) { ax = ay = az = 0; }   // 对位时头部定格，耳机不动好瞄准
-    else if (bh.head === 'listen') {
+    if (bh.head === 'listen') {
       ax = Math.sin(clock * 2.1) * (4 + loud * 16);
       ay = -loud * 10 + Math.sin(clock * 1.3) * 2;
       az = Math.sin(clock * 0.9) * (3 + loud * 9);
@@ -295,54 +252,12 @@
       set('CatParamLeftHandDown', 0); set('CatParamRightHandDown', 0);
     }
 
-    // ---- 耳机：淡入淡出 + 跟随头部 ----
-    if (hpSprite) {
-      // 校准覆盖变化时重应用静态量（anchor/scale），否则只有 xy 跟着动、大小不对
-      if (hpApplied !== hpOverride) {
-        hpApplied = hpOverride;
-        const hp0 = effHP();
-        const texW0 = hpSprite.texture.frame.width;
-        hpSprite.anchor.set(hp0.cupCx, hp0.cupCy);
-        hpSprite.scale.set((hp0.targetSpan / hp0.earSpan) * VIEW_W / texW0);
-      }
-      const hpTarget = hpEnabled && (bh.hp || calibrating) ? 1 : 0;
-      hpAlpha += (hpTarget - hpAlpha) * Math.min(1, dt / 0.18);
-      hpSprite.alpha = Math.max(0, Math.min(1, hpAlpha));
-      hpSprite.visible = hpAlpha > 0.02;
-      const k = 1 / ANGLE_RANGE;
-      const hp = effHP();
-      hpSprite.x = VIEW_W * hp.cx + ax * k * 9;
-      hpSprite.y = VIEW_H * hp.cy + ay * k * 7;
-      hpSprite.rotation = az * k * 0.7 + (hp.rotDeg || 0) * Math.PI / 180;
-    }
-
     // ---- 键帽高亮衰减 ----
     for (const k of keyPool) {
       if (!k.active) continue;
       k.a -= dt / 0.22;
       if (k.a <= 0) { k.active = false; k.a = 0; k.sp.visible = false; }
       k.sp.alpha = k.a;
-    }
-
-    // ---- 向量眼睛:Math 正圆,随头部动作移动 ----
-    if (eyesG) {
-      eyesG.clear();
-      if (eyesCfg) {
-        const k = 1 / ANGLE_RANGE;
-        const ox = ax * k * 9, oy = ay * k * 7;
-        // rot(度):两眼连线绕中点旋转(眼珠本身是圆,转的是排布)
-        const rot = ((eyesCfg.rot || 0) * Math.PI) / 180;
-        const mx = (eyesCfg.cxL + eyesCfg.cxR) / 2, my = (eyesCfg.cyL + eyesCfg.cyR) / 2;
-        const cos = Math.cos(rot), sin = Math.sin(rot);
-        for (const [cx, cy, col] of [[eyesCfg.cxL, eyesCfg.cyL, eyesCfg.colorL],
-                                     [eyesCfg.cxR, eyesCfg.cyR, eyesCfg.colorR]]) {
-          const ex = cx - mx, ey = cy - my;
-          const rx = ex * cos - ey * sin, ry = ex * sin + ey * cos;
-          eyesG.beginFill(parseInt(col.replace('#', ''), 16));
-          eyesG.drawCircle((mx + rx) * VIEW_W + ox, (my + ry) * VIEW_H + oy, eyesCfg.r * VIEW_H);
-          eyesG.endFill();
-        }
-      }
     }
 
     // 探针优先于一切行为输出，便于单独观察某个参数的效果
@@ -360,15 +275,6 @@
     setLoudness(v) { loudTarget = Math.max(0, Math.min(1, v * 5)); },
     setProbe(obj) { override = (obj && Object.keys(obj).length) ? obj : null; },
     // 用户校准覆盖：传 null 恢复内置基准；改完立即生效（静态量由 tick 变更检测重应用）
-    setHPOverride(o) { hpOverride = (o && Number.isFinite(o.cx)) ? o : null; },
-    getHP: () => effHP(),
-    // 校准模式：Alt 按下时由 pet.js 调用；true=耳机显形+头部定格
-    setCalibrating(on) { calibrating = !!on; },
-    // 耳机配件总开关：关掉后任何状态都不再显示
-    setHeadphoneEnabled(on) { hpEnabled = !!on; },
-    // 向量眼睛贴片:null=不显示
-    setEyes(cfg) { eyesCfg = cfg && cfg.mode === 'vector' && Number.isFinite(cfg.r) ? cfg : null; },
-    getEyes: () => eyesCfg,
     loadModel,
     active: () => !!model,
     state: () => state

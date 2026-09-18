@@ -198,47 +198,6 @@ async function startHotkeyCapture() {
   window.addEventListener('keydown', onCaptureKeydown, true);
 }
 
-// ---------------- 眼睛模式(model 原眼 / painted 手绘 / vector 圆贴片) ----------------
-let eyeCfg = null;   // {mode, colorL, colorR, r, cxL, cyL, cxR, cyR} 或 null
-function applyEyeMode(cfg) {
-  eyeCfg = cfg || null;
-  const mode = eyeCfg ? eyeCfg.mode : 'model';
-  document.querySelectorAll('input[name=eye-mode]').forEach((r) => { r.checked = r.value === mode; });
-  $('#eye-vector-row').style.display = mode === 'vector' ? '' : 'none';
-  if (eyeCfg) {
-    $('#eye-color-l').value = eyeCfg.colorL || '#2c3e70';
-    $('#eye-color-r').value = eyeCfg.colorR || '#2c3e70';
-  }
-}
-function saveEyeMode(mode) {
-  if (mode === 'vector') {
-    const kept = eyeCfg && eyeCfg.mode === 'vector' ? eyeCfg : null;
-    eyeCfg = kept || {
-      mode: 'vector', colorL: '#2c3e70', colorR: '#2c3e70', r: 0.055,
-      cxL: 0.42, cyL: 0.30, cxR: 0.575, cyR: 0.30   // 默认位置,拿 Ctrl+拖动对位
-    };
-  } else if (eyeCfg) {
-    eyeCfg = { ...eyeCfg, mode };   // 保留向量参数,切回圆眼即恢复
-  } else {
-    eyeCfg = null;
-  }
-  window.v2p.setEyes(eyeCfg);
-  $('#eye-vector-row').style.display = mode === 'vector' ? '' : 'none';
-}
-function wireEyeEvents() {
-  document.querySelectorAll('input[name=eye-mode]').forEach((r) =>
-    r.addEventListener('change', () => { if (r.checked) saveEyeMode(r.value); }));
-  const eyeColor = (key, sel) => {
-    $(sel).addEventListener('change', (e) => {
-      if (!eyeCfg || eyeCfg.mode !== 'vector') return;
-      eyeCfg[key] = e.target.value;
-      window.v2p.setEyes(eyeCfg);
-    });
-  };
-  eyeColor('colorL', '#eye-color-l');
-  eyeColor('colorR', '#eye-color-r');
-}
-
 async function loadConfig() {
   cfg = await window.v2p.getConfig();
   renderList('asr', cfg.asrProviders, cfg.activeAsrId);
@@ -247,9 +206,7 @@ async function loadConfig() {
   $('#trigger-mode').value = cfg.triggerMode || 'hold';
   $('#insert-mode').value = cfg.insertMode || 'paste';
   $('#enable-structure').checked = cfg.enableStructure !== false;
-  $('#hp-enabled').checked = cfg.petHeadphoneEnabled !== false;
   $('#mouse-record').checked = cfg.mouseRecord === true;
-  applyEyeMode(cfg.petEyes);
   $('#enable-optimize').checked = cfg.enableOptimize !== false;
   $('#prompt-text').value = cfg.promptText || '';
   await renderPetModelSelect(cfg.petModel || '');
@@ -274,7 +231,6 @@ function wireEvents() {
 
   $('#open-paint').addEventListener('click', () => window.v2p.openPaint());
 
-  wireEyeEvents();
   $('#mouse-record').addEventListener('change', async (e) => {
     await window.v2p.setMouseRecord(e.target.checked);
     const tip = $('#save-tip');
@@ -322,7 +278,6 @@ function wireEvents() {
       triggerMode: $('#trigger-mode').value,
       insertMode: $('#insert-mode').value,
       enableStructure: $('#enable-structure').checked,
-      petHeadphoneEnabled: $('#hp-enabled').checked,
       enableOptimize: $('#enable-optimize').checked,
       promptText: $('#prompt-text').value,
       petModel: $('#pet-model').value

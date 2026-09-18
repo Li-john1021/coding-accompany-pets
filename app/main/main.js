@@ -38,7 +38,6 @@ let settingsWin = null;
 let petWin = null;
 let paintWin = null;
 let recordingActive = false; // 全局热键触发录音时的状态标记
-let setEyesTimer = null;     // 眼睛配置防抖落盘
 
 const petBroadcast = (channel, payload) => {
   if (petWin && !petWin.isDestroyed()) petWin.webContents.send(channel, payload);
@@ -223,14 +222,11 @@ function registerIpc() {
     const cfg = config.load();
     const modelChanged = 'petModel' in patch && patch.petModel !== cfg.petModel;
     const triggerChanged = 'triggerMode' in patch && patch.triggerMode !== cfg.triggerMode;
-    const hpEnabledChanged = 'petHeadphoneEnabled' in patch
-      && (!!patch.petHeadphoneEnabled !== !!cfg.petHeadphoneEnabled);
     Object.assign(cfg, patch);
     config.save();
     registerHotkey();
     if (modelChanged) petBroadcast('v2p:pet-model-changed', { name: cfg.petModel });
     if (triggerChanged) petBroadcast('v2p:trigger-mode-changed', { mode: cfg.triggerMode });
-    if (hpEnabledChanged) petBroadcast('v2p:pet-headphone-changed', { enabled: !!cfg.petHeadphoneEnabled });
     return { ok: true };
   });
 
@@ -280,30 +276,53 @@ function registerIpc() {
   // 滚轮缩放宠物窗（渲染层转发方向），缩放系数持久化
   ipcMain.handle('v2p:pet-scale', (_e, dir) => { applyPetScale(Number(dir) || 0); return { ok: true, scale: config.load().petScale }; });
 
-  // 耳机校准：渲染层 Alt+拖动/Alt+滚轮 得到的绝对锚点，持久化并广播
-  let hpSaveTimer = null;
-  ipcMain.handle('v2p:set-hp-tweak', (_e, hp) => {
-    if (!hp || !Number.isFinite(hp.cx) || !Number.isFinite(hp.cy) || !Number.isFinite(hp.targetSpan)) return { ok: false };
+  // 鼠标侧键录音开关
+  ipcMain.handle('v2p:set-mouse-record', (_e, on) => {
     const cfg = config.load();
-    // rotDeg 可选透传：字段若写死三个，回播会把校准旋转冲掉（override 丢字段）
-    cfg.petHeadphone = {
-      cx: +hp.cx.toFixed(4), cy: +hp.cy.toFixed(4), targetSpan: +hp.targetSpan.toFixed(4),
-      ...(Number.isFinite(hp.rotDeg) ? { rotDeg: +hp.rotDeg.toFixed(2) } : {})
-    };
-    clearTimeout(hpSaveTimer);
-    hpSaveTimer = setTimeout(() => config.save(), 300);
-    petBroadcast('v2p:pet-hp-changed', cfg.petHeadphone);
-    return { ok: true };
-  });
-  ipcMain.handle('v2p:reset-hp-tweak', () => {
-    const cfg = config.load();
-    cfg.petHeadphone = null;
+    cfg.mouseRecord = !!on;
     config.save();
-    petBroadcast('v2p:pet-hp-changed', null);
-    return { ok: true };
+    setMouseRecordHook();
+    return { ok: true, enabled: cfg.mouseRecord };
+  });
+
+  ipcMain.handle('v2p:pet-model-list', () => {
+    const names = new Set();
+    for (const root of [USER_MODELS_ROOT, MODELS_ROOT]) {
+      try {
+        for (const d of fs.readdirSync(root, { withFileTypes: true })) {
+          if (d.isDirectory() && fs.readdirSync(path.join(root, d.name)).some((f) => f.endsWith('.model3.json'))) {
+            names.add(d.name);
+          }
+        }
+      } catch { /* 目录不存在则跳过 */ }
+    }
+    return { models: [...names] };
+  });
+
+  // 当前皮肤里的键帽图（敲击高亮用）；每张都是与背景同尺寸的整页图
+  ipcMain.handle('v2p:key-caps', () => {
+    const name = config.load().petModel || '';
+    const dir = resolveModelDir(name);
+    if (!dir) return { keys: [] };
+    const out = [];
+    for (const sub of ['left-keys', 'right-keys']) {
+      const d = path.join(dir, 'resources', sub);
+      try {
+        for (const f of fs.readdirSync(d)) if (f.endsWith('.png')) out.push(`resources/${sub}/${f}`);
+      } catch { /* 皮肤可能不带键帽 */ }
+    }
+    return { keys: out };
   });
 
   ipcMain.handle('v2p:pet-image', () => ({ dataUrl: currentPetImageDataUrl() }));
+
+  // Live2D 皮肤：当前模型名 + 可用列表（用户目录与内置 assets/models 下含 *.model3.json 的目录）
+
+  // Live2D 皮肤：当前模型名 + 可用列表（用户目录与内置 assets/models 下含 *.model3.json 的目录）
+
+  // 删除用户自建皮肤（内置皮肤不在用户目录，天然受保护）
+
+  // 画板反推涂装用:皮肤贴图页的 model:// 基址(用户自建与内置都可,只读)
 
   // Live2D 皮肤：当前模型名 + 可用列表（用户目录与内置 assets/models 下含 *.model3.json 的目录）
   ipcMain.handle('v2p:pet-model', () => {
@@ -335,6 +354,8 @@ function registerIpc() {
   });
 
   // 画板反推涂装用:皮肤贴图页的 model:// 基址(用户自建与内置都可,只读)
+
+  // 画板反推涂装用:皮肤贴图页的 model:// 基址(用户自建与内置都可,只读)
   ipcMain.handle('v2p:pet-model-texture-base', (_e, { name }) => {
     const skin = String(name || '').replace(/[^A-Za-z0-9_\-一-龥]/g, '').slice(0, 48);
     if (!skin) return { ok: false };
@@ -343,55 +364,7 @@ function registerIpc() {
     return { ok: true, base: 'model://' + encodeURIComponent(skin) + '/demomodel2.1024' };
   });
 
-  // 鼠标侧键录音开关
-  ipcMain.handle('v2p:set-mouse-record', (_e, on) => {
-    const cfg = config.load();
-    cfg.mouseRecord = !!on;
-    config.save();
-    setMouseRecordHook();
-    return { ok: true, enabled: cfg.mouseRecord };
-  });
-
   // 向量眼睛贴片:整包落盘 + 广播宠物窗
-  ipcMain.handle('v2p:set-eyes', (_e, cfg) => {
-    // cfg: null(未启用/回退模型原眼) 或 {mode, colorL, colorR, r, cxL, cyL, cxR, cyR}
-    if (cfg !== null && (typeof cfg !== 'object' || typeof cfg.mode !== 'string')) return { ok: false };
-    const c = config.load();
-    c.petEyes = cfg;
-    clearTimeout(setEyesTimer);
-    setEyesTimer = setTimeout(() => config.save(), 300);
-    petBroadcast('v2p:pet-eyes-changed', cfg);
-    return { ok: true };
-  });
-
-  ipcMain.handle('v2p:pet-model-list', () => {
-    const names = new Set();
-    for (const root of [USER_MODELS_ROOT, MODELS_ROOT]) {
-      try {
-        for (const d of fs.readdirSync(root, { withFileTypes: true })) {
-          if (d.isDirectory() && fs.readdirSync(path.join(root, d.name)).some((f) => f.endsWith('.model3.json'))) {
-            names.add(d.name);
-          }
-        }
-      } catch { /* 目录不存在则跳过 */ }
-    }
-    return { models: [...names] };
-  });
-
-  // 当前皮肤里的键帽图（敲击高亮用）；每张都是与背景同尺寸的整页图
-  ipcMain.handle('v2p:key-caps', () => {
-    const name = config.load().petModel || '';
-    const dir = resolveModelDir(name);
-    if (!dir) return { keys: [] };
-    const out = [];
-    for (const sub of ['left-keys', 'right-keys']) {
-      const d = path.join(dir, 'resources', sub);
-      try {
-        for (const f of fs.readdirSync(d)) if (f.endsWith('.png')) out.push(`resources/${sub}/${f}`);
-      } catch { /* 皮肤可能不带键帽 */ }
-    }
-    return { keys: out };
-  });
 
   ipcMain.handle('v2p:open-models-folder', () => {
     fs.mkdirSync(USER_MODELS_ROOT, { recursive: true });
