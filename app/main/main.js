@@ -585,8 +585,9 @@ function setMouseRecordHook() {
   if (want === mouseHookOn) return;
   if (want) {
     try {
-      const { uIOhook, EventType } = require('uiohook-napi');
-      uIOhook.on(EventType.EVENT_MOUSE_PRESSED, (e) => {
+      const { uIOhook } = require('uiohook-napi');
+      // 注意:uiohook-napi 1.x 的事件名是小写字符串('mousedown'),不是 EventType 数值常量
+      uIOhook.on('mousedown', (e) => {
         if (e.button !== 4) return;   // 4 = XButton1(后退侧键)
         if (!petWin || petWin.isDestroyed()) return;
         if (recordingActive) {
