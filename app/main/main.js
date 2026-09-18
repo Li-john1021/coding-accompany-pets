@@ -92,7 +92,7 @@ function openPaint(opts = {}) {
 }
 
 function createPetWindow() {
-  const s = Math.max(0.6, Math.min(2.5, Number(config.load().petScale) || 1));
+  const s = Math.max(0.3, Math.min(2.5, Number(config.load().petScale) || 1));
   petWin = new BrowserWindow({
     width: Math.round(300 * s),
     height: Math.round(230 * s),
@@ -118,8 +118,8 @@ function createPetWindow() {
 // 锚定中心（两边各扩/缩一半），宠物不会跑偏
 function applyPetScale(delta) {
   if (!petWin || petWin.isDestroyed()) return;
-  const cur = Math.max(0.6, Math.min(2.5, Number(config.load().petScale) || 1));
-  const next = Math.max(0.6, Math.min(2.5, cur * (delta > 0 ? 1.1 : 1 / 1.1)));
+  const cur = Math.max(0.3, Math.min(2.5, Number(config.load().petScale) || 1));
+  const next = Math.max(0.3, Math.min(2.5, cur * (delta > 0 ? 1.1 : 1 / 1.1)));
   if (Math.abs(next - cur) < 0.001) return;
   const [x, y] = petWin.getPosition();
   const [w, h] = petWin.getSize();
