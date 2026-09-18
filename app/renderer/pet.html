@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+    html, body { background: transparent; overflow: hidden; }
+    body {
+      width: 300px; height: 230px;
+      display: flex; flex-direction: column; align-items: center;
+      font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    }
+    #bubble {
+      max-width: 180px;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 12px;
+      padding: 6px 10px;
+      font-size: 11px;
+      color: #2c3e50;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+      margin-bottom: 6px;
+      opacity: 0;
+      transition: opacity .2s;
+      word-break: break-all;
+      max-height: 74px;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    #bubble.show { opacity: 1; }
+    #stage {
+      position: relative;
+      width: 284px; height: 164px;
+      cursor: pointer;
+    }
+    #l2d {
+      position: absolute; left: 0; top: 0;
+      width: 284px; height: 164px;
+      display: none;
+    }
+    #stage.live2d #l2d { display: block; }
+    #stage.live2d #pet { display: none; }
+    #pet {
+      width: 120px; height: 120px;
+      border-radius: 28px;
+      object-fit: cover;
+      box-shadow: 0 4px 16px rgba(0,0,0,.2);
+      transition: transform .15s;
+      -webkit-user-drag: none;
+    }
+    #stage.idle #pet { animation: breathe 3s ease-in-out infinite; }
+    #stage.listening #pet { transform: scale(1.06); box-shadow: 0 0 0 5px rgba(231,76,60,.55), 0 4px 16px rgba(0,0,0,.25); }
+    #stage.processing #pet { box-shadow: 0 0 0 5px rgba(52,152,219,.55), 0 4px 16px rgba(0,0,0,.25); animation: spin-glow 1.2s linear infinite; }
+    #stage.done #pet { box-shadow: 0 0 0 5px rgba(39,174,96,.55), 0 4px 16px rgba(0,0,0,.25); }
+    #stage.error #pet { box-shadow: 0 0 0 5px rgba(231,76,60,.8), 0 4px 16px rgba(0,0,0,.25); }
+    @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+    @keyframes spin-glow {
+      0% { filter: hue-rotate(0deg); }
+      100% { filter: hue-rotate(20deg); }
+    }
+    #status {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #fff;
+      background: rgba(0,0,0,.55);
+      padding: 3px 10px;
+      border-radius: 10px;
+      pointer-events: none;
+    }
+    #rec-dot {
+      position: absolute; top: -4px; right: -4px;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: #e74c3c;
+      display: none;
+      animation: blink 1s infinite;
+    }
+    #stage.listening #rec-dot { display: block; }
+    /* Live2D 模式下的状态光晕（#pet 上的选择器命中不到 canvas，单独给） */
+    #stage.listening #l2d { filter: drop-shadow(0 0 6px rgba(231,76,60,.65)); }
+    #stage.transcribing #l2d, #stage.polishing #l2d, #stage.inserting #l2d { filter: drop-shadow(0 0 6px rgba(52,152,219,.65)); }
+    #stage.done #l2d { filter: drop-shadow(0 0 6px rgba(39,174,96,.65)); }
+    #stage.error #l2d { filter: drop-shadow(0 0 6px rgba(231,76,60,.85)); }
+    @keyframes blink { 50% { opacity: .3; } }
+  </style>
+</head>
+<body>
+  <div id="bubble"></div>
+  <div id="stage" class="idle">
+    <img id="pet" alt="pet" draggable="false" />
+    <canvas id="l2d"></canvas>
+    <div id="rec-dot"></div>
+  </div>
+  <div id="status">按住我说话</div>
+  <script src="lib/live2dcubismcore.min.js"></script>
+  <script>window.live2dcubismcore = window.live2dcubismcore || window.Live2DCubismCore;</script>
+  <script src="../node_modules/pixi.js/dist/pixi.min.js"></script>
+  <script src="../node_modules/pixi-live2d-display/dist/cubism4.min.js"></script>
+  <script src="pet-live2d.js"></script>
+  <script src="pet.js"></script>
+</body>
+</html>

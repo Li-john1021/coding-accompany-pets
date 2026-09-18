@@ -1,0 +1,433 @@
+{
+  "parts": [
+    {
+      "id": "t00_p00",
+      "kind": "furniture",
+      "role": "furniture",
+      "name_cn": "键盘+桌沿+猫下半身(连体大件)",
+      "page": "texture_00.png",
+      "bbox": [
+        237,
+        252,
+        1024,
+        512
+      ],
+      "size": [
+        787,
+        260
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 92.3,
+      "intrinsic_pct": 0.4,
+      "prompt_hint": "If regenerating: a cartoon keyboard viewed at slight angle with chunky keycaps, a desk edge line, and the cat lower body behind it; keep silhouette identical."
+    },
+    {
+      "id": "t00_p01",
+      "kind": "fur",
+      "role": "character",
+      "name_cn": "猫头(含耳与脸部)",
+      "page": "texture_00.png",
+      "bbox": [
+        484,
+        29,
+        848,
+        257
+      ],
+      "size": [
+        364,
+        228
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 93.7,
+      "intrinsic_pct": 0.4,
+      "prompt_hint": "cat head shell only, wide rounded skull with two pointed ears on top, face area completely BLANK - do NOT draw eyes, pupils, mouth or nose (they are separate sprite parts), facing forward, symmetric, ears occupy upper 30% of frame"
+    },
+    {
+      "id": "t00_p02",
+      "kind": "paw",
+      "role": "character",
+      "name_cn": "右前爪(抬起掌心肌肉垫)",
+      "page": "texture_00.png",
+      "bbox": [
+        863,
+        118,
+        945,
+        212
+      ],
+      "size": [
+        82,
+        94
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 81.3,
+      "intrinsic_pct": 14.9,
+      "prompt_hint": "one raised cat forepaw, palm side facing viewer, three round toe beans and one larger pad visible, wrist opening at the top of frame, vertical oval silhouette"
+    },
+    {
+      "id": "t00_p03",
+      "kind": "paw",
+      "role": "character",
+      "name_cn": "左前爪(同右爪镜像)",
+      "page": "texture_00.png",
+      "bbox": [
+        286,
+        34,
+        365,
+        129
+      ],
+      "size": [
+        79,
+        95
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 79.6,
+      "intrinsic_pct": 16.3,
+      "prompt_hint": "one raised cat forepaw, palm side facing viewer, three round toe beans and one larger pad visible, wrist opening at the top of frame, vertical oval silhouette"
+    },
+    {
+      "id": "t00_p04",
+      "kind": "eye",
+      "role": "character",
+      "name_cn": "左眼(黑色圆点)",
+      "page": "texture_00.png",
+      "bbox": [
+        398,
+        13,
+        455,
+        66
+      ],
+      "size": [
+        57,
+        53
+      ],
+      "outline_mode": "rim",
+      "paintable_pct": 84.6,
+      "intrinsic_pct": 14.2,
+      "prompt_hint": "a single large round eye, solid black pupil filling 70% of frame, tiny white highlight dot upper-left"
+    },
+    {
+      "id": "t00_p05",
+      "kind": "eye",
+      "role": "character",
+      "name_cn": "右眼(黑色圆点)",
+      "page": "texture_00.png",
+      "bbox": [
+        461,
+        31,
+        493,
+        66
+      ],
+      "size": [
+        32,
+        35
+      ],
+      "outline_mode": "rim",
+      "paintable_pct": 77.1,
+      "intrinsic_pct": 26.3,
+      "prompt_hint": "a single large round eye, solid black pupil filling 70% of frame, tiny white highlight dot upper-left"
+    },
+    {
+      "id": "t01_p00",
+      "kind": "effect",
+      "role": "effect",
+      "name_cn": "闪电特效",
+      "page": "texture_01.png",
+      "bbox": [
+        183,
+        28,
+        795,
+        382
+      ],
+      "size": [
+        612,
+        354
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 10.0,
+      "intrinsic_pct": 9.6,
+      "prompt_hint": "jagged lightning bolt zigzag across frame, glowing white core with colored halo edges, on pure black background"
+    },
+    {
+      "id": "t01_p01",
+      "kind": "effect",
+      "role": "effect",
+      "name_cn": "绿色光斑",
+      "page": "texture_01.png",
+      "bbox": [
+        60,
+        218,
+        161,
+        359
+      ],
+      "size": [
+        101,
+        141
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 93.0,
+      "intrinsic_pct": 93.0,
+      "prompt_hint": "soft radial glow blob, bright center fading to transparent"
+    },
+    {
+      "id": "t01_p02",
+      "kind": "effect",
+      "role": "effect",
+      "name_cn": "渐变条A",
+      "page": "texture_01.png",
+      "bbox": [
+        39,
+        101,
+        96,
+        158
+      ],
+      "size": [
+        57,
+        57
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 0.0,
+      "intrinsic_pct": 0.0,
+      "prompt_hint": ""
+    },
+    {
+      "id": "t01_p03",
+      "kind": "effect",
+      "role": "effect",
+      "name_cn": "渐变条B",
+      "page": "texture_01.png",
+      "bbox": [
+        40,
+        67,
+        97,
+        89
+      ],
+      "size": [
+        57,
+        22
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 0.0,
+      "intrinsic_pct": 0.0,
+      "prompt_hint": ""
+    },
+    {
+      "id": "t01_p04",
+      "kind": "effect",
+      "role": "effect",
+      "name_cn": "渐变条C",
+      "page": "texture_01.png",
+      "bbox": [
+        40,
+        32,
+        97,
+        51
+      ],
+      "size": [
+        57,
+        19
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 0.0,
+      "intrinsic_pct": 0.0,
+      "prompt_hint": ""
+    },
+    {
+      "id": "t02_p00",
+      "kind": "effect",
+      "role": "effect",
+      "name_cn": "暖黄光晕",
+      "page": "texture_02.png",
+      "bbox": [
+        107,
+        101,
+        253,
+        217
+      ],
+      "size": [
+        146,
+        116
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 80.9,
+      "intrinsic_pct": 80.9,
+      "prompt_hint": ""
+    },
+    {
+      "id": "t02_p01",
+      "kind": "effect",
+      "role": "effect",
+      "name_cn": "淡青光斑",
+      "page": "texture_02.png",
+      "bbox": [
+        434,
+        31,
+        558,
+        153
+      ],
+      "size": [
+        124,
+        122
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 97.7,
+      "intrinsic_pct": 0.0,
+      "prompt_hint": ""
+    },
+    {
+      "id": "t02_p02",
+      "kind": "effect",
+      "role": "effect",
+      "name_cn": "像素撕裂条",
+      "page": "texture_02.png",
+      "bbox": [
+        668,
+        108,
+        728,
+        290
+      ],
+      "size": [
+        60,
+        182
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 7.9,
+      "intrinsic_pct": 3.7,
+      "prompt_hint": ""
+    },
+    {
+      "id": "t02_p03",
+      "kind": "effect",
+      "role": "effect",
+      "name_cn": "黄色光环",
+      "page": "texture_02.png",
+      "bbox": [
+        42,
+        395,
+        178,
+        476
+      ],
+      "size": [
+        136,
+        81
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 100.0,
+      "intrinsic_pct": 100.0,
+      "prompt_hint": ""
+    },
+    {
+      "id": "t02_p04",
+      "kind": "effect",
+      "role": "micro",
+      "name_cn": "灰色小渐变",
+      "page": "texture_02.png",
+      "bbox": [
+        15,
+        300,
+        69,
+        313
+      ],
+      "size": [
+        54,
+        13
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 87.5,
+      "intrinsic_pct": 25.5,
+      "prompt_hint": ""
+    },
+    {
+      "id": "t02_p05",
+      "kind": "effect",
+      "role": "micro",
+      "name_cn": "微粒1",
+      "page": "texture_02.png",
+      "bbox": [
+        193,
+        437,
+        210,
+        445
+      ],
+      "size": [
+        17,
+        8
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 100.0,
+      "intrinsic_pct": 100.0,
+      "prompt_hint": ""
+    },
+    {
+      "id": "t02_p06",
+      "kind": "effect",
+      "role": "micro",
+      "name_cn": "微粒2",
+      "page": "texture_02.png",
+      "bbox": [
+        17,
+        402,
+        33,
+        413
+      ],
+      "size": [
+        16,
+        11
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 100.0,
+      "intrinsic_pct": 100.0,
+      "prompt_hint": ""
+    },
+    {
+      "id": "t02_p07",
+      "kind": "effect",
+      "role": "micro",
+      "name_cn": "微粒3",
+      "page": "texture_02.png",
+      "bbox": [
+        66,
+        370,
+        76,
+        383
+      ],
+      "size": [
+        10,
+        13
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 100.0,
+      "intrinsic_pct": 100.0,
+      "prompt_hint": ""
+    },
+    {
+      "id": "t02_p08",
+      "kind": "effect",
+      "role": "micro",
+      "name_cn": "微粒4",
+      "page": "texture_02.png",
+      "bbox": [
+        183,
+        481,
+        193,
+        492
+      ],
+      "size": [
+        10,
+        11
+      ],
+      "outline_mode": "dark",
+      "paintable_pct": 100.0,
+      "intrinsic_pct": 100.0,
+      "prompt_hint": ""
+    }
+  ],
+  "page_size": [
+    1024,
+    512
+  ],
+  "pages": [
+    "texture_00.png",
+    "texture_01.png",
+    "texture_02.png"
+  ]
+}

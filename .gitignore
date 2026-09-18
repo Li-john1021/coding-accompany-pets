@@ -1,0 +1,15 @@
+# 依赖
+node_modules/
+
+# 日志与临时文件
+_*
+*.log
+npm-debug.log*
+
+# Live2D Cubism SDK 运行时(专有许可,需从 cubism.live2d.com 单独下载,放 app/renderer/lib/)
+app/renderer/lib/live2dcubismcore.min.js
+
+# 本地环境
+.env
+.DS_Store
+Thumbs.db

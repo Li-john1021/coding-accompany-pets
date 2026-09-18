@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Voice2Prompt 设置</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>🎙️ Voice2Prompt 设置</h1>
+    <p class="sub">按住说话 → AI 整理+优化 → 直达光标</p>
+  </header>
+
+  <main>
+    <!-- 语音模型 -->
+    <section class="card">
+      <h2>🔊 语音模型（ASR）<span class="hint">把声音转成文字；协议说明：OpenAI 兼容选 transcriptions，小米 MiMo 选 chat（模型名 mimo-v2.5-asr，Base URL 填 https://api.xiaomimimo.com/v1）</span></h2>
+      <div id="asr-list" class="provider-list"></div>
+      <button class="btn" id="asr-add">＋ 添加语音模型</button>
+    </section>
+
+    <!-- 文字模型 -->
+    <section class="card">
+      <h2>✨ 文字模型（LLM）<span class="hint">把口语整理优化成提示词</span></h2>
+      <div id="llm-list" class="provider-list"></div>
+      <button class="btn" id="llm-add">＋ 添加文字模型</button>
+    </section>
+
+    <!-- 常规设置 -->
+    <section class="card">
+      <h2>⚙️ 常规</h2>
+      <div class="form-row">
+        <label>输出处理（两个独立开关）</label>
+        <label class="chk"><input type="checkbox" id="enable-structure" /> 结构化整理：把口语组织成清晰分节/编号</label>
+        <label class="chk"><input type="checkbox" id="enable-optimize" /> 提示词优化：补全角色/约束/输出格式等要素</label>
+        <span class="hint">两项都关闭 = 纯 ASR 转录，原文直插光标（不调用文字模型）</span>
+      </div>
+      <div class="form-row">
+        <label>全局热键（按下开始录音，再按结束；不受交互方式影响）</label>
+        <div class="hotkey-row">
+          <input type="text" id="hotkey" placeholder="点击「录制」后按下组合键" readonly />
+          <button class="btn" id="hotkey-capture">⏺ 录制快捷键</button>
+          <span id="hotkey-tip" class="hint"></span>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="chk"><input type="checkbox" id="mouse-record" /> 鼠标侧键开启录音（按后退键开始，再按结束；与全局热键互相独立）</label>
+      </div>
+      <div class="form-row">
+        <label>宠物交互方式</label>
+        <select id="trigger-mode">
+          <option value="hold">长按录音：按住说话，松开转录（拖动取消）</option>
+          <option value="click">单击监听：点一下开始监听，再点一下转录</option>
+        </select>
+        <span class="hint">单击模式下左键点宠物切换录音，右键打开设置；长按模式单击打开设置。滚轮缩放宠物；耳机没戴正？按住 <b>Alt</b> 悬停/拖动宠物平移耳机、Alt+滚轮缩放、<b>Shift+滚轮</b>旋转（校准时耳机会显形、头部摆正，状态栏显示角度），松手自动保存</span>
+      </div>
+      <div class="form-row">
+        <label>结果插入方式</label>
+        <select id="insert-mode">
+          <option value="paste">自动粘贴到光标（剪贴板 + 模拟 Ctrl+V）</option>
+          <option value="clipboard">仅复制到剪贴板，手动粘贴</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>桌宠皮肤（Live2D）</label>
+        <div class="pet-row">
+          <select id="pet-model"></select>
+          <button class="btn" id="edit-skin" title="打开画板，修改选中皮肤的涂装">✏️ 修改</button>
+          <button class="btn danger" id="del-skin" title="删除选中的自建皮肤（内置皮肤不可删）">🗑 删除</button>
+          <button class="btn" id="open-models-folder">打开皮肤目录…</button>
+          <button class="btn" id="open-paint">🎨 创建皮肤…</button>
+        </div>
+        <label class="chk"><input type="checkbox" id="hp-enabled" /> 录音时显示耳机配件（可在画板外用 Alt+滚轮校准；不需要就关掉，猫会用气泡说「在听」）</label>
+      </div>
+      <div class="form-row">
+        <label>眼睛</label>
+        <div class="eye-modes">
+          <label class="chk"><input type="radio" name="eye-mode" value="model" /> 模型原眼</label>
+          <label class="chk"><input type="radio" name="eye-mode" value="painted" /> 手绘眼睛（去「创建皮肤」里涂眼睛零件，形状受原贴图限制）</label>
+          <label class="chk"><input type="radio" name="eye-mode" value="vector" /> 圆眼睛贴片（正圆、颜色可调，不受模型限制）</label>
+        </div>
+        <div class="pet-row" id="eye-vector-row" style="display:none;">
+          <span class="hint">左眼</span>
+          <input type="color" id="eye-color-l" value="#2c3e70" />
+          <span class="hint">右眼</span>
+          <input type="color" id="eye-color-r" value="#2c3e70" />
+          <span class="hint">对位：在宠物上 <b>Ctrl+拖动</b> 移动 · <b>Ctrl+滚轮</b> 大小 · <b>Ctrl+Shift+滚轮</b> 眼距 · <b>Ctrl+Alt+滚轮</b> 旋转（换肤后需重新对位）</span>
+        </div>
+        <span class="hint">创建皮肤：在画板上挑零件上色（描边自动锁定，画不散架），画完点「✨ 生成皮肤」起个名字，皮肤就会出现在上面的下拉框里，选中保存即生效。只想用现成的，把皮肤文件夹放进皮肤目录也可（详见 docs/skin-guide.md）。选「静态图片」则改用下方自定义图片。</span>
+      </div>
+      <div class="form-row">
+        <label>宠物形象</label>
+        <div class="pet-row">
+          <img id="pet-preview" alt="宠物" />
+          <button class="btn" id="pick-pet">选择图片…</button>
+          <span class="hint">发给你喜欢的图片即可替换，支持 png/jpg/gif/webp</span>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>优化提示词（高级，一般不用改）</label>
+        <textarea id="prompt-text" rows="8"></textarea>
+      </div>
+      <div class="btn-row">
+        <button class="btn primary" id="save">💾 保存设置</button>
+        <button class="btn ghost" id="open-folder">打开配置目录</button>
+        <span id="save-tip" class="hint"></span>
+      </div>
+    </section>
+  </main>
+
+  <script src="settings.js"></script>
+</body>
+</html>
