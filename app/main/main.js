@@ -12,6 +12,11 @@ const paint = require('./paint');
 
 app.setAppUserModelId('voice2prompt.app');
 
+// 单实例:二次启动不重复拉起,把已有实例顶到前台
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) app.quit();
+else app.on('second-instance', () => { if (petWin && !petWin.isDestroyed()) petWin.moveTop(); });
+
 // 自定义特权协议 model:// ——向渲染层提供本地 Live2D 模型文件。
 // file:// 页面默认被 webSecurity 拦 fetch，故用标准 scheme 映射到 assets/models 目录。
 protocol.registerSchemesAsPrivileged([
@@ -436,6 +441,7 @@ async function recordFrames(stage, outDir) {
 
 // ---------------- 生命周期 ----------------
 app.whenReady().then(() => {
+  if (!gotLock) return;   // 未拿到锁的二次实例直接退出
   // model://<模型名>/<相对路径> → 用户皮肤目录或内置 assets/models 下的同名目录
   protocol.handle('model', async (req) => {
     const u = new URL(req.url);

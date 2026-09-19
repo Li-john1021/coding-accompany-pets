@@ -21,6 +21,13 @@ npm install
 npm start
 ```
 
+打包单文件exe(含图标,产物在 `app/dist-exe/`):
+
+```bash
+cd app
+npm run dist
+```
+
 首次启动会打开设置页:填入 ASR 与 LLM 的 Base URL + API Key + 模型名即可。
 
 > **Live2D 运行时**:Cubism Core(`app/renderer/lib/live2dcubismcore.min.js`)为

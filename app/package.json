@@ -5,17 +5,43 @@
   "description": "语音直出高质量提示词：按住说话，AI 整理+优化，直达光标。",
   "main": "main/main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win portable"
   },
   "author": "voice2prompt",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
   "devDependencies": {
-    "electron": "^31.7.7"
+    "electron": "^31.7.7",
+    "electron-builder": "^26.15.3"
   },
   "dependencies": {
     "pixi-live2d-display": "^0.4.0",
     "pixi.js": "^7.4.2",
     "uiohook-napi": "^1.5.5"
+  },
+  "build": {
+    "appId": "com.voice2prompt.app",
+    "productName": "Voice2Prompt",
+    "directories": {
+      "output": "dist-exe"
+    },
+    "files": [
+      "main/**/*",
+      "renderer/**/*",
+      "assets/**/*",
+      "build/icon.ico",
+      "preload.js",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "portable"
+      ]
+    },
+    "portable": {
+      "artifactName": "Voice2Prompt.exe"
+    }
   }
 }
