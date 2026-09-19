@@ -52,7 +52,7 @@
           <option value="hold">长按录音：按住说话，松开转录（拖动取消）</option>
           <option value="click">单击监听：点一下开始监听，再点一下转录</option>
         </select>
-        <span class="hint">单击模式下左键点宠物切换录音，右键打开设置；长按模式单击打开设置。滚轮缩放宠物；耳机没戴正？按住 <b>Alt</b> 悬停/拖动宠物平移耳机、Alt+滚轮缩放、<b>Shift+滚轮</b>旋转（校准时耳机会显形、头部摆正，状态栏显示角度），松手自动保存</span>
+        <span class="hint">单击模式下左键点宠物切换录音，右键打开设置；长按模式单击打开设置。滚轮缩放宠物（最小 0.3）</span>
       </div>
       <div class="form-row">
         <label>结果插入方式</label>
@@ -62,24 +62,24 @@
         </select>
       </div>
       <div class="form-row">
-        <label>桌宠皮肤（Live2D）</label>
-        <div class="pet-row">
+        <label>桌宠形象</label>
+        <div class="eye-modes">
+          <label class="chk"><input type="radio" name="pet-kind" value="live2d" /> Live2D 皮肤</label>
+          <label class="chk"><input type="radio" name="pet-kind" value="image" /> 静态图片</label>
+        </div>
+        <div class="pet-row" id="live2d-row">
           <select id="pet-model"></select>
           <button class="btn" id="edit-skin" title="打开画板，修改选中皮肤的涂装">✏️ 修改</button>
           <button class="btn danger" id="del-skin" title="删除选中的自建皮肤（内置皮肤不可删）">🗑 删除</button>
           <button class="btn" id="open-models-folder">打开皮肤目录…</button>
           <button class="btn" id="open-paint">🎨 创建皮肤…</button>
         </div>
-              </div>
-        <span class="hint">创建皮肤：在画板上挑零件上色（描边自动锁定，画不散架），画完点「✨ 生成皮肤」起个名字，皮肤就会出现在上面的下拉框里，选中保存即生效。只想用现成的，把皮肤文件夹放进皮肤目录也可（详见 docs/skin-guide.md）。选「静态图片」则改用下方自定义图片。</span>
-      </div>
-      <div class="form-row">
-        <label>宠物形象</label>
-        <div class="pet-row">
+        <div class="pet-row" id="image-row" style="display:none;">
           <img id="pet-preview" alt="宠物" />
           <button class="btn" id="pick-pet">选择图片…</button>
           <span class="hint">发给你喜欢的图片即可替换，支持 png/jpg/gif/webp</span>
         </div>
+        <span class="hint">创建皮肤：在画板上挑零件上色（描边自动锁定，画不散架），画完点「✨ 生成皮肤」起个名字，皮肤就会出现在上面的下拉框里，选中保存即生效。只想用现成的，把皮肤文件夹放进皮肤目录也可（详见 docs/skin-guide.md）。</span>
       </div>
       <div class="form-row">
         <label>优化提示词（高级，一般不用改）</label>

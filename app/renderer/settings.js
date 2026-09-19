@@ -122,7 +122,6 @@ async function renderPetModelSelect(current) {
     if (v === current) o.selected = true;
     sel.appendChild(o);
   };
-  opt('', '静态图片');
   models.forEach((m) => opt(m, m));
   // 配置里的模型已被删除时列表选不到，回退到静态图
   if (!models.includes(current)) sel.value = '';
@@ -198,6 +197,37 @@ async function startHotkeyCapture() {
   window.addEventListener('keydown', onCaptureKeydown, true);
 }
 
+// ---------------- 桌宠形象:Live2D 皮肤 / 静态图片 ----------------
+function applyPetKind(kind) {
+  document.querySelectorAll('input[name=pet-kind]').forEach((r) => { r.checked = r.value === kind; });
+  $('#live2d-row').style.display = kind === 'live2d' ? '' : 'none';
+  $('#image-row').style.display = kind === 'image' ? '' : 'none';
+}
+function wirePetKindEvents() {
+  document.querySelectorAll('input[name=pet-kind]').forEach((r) =>
+    r.addEventListener('change', async () => {
+      if (!r.checked) return;
+      applyPetKind(r.value);
+      if (r.value === 'live2d') {
+        const sel = $('#pet-model');
+        if (!sel.value) sel.value = sel.options[0] ? sel.options[0].value : 'keyboard';
+        await window.v2p.saveConfig({ petModel: sel.value });
+      } else {
+        await window.v2p.saveConfig({ petModel: '' });
+      }
+      const tip = $('#save-tip');
+      tip.textContent = '✅ 桌宠形象已切换';
+      setTimeout(() => (tip.textContent = ''), 2000);
+    }));
+  // Live2D 下拉框选择后立即生效
+  $('#pet-model').addEventListener('change', async (e) => {
+    await window.v2p.saveConfig({ petModel: e.target.value });
+    const tip = $('#save-tip');
+    tip.textContent = '✅ 皮肤已切换';
+    setTimeout(() => (tip.textContent = ''), 2000);
+  });
+}
+
 async function loadConfig() {
   cfg = await window.v2p.getConfig();
   renderList('asr', cfg.asrProviders, cfg.activeAsrId);
@@ -210,6 +240,7 @@ async function loadConfig() {
   $('#enable-optimize').checked = cfg.enableOptimize !== false;
   $('#prompt-text').value = cfg.promptText || '';
   await renderPetModelSelect(cfg.petModel || '');
+  applyPetKind((cfg.petModel || '') ? 'live2d' : 'image');
   await loadPetPreview();
 }
 
@@ -237,6 +268,7 @@ function wireEvents() {
     tip.textContent = e.target.checked ? '✅ 侧键录音已开启' : '侧键录音已关闭';
     setTimeout(() => (tip.textContent = ''), 2000);
   });
+  wirePetKindEvents();
 
   // 修改皮肤：按选中名字打开画板（该皮肤须由「创建皮肤」生成，才有涂装记录）
   $('#edit-skin').addEventListener('click', () => {
@@ -264,6 +296,7 @@ function wireEvents() {
     tip.textContent = r.ok ? `✅ 已删除皮肤「${r.name}」` : `❌ ${r.error || '删除失败'}`;
     setTimeout(() => (tip.textContent = ''), 3000);
     await renderPetModelSelect(cfg.petModel || '');
+  applyPetKind((cfg.petModel || '') ? 'live2d' : 'image');
   });
 
   $('#save').addEventListener('click', async () => {
@@ -280,7 +313,7 @@ function wireEvents() {
       enableStructure: $('#enable-structure').checked,
       enableOptimize: $('#enable-optimize').checked,
       promptText: $('#prompt-text').value,
-      petModel: $('#pet-model').value
+      petModel: (document.querySelector('input[name=pet-kind]:checked') || {}).value === 'image' ? '' : $('#pet-model').value
     };
     await window.v2p.saveConfig(patch);
     const tip = $('#save-tip');

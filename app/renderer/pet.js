@@ -4,7 +4,7 @@ const petImg = document.getElementById('pet');
 const statusEl = document.getElementById('status');
 const bubble = document.getElementById('bubble');
 
-// 进入监听时随机弹一句，替代耳机做「在听」的表演反馈
+// 进入监听时随机弹一句「在听」的表演反馈
 const LISTEN_LINES = [
   '你说，我在听', '嗯嗯，在听呢', '洗耳恭听～', '麦克风就位，请开口',
   '耳朵竖起来了，慢慢说', '在听在听，都记下了', '准备完毕，开麦吧'
@@ -187,8 +187,6 @@ let triggerMode = 'hold';
 let down = false, dragging = false, holdTimer = null;
 let lastX = 0, lastY = 0, startX = 0, startY = 0;
 let downTime = 0;   // click 模式防误触：过长的按住不算「单击」
-// 耳机校准模式：耳机平时只在录音时显形，调它之前得先能看见——
-// Alt 悬停/按住即显形+头部定格，停止 Alt 操作约 1.5s 后自动退出
 let curStage = 'idle';
 
 function cancelHold() { clearTimeout(holdTimer); holdTimer = null; }
@@ -245,7 +243,6 @@ window.addEventListener('wheel', (e) => {
   window.v2p.petScale((Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) < 0 ? 1 : -1);
 }, { passive: false });
 
-// 耳机校准值：启动时读配置，主进程广播（含本窗发出后的回声）时应用
 
 // click 模式下左键被录音占用，设置走右键；hold 模式右键无功能（避免误触）
 stage.addEventListener('contextmenu', (e) => {

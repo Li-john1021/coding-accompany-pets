@@ -1,9 +1,8 @@
 // pet-live2d.js — 内嵌 Live2D 渲染：加载 BongoCat 皮肤，按语音状态驱动表演
 //
 // 图层顺序（从下到上）：
-//   background（皮肤自带键盘/桌沿） → 键帽高亮 → Live2D 猫本体 → 耳机配件
-// 键盘与配件都不在 moc3 里：键盘是皮肤 resources/background.png，
-// 耳机是通用配件（基座 20 个网格中没有任何耳机零件，只能叠层实现）。
+//   background（皮肤自带键盘/桌沿） → 键帽高亮 → Live2D 猫本体
+// 键盘不在 moc3 里：键盘是皮肤 resources/background.png，独立叠层实现。
 //
 // 表演不依赖 motion3/exp3（那些是给 BongoCat 键鼠钩子用的），
 // 直接写 cubism 参数，皮肤能否复用只取决于参数名约定。
@@ -16,7 +15,7 @@
   const L2D = { bgScale: VIEW_W / BASE_W, modelScale: 1 };
   const ANGLE_RANGE = 30;                // ParamAngle* 的取值范围
 
-  // 状态 → 表演配方。tap=每秒敲击次数（0=不敲），hp=是否戴耳机，head=头部动作
+  // 状态 → 表演配方。tap=每秒敲击次数（0=不敲），head=头部动作
   const BEHAVIOR = {
     idle:         { tap: 0,   hp: 0, head: 'calm'   },
     listening:    { tap: 0,   hp: 1, head: 'listen' },   // 你在说话：戴耳机听，不敲
