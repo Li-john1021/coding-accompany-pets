@@ -32,7 +32,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
+      "createStartMenuShortcut": false,
       "shortcutName": "Voice2Prompt",
       "artifactName": "Voice2Prompt-Setup-${version}.exe"
     },
