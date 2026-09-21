@@ -19,38 +19,5 @@
     "pixi-live2d-display": "^0.4.0",
     "pixi.js": "^7.4.2",
     "uiohook-napi": "^1.5.5"
-  },
-  "build": {
-    "appId": "com.voice2prompt.app",
-    "productName": "Voice2Prompt",
-    "directories": {
-      "output": "dist-exe"
-    },
-    "files": [
-      "main/**/*",
-      "renderer/**/*",
-      "assets/**/*",
-      "build/icon.ico",
-      "preload.js",
-      "package.json"
-    ],
-    "win": {
-      "icon": "build/icon.ico",
-      "target": [
-        "portable",
-        "nsis"
-      ]
-    },
-    "portable": {
-      "artifactName": "Voice2Prompt.exe"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Voice2Prompt",
-      "artifactName": "Voice2Prompt-Setup-${version}.exe"
-    }
   }
 }

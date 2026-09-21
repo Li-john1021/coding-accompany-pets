@@ -1,0 +1,44 @@
+{
+  "name": "voice2prompt-open",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Voice2Prompt 桌宠工具",
+  "scripts": {
+    "dist": "electron-builder --win portable nsis"
+  },
+  "build": {
+    "appId": "com.voice2prompt.app",
+    "productName": "Voice2Prompt",
+    "directories": {
+      "output": "app/dist-exe",
+      "app": "app"
+    },
+    "files": [
+      "main/**/*",
+      "renderer/**/*",
+      "assets/**/*",
+      "build/icon.ico",
+      "preload.js",
+      "package.json"
+    ],
+    "win": {
+      "icon": "app/build/icon.ico",
+      "target": [
+        "portable",
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Voice2Prompt",
+      "artifactName": "Voice2Prompt-Setup-${version}.exe"
+    },
+    "electronVersion": "31.7.7",
+    "portable": {
+      "artifactName": "Voice2Prompt-${version}-Portable.exe"
+    }
+  }
+}
