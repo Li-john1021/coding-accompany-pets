@@ -1,7 +1,7 @@
 {
   "name": "voice2prompt",
   "productName": "Voice2Prompt",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "语音直出高质量提示词：按住说话，AI 整理+优化，直达光标。",
   "main": "main/main.js",
   "scripts": {
@@ -37,11 +37,20 @@
     "win": {
       "icon": "build/icon.ico",
       "target": [
-        "portable"
+        "portable",
+        "nsis"
       ]
     },
     "portable": {
       "artifactName": "Voice2Prompt.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Voice2Prompt",
+      "artifactName": "Voice2Prompt-Setup-${version}.exe"
     }
   }
 }
