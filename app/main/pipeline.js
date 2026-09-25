@@ -35,39 +35,47 @@ function resolveMode(mode, cfg = config.load()) {
 }
 
 // 启发式：输出是否像「直接回答了问题」而非改写
-// 注意：optimize 会把短草稿加长成结构化 prompt，膨胀规则不得误伤任务框/问句改写
+// 优先级：元话语 → 代码块 → 问句+回答体（先于任务框豁免）→ 形态豁免 → 膨胀
 function looksLikeDirectAnswer(input, output) {
   const inp = String(input || '').trim();
   const out = String(output || '').trim();
   if (!out) return true;
 
-  // 元话语开场（不强制后缀标点，覆盖「以下是整理结果」「好的。」等）
-  if (/^(好的|当然|当然可以|没问题|以下是|下面是|整理如下|答案是|简单来说)[，,。：:\s！!]|^(以下是|下面是)整理/.test(out)) return true;
+  // 元话语：含裸形态（整段就叫「好的」）与无标点前缀
+  if (/^(好的|当然|当然可以|没问题)([，,。：:\s！!]|$)/.test(out)) return true;
+  if (/^(以下是|下面是)/.test(out)) return true;
+  if (/^(答案是|简单来说|整理如下|请注意)/.test(out)) return true;
 
   // 整段被代码块包裹
   if (/^```[\s\S]*```$/.test(out)) return true;
 
-  // 合法形态豁免：仍是问句 / 任务框 / 明确请对方做事 → 不是「直接回答」
+  const isQuestion = /[?？]\s*$|^(什么是|为什么|如何|怎么|怎样|请问|是不是|能否|能不能|是什么)/.test(inp);
+  const head = out.slice(0, 120);
+
+  // 回答体（戴 # /「任务：」帽子也拦）：定义、原因、答案
+  const answerBody =
+    /指的是|是指|是一种|本质上|是由于|是因为|原因有|答案[:：]|可以通过以下|主要(原因|做法)/.test(head) ||
+    /^(?!什么|为何|为什么|如何|怎么|怎样|请)[\u4e00-\u9fa5A-Za-z]{1,12}是[^指？?于]/.test(out.slice(0, 24));
+  if (isQuestion && answerBody) return true;
+
+  // 合法形态：仍是问句 / 祈使提示词口吻（动词表放宽，请+1~6 字）
   const stillQuestion = /[?？]\s*$/.test(out) || /^(什么是|为什么|如何|怎么|怎样|请问|是什么)/.test(out);
-  const looksPrompt = /(^|\n)\s*#|请(解释|说明|回答|列出|比较|总结|实现|编写|生成)|提示词|任务[:：]|问题[:：]|要求[:：]|输出格式/.test(out);
+  const looksPrompt =
+    /(^|\n)\s*#/.test(out) ||
+    /请[\u4e00-\u9fa5]{1,8}/.test(out.slice(0, 40)) ||
+    /请(解释|说明|回答|列出|比较|总结|实现|编写|生成|撰写|润色|起草|设计|整理|改写|翻译)/.test(out) ||
+    /提示词|任务[:：]|问题[:：]|要求[:：]|输出格式|角色[:：]/.test(out);
   if (stillQuestion || looksPrompt) return false;
 
-  const isQuestion = /[?？]\s*$|^(什么是|为什么|如何|怎么|怎样|请问|是不是|能否|能不能|是什么)/.test(inp);
-  const head = out.slice(0, 80);
   const inLen = inp.replace(/\s+/g, '').length;
   const outLen = out.replace(/\s+/g, '').length;
 
   if (isQuestion) {
-    // 回答体：定义 / 原因 / 答案
-    if (/指的是|是指|是一种|本质上|是由于|是因为|可以通过|主要原因|原因有|答案[:：]/.test(head)) return true;
-    if (/^(?!什么|为何|为什么|如何|怎么|怎样)[\u4e00-\u9fa5A-Za-z]{1,12}是[^指？?于]/.test(out.slice(0, 24))) return true;
-    // 问句且无任务框时，明显被写成说明文才判违规（避免把整洁问句/短扩写误伤）
     if (outLen > Math.max(40, inLen * 3)) return true;
     return false;
   }
 
-  // 非问句：仅当「无结构痕迹」且异常膨胀时才像作文式发挥
-  // 结构化/编号/列表是合法优化产物
+  // 非问句：无结构痕迹且异常膨胀才像发挥；编号/列表/小标题视为合法优化
   const hasStructure = /\n\s*#|\n\s*\d+[.、)]|\n\s*[（(][a-z][)）]|^[-*•]/m.test(out);
   if (!hasStructure && inLen >= 6 && outLen > inLen * 2.5) return true;
   return false;
