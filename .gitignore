@@ -15,5 +15,21 @@ app/renderer/lib/live2dcubismcore.min.js
 
 # 本地环境
 .env
+.env.*
 .DS_Store
 Thumbs.db
+
+# IDE / 编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 本地密钥与配置（勿上传）
+*.pem
+*.key
+config.local.json
+
+# 构建缓存
+app/dist/
+*.tsbuildinfo
