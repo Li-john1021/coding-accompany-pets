@@ -35,35 +35,41 @@ function resolveMode(mode, cfg = config.load()) {
 }
 
 // 启发式：输出是否像「直接回答了问题」而非改写
+// 注意：optimize 会把短草稿加长成结构化 prompt，膨胀规则不得误伤任务框/问句改写
 function looksLikeDirectAnswer(input, output) {
   const inp = String(input || '').trim();
   const out = String(output || '').trim();
   if (!out) return true;
-  // 元话语开场
-  if (/^(好的|当然|当然可以|没问题|以下是|下面是|整理如下|答案是|简单来说|请注意)[，,：:\s]/.test(out)) return true;
+
+  // 元话语开场（不强制后缀标点，覆盖「以下是整理结果」「好的。」等）
+  if (/^(好的|当然|当然可以|没问题|以下是|下面是|整理如下|答案是|简单来说)[，,。：:\s！!]|^(以下是|下面是)整理/.test(out)) return true;
+
   // 整段被代码块包裹
   if (/^```[\s\S]*```$/.test(out)) return true;
 
-  const isQuestion = /[?？]\s*$|^(什么是|为什么|如何|怎么|怎样|请问|是不是|能否|能不能|是什么)/.test(inp);
-  // 仍是问句 / 任务框 / 与原文接近 → 视为合法改写
-  const stillQuestion = /[?？]\s*$/.test(out);
-  const looksPrompt = /#|请(解释|说明|回答|列出|比较|总结)|提示词|任务[:：]|问题[:：]/.test(out.slice(0, 80));
+  // 合法形态豁免：仍是问句 / 任务框 / 明确请对方做事 → 不是「直接回答」
+  const stillQuestion = /[?？]\s*$/.test(out) || /^(什么是|为什么|如何|怎么|怎样|请问|是什么)/.test(out);
+  const looksPrompt = /(^|\n)\s*#|请(解释|说明|回答|列出|比较|总结|实现|编写|生成)|提示词|任务[:：]|问题[:：]|要求[:：]|输出格式/.test(out);
   if (stillQuestion || looksPrompt) return false;
 
-  if (isQuestion) {
-    // 回答体：定义句 / 原因句 / 步骤答
-    if (/[是指的]指的是|是指|是一种|本质上|可以通过|主要原因|原因有|答案[:：]|因为[,，]/.test(out.slice(0, 80))) return true;
-    // 「XX是…」定义开头（排除「什么是…」这类仍是问题的开头）
-    if (/^(?!什么|为何|为什么|如何|怎么|怎样)[\u4e00-\u9fa5A-Za-z]{1,12}是[^指？?]/.test(out.slice(0, 24))) return true;
-    const inLen = inp.replace(/\s+/g, '').length;
-    const outLen = out.replace(/\s+/g, '').length;
-    if (outLen > Math.max(20, inLen * 1.6)) return true;
-  }
-
-  // 异常膨胀（输入偏短却写成一篇）
+  const isQuestion = /[?？]\s*$|^(什么是|为什么|如何|怎么|怎样|请问|是不是|能否|能不能|是什么)/.test(inp);
+  const head = out.slice(0, 80);
   const inLen = inp.replace(/\s+/g, '').length;
   const outLen = out.replace(/\s+/g, '').length;
-  if (inLen >= 6 && outLen > inLen * 2.5) return true;
+
+  if (isQuestion) {
+    // 回答体：定义 / 原因 / 答案
+    if (/指的是|是指|是一种|本质上|是由于|是因为|可以通过|主要原因|原因有|答案[:：]/.test(head)) return true;
+    if (/^(?!什么|为何|为什么|如何|怎么|怎样)[\u4e00-\u9fa5A-Za-z]{1,12}是[^指？?于]/.test(out.slice(0, 24))) return true;
+    // 问句且无任务框时，明显被写成说明文才判违规（避免把整洁问句/短扩写误伤）
+    if (outLen > Math.max(40, inLen * 3)) return true;
+    return false;
+  }
+
+  // 非问句：仅当「无结构痕迹」且异常膨胀时才像作文式发挥
+  // 结构化/编号/列表是合法优化产物
+  const hasStructure = /\n\s*#|\n\s*\d+[.、)]|\n\s*[（(][a-z][)）]|^[-*•]/m.test(out);
+  if (!hasStructure && inLen >= 6 && outLen > inLen * 2.5) return true;
   return false;
 }
 
@@ -126,13 +132,14 @@ async function processText(raw, mode = 'default', onState = () => {}) {
       return { text: raw, mode: 'none', degraded: true, note: '已降级为原文' };
     }
     return { text, mode: 'optimize', degraded: false, note: '' };
-  } catch (e) {
+  } catch {
     try {
       const s = await chatOnce(llm, STRUCTURE_ONLY_PROMPT, raw);
-      return { text: s, mode: 'structure', degraded: true, note: '优化失败，已降级为结构化' };
-    } catch {
-      return { text: raw, mode: 'none', degraded: true, note: '处理失败，已降级为原文' };
-    }
+      if (!looksLikeDirectAnswer(raw, s)) {
+        return { text: s, mode: 'structure', degraded: true, note: '优化失败，已降级为结构化' };
+      }
+    } catch { /* fall through */ }
+    return { text: raw, mode: 'none', degraded: true, note: '处理失败，已降级为原文' };
   }
 }
 
