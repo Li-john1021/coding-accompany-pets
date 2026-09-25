@@ -336,7 +336,7 @@ function wireEvents() {
       writeBackCopyOnly: $('#write-back-copy-only').checked,
       clipboardRestore: $('#clipboard-restore').checked,
       paletteMinChars: Math.max(1, Number($('#palette-min-chars').value) || 8),
-      paletteLongHint: Math.max(200, Number($('#palette-long-hint').value) || 8000),
+      paletteLongHint: Math.max(2000, Number($('#palette-long-hint').value) || 8000),
       promptText: ensurePromptRedline($('#prompt-text').value),
       petModel: (document.querySelector('input[name=pet-kind]:checked') || {}).value === 'image' ? '' : $('#pet-model').value
     };

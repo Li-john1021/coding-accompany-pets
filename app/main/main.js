@@ -644,48 +644,54 @@ async function captureAndShowPalette(screenX, screenY) {
   const minChars = Number(cfg.paletteMinChars) || 8;
   if (text.trim().length < minChars) return;
   lastSelection = { text, oldClipboard };
-  const longHint = Number(cfg.paletteLongHint) || 8000;
-  showPaletteAt(screenX, screenY, text, text.length >= longHint);
+  // 2000 字内硬保证不提示；阈值再高也不能低于 2000
+  const longHint = Math.max(2000, Number(cfg.paletteLongHint) || 8000);
+  const longText = text.length > 2000 && text.length >= longHint;
+  showPaletteAt(screenX, screenY, text, longText);
 }
 
-function applySelectionResult(text) {
-  const cfg = config.load();
-  const copyOnly = !!cfg.writeBackCopyOnly;
-  const clipboard = require('electron').clipboard;
-  if (copyOnly) {
-    clipboard.writeText(text);
-    // 仅复制时强制不恢复剪贴板，保证结果可取
-    return { inserted: false, copiedOnly: true, note: '结果已复制到剪贴板' };
-  }
-  clipboard.writeText(text);
-  return { inserted: true, copiedOnly: false, note: '' };
+function isPaletteVisible() {
+  return !!(paletteWin && !paletteWin.isDestroyed() && paletteWin.isVisible());
 }
 
-async function restoreClipboardIfEnabled(oldText) {
-  const cfg = config.load();
-  if (cfg.writeBackCopyOnly) return; // 仅复制模式禁止恢复
-  if (!cfg.clipboardRestore) return;
-  try { require('electron').clipboard.writeText(oldText || ''); } catch { /* ignore */ }
+// 点浮条外 / Esc：无副作用关闭（零 LLM）
+function dismissPaletteIfVisible() {
+  if (!isPaletteVisible()) return false;
+  hidePalette();
+  lastSelection = { text: '', oldClipboard: '' };
+  return true;
 }
 
 ipcMain.handle('v2p:palette-run', async (_e, { mode }) => {
   try {
     if (!lastSelection.text) return { ok: false, error: '没有选中的文本' };
     const r = await pipeline.processText(lastSelection.text, mode === 'structure' ? 'structure' : 'optimize');
-    const write = applySelectionResult(r.text);
-    await restoreClipboardIfEnabled(lastSelection.oldClipboard);
-    // 替换失败兑底：尝试粘贴覆盖选区
-    if (write.inserted) {
-      const { insertText } = require('./insert');
-      // 已写入剪贴板，尝试 Ctrl+V 覆盖选区
-      await insertText(r.text, 'paste');
+    const cfg = config.load();
+    const copyOnly = !!cfg.writeBackCopyOnly;
+    const { insertText } = require('./insert');
+    const clipboard = require('electron').clipboard;
+
+    if (copyOnly) {
+      clipboard.writeText(r.text);
+      hidePalette();
+      return { ok: true, degraded: r.degraded, note: r.note || '结果已复制到剪贴板', mode: r.mode, copiedOnly: true };
+    }
+
+    // 替换选区：写剪贴板并 Ctrl+V；以实际返回值为准
+    const ins = await insertText(r.text, 'paste');
+    // 恢复原剪贴板必须在粘贴之后，否则会被 insertText 的 writeText 冲掉
+    if (cfg.clipboardRestore) {
+      try { clipboard.writeText(lastSelection.oldClipboard || ''); } catch { /* ignore */ }
     }
     hidePalette();
+    const fallbackNote = ins.inserted ? (r.note || '完成') : (r.note ? r.note + '；' : '') + '已复制，请手动粘贴';
     return {
       ok: true,
       degraded: r.degraded,
-      note: r.note || write.note || '完成',
-      mode: r.mode
+      note: fallbackNote,
+      mode: r.mode,
+      inserted: ins.inserted,
+      copiedOnly: ins.copiedOnly
     };
   } catch (err) {
     return { ok: false, error: String(err.message || err).slice(0, 160) };
@@ -791,6 +797,15 @@ function setMouseRecordHook() {
           return;
         }
         if (e.button === 0 && config.load().paletteEnabled !== false) {
+          // 浮条可见时：点外部 = 无副作用关闭
+          if (isPaletteVisible() && paletteWin && !paletteWin.isDestroyed()) {
+            const b = paletteWin.getBounds();
+            const inBar = e.x >= b.x && e.x <= b.x + b.width && e.y >= b.y && e.y <= b.y + b.height;
+            if (!inBar) {
+              dismissPaletteIfVisible();
+              return;
+            }
+          }
           selDown = true;
           selDragging = false;
           selStartX = e.x;
@@ -809,7 +824,17 @@ function setMouseRecordHook() {
         if (!dragged) return;
         if (config.load().paletteEnabled === false) return;
         // 延迟等文本控件进入选中态，再 Ctrl+C
-        setTimeout(() => { captureAndShowPalette(e.x, e.y).catch(() => {}); }, 120);
+        setTimeout(() => {
+          captureAndShowPalette(e.x, e.y).catch((err) => {
+            console.log('[palette]', err && err.message ? err.message : err);
+          });
+        }, 120);
+      });
+      // Esc：无副作用关闭浮条（focusable:false 收不到 keydown，走全局钩子）
+      uIOhook.on('keydown', (e) => {
+        if (e.keycode === 1 /* Escape */ || e.keycode === 27) {
+          if (dismissPaletteIfVisible()) console.log('[palette] Esc 关闭');
+        }
       });
       uIOhook.start();
       mouseHookOn = true;
