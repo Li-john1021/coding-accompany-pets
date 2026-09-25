@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>语音预览</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      background: #1e1f24;
+      color: #e8eaed;
+      font: 13px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      height: 100%;
+      overflow: hidden;
+    }
+    .wrap { padding: 12px; display: flex; flex-direction: column; gap: 10px; height: 100%; }
+    h1 { font-size: 13px; font-weight: 600; opacity: .9; }
+    textarea {
+      flex: 1;
+      min-height: 120px;
+      resize: none;
+      background: #2c2e34;
+      color: inherit;
+      border: 1px solid #3c3f46;
+      border-radius: 8px;
+      padding: 10px;
+      font: inherit;
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      background: #2c2e34;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+    }
+    button:hover { background: #3a3d46; }
+    button.primary { background: #4f7cff; color: #fff; }
+    .hint { font-size: 11px; opacity: .7; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>语音预览 · 选择处理方式</h1>
+    <textarea id="raw" placeholder="识别结果"></textarea>
+    <div class="row">
+      <button id="btn-none">不处理</button>
+      <button id="btn-structure">≡ 结构化整理</button>
+      <button id="btn-optimize" class="primary">✨ 优化提示词</button>
+    </div>
+    <div class="row">
+      <button id="btn-insert">写入光标</button>
+      <button id="btn-copy">仅复制</button>
+      <button id="btn-cancel">取消</button>
+      <span id="status" class="hint"></span>
+    </div>
+  </div>
+  <script src="preview.js"></script>
+</body>
+</html>

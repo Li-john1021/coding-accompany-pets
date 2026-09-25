@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld('v2p', {
   paletteDismiss: (reason) => ipcRenderer.invoke('v2p:palette-dismiss', { reason }),
   onPaletteShow: (cb) => ipcRenderer.on('v2p:palette-show', (_e, p) => cb(p)),
   processText: (text, mode) => ipcRenderer.invoke('v2p:process-text', { text, mode }),
+  previewInsert: (payload) => ipcRenderer.invoke('v2p:preview-insert', payload),
+  previewClose: (payload) => ipcRenderer.invoke('v2p:preview-close', payload),
+  onPreviewShow: (cb) => ipcRenderer.on('v2p:preview-show', (_e, p) => cb(p)),
   petMove: (dx, dy) => ipcRenderer.invoke('v2p:pet-move', { dx, dy }),
   // 滚轮缩放宠物窗（+1 放大 / -1 缩小）
   petScale: (dir) => ipcRenderer.invoke('v2p:pet-scale', dir),

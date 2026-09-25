@@ -262,6 +262,21 @@ function registerIpc() {
         opts.transcriptOnly = true;
       }
       const result = await pipeline.run(buf, mime, setState, opts);
+      if (result.preview && config.load().previewEnabled) {
+        const skip = Number(config.load().previewSkipChars) || 12;
+        if ((result.raw || '').trim().length < skip) {
+          const r2 = await pipeline.processText(result.raw, 'default', setState);
+          const { insertText } = require('./insert');
+          const ins = await insertText(r2.text, config.load().insertMode || 'paste');
+          const out = { raw: result.raw, polished: r2.text, mode: r2.mode, note: r2.note, ...ins };
+          setState('done');
+          petBroadcast('v2p:result', out);
+          return { ok: true, ...out };
+        }
+        showPreviewWindow(result.raw);
+        petBroadcast('v2p:toast', { text: '请在预览卡中选择处理方式' });
+        return { ok: true, ...result, preview: true };
+      }
       petBroadcast('v2p:result', result);
       return { ok: true, ...result };
     } catch (err) {
@@ -685,6 +700,67 @@ ipcMain.handle('v2p:palette-copy-raw', async () => {
 ipcMain.handle('v2p:palette-dismiss', () => {
   hidePalette();
   lastSelection = { text: '', oldClipboard: '' };
+  return { ok: true };
+});
+
+// ---------------- 语音预览卡（默认关，设置可开） ----------------
+let previewWin = null;
+let pendingPreview = null;
+
+function createPreviewWindow() {
+  if (previewWin && !previewWin.isDestroyed()) return previewWin;
+  previewWin = new BrowserWindow({
+    width: 480,
+    height: 360,
+    frame: false,
+    transparent: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    backgroundColor: '#1e1f24',
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  previewWin.loadFile(path.join(__dirname, '..', 'renderer', 'preview.html'));
+  previewWin.setAlwaysOnTop(true, 'screen-saver');
+  previewWin.on('closed', () => { previewWin = null; });
+  return previewWin;
+}
+
+function showPreviewWindow(raw) {
+  pendingPreview = { raw };
+  const win = createPreviewWindow();
+  if (!win) return;
+  win.center();
+  win.show();
+  win.focus();
+  win.webContents.send('v2p:preview-show', { raw: String(raw || '') });
+}
+
+ipcMain.handle('v2p:preview-insert', async (_e, { text, copyOnly }) => {
+  const { insertText } = require('./insert');
+  const cfg = config.load();
+  const mode = copyOnly ? 'clipboard' : (cfg.insertMode || 'paste');
+  return insertText(String(text || ''), mode);
+});
+
+ipcMain.handle('v2p:preview-close', (_e, payload) => {
+  if (previewWin && !previewWin.isDestroyed()) previewWin.hide();
+  if (payload && payload.ok) {
+    petBroadcast('v2p:result', {
+      raw: (pendingPreview && pendingPreview.raw) || '',
+      polished: (payload && payload.text) || (pendingPreview && pendingPreview.raw) || '',
+      inserted: !!payload.inserted,
+      copiedOnly: payload.copiedOnly !== false
+    });
+  } else {
+    petBroadcast('v2p:toast', { text: '已取消预览' });
+  }
+  pendingPreview = null;
+  setState('idle');
   return { ok: true };
 });
 
