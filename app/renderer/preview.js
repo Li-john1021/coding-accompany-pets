@@ -35,7 +35,7 @@ $('#btn-optimize').addEventListener('click', async () => {
 async function finish(copyOnly) {
   const text = lastResult || rawEl.value;
   const res = await window.v2p.previewInsert({ text, copyOnly });
-  window.v2p.previewClose({ ok: true, ...res });
+  window.v2p.previewClose({ ok: true, text, ...res });
 }
 
 $('#btn-insert').addEventListener('click', () => finish(false));
