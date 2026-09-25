@@ -679,8 +679,8 @@ ipcMain.handle('v2p:palette-run', async (_e, { mode }) => {
 
     // 替换选区：写剪贴板并 Ctrl+V；以实际返回值为准
     const ins = await insertText(r.text, 'paste');
-    // 恢复原剪贴板必须在粘贴之后，否则会被 insertText 的 writeText 冲掉
-    if (cfg.clipboardRestore) {
+    // 恢复原剪贴板：仅在粘贴成功后；失败时结果必须留在剪贴板（否则手动粘贴不可用）
+    if (ins.inserted && cfg.clipboardRestore) {
       try { clipboard.writeText(lastSelection.oldClipboard || ''); } catch { /* ignore */ }
     }
     hidePalette();
