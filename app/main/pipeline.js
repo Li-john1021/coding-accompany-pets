@@ -43,10 +43,24 @@ function looksLikeDirectAnswer(input, output) {
   if (/^(好的|当然|当然可以|没问题|以下是|下面是|整理如下|答案是|简单来说|请注意)[，,：:\s]/.test(out)) return true;
   // 整段被代码块包裹
   if (/^```[\s\S]*```$/.test(out)) return true;
-  // 输入是问句且输出以「回答体」开头
-  const isQuestion = /[?？]\s*$|^(什么是|为什么|如何|怎么|怎样|请问|是不是|能否|能不能)/.test(inp);
-  if (isQuestion && /^(.{0,12})?(是指|是一种|是一种用于|可以通过|主要原因|因为|答案[:：]?)/.test(out)) return true;
-  // 异常膨胀（且输入偏短，像被扩写成答案）
+
+  const isQuestion = /[?？]\s*$|^(什么是|为什么|如何|怎么|怎样|请问|是不是|能否|能不能|是什么)/.test(inp);
+  // 仍是问句 / 任务框 / 与原文接近 → 视为合法改写
+  const stillQuestion = /[?？]\s*$/.test(out);
+  const looksPrompt = /#|请(解释|说明|回答|列出|比较|总结)|提示词|任务[:：]|问题[:：]/.test(out.slice(0, 80));
+  if (stillQuestion || looksPrompt) return false;
+
+  if (isQuestion) {
+    // 回答体：定义句 / 原因句 / 步骤答
+    if (/[是指的]指的是|是指|是一种|本质上|可以通过|主要原因|原因有|答案[:：]|因为[,，]/.test(out.slice(0, 80))) return true;
+    // 「XX是…」定义开头（排除「什么是…」这类仍是问题的开头）
+    if (/^(?!什么|为何|为什么|如何|怎么|怎样)[\u4e00-\u9fa5A-Za-z]{1,12}是[^指？?]/.test(out.slice(0, 24))) return true;
+    const inLen = inp.replace(/\s+/g, '').length;
+    const outLen = out.replace(/\s+/g, '').length;
+    if (outLen > Math.max(20, inLen * 1.6)) return true;
+  }
+
+  // 异常膨胀（输入偏短却写成一篇）
   const inLen = inp.replace(/\s+/g, '').length;
   const outLen = out.replace(/\s+/g, '').length;
   if (inLen >= 6 && outLen > inLen * 2.5) return true;
