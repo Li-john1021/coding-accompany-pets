@@ -73,4 +73,54 @@ async function insertText(text, mode) {
   return { inserted: ok, copiedOnly: !ok };
 }
 
-module.exports = { insertText };
+// 模拟 Ctrl+C（选区浮条读选中文本用）；失败返回 false
+function copyViaSendInput() {
+  return new Promise((resolve) => {
+    const script = `
+Start-Sleep -Milliseconds 80
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+[StructLayout(LayoutKind.Sequential)]
+public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+[StructLayout(LayoutKind.Explicit)]
+public struct INPUTUNION { [FieldOffset(0)] public KEYBDINPUT ki; }
+[StructLayout(LayoutKind.Sequential)]
+public struct INPUT { public uint type; public INPUTUNION u; }
+public class V2PCopy {
+  [DllImport("user32.dll")] public static extern uint SendInput(uint n, INPUT[] inputs, int size);
+  static void Key(ushort vk, uint flags) {
+    var a = new INPUT[1]; a[0].type = 1; a[0].u.ki.wVk = vk; a[0].u.ki.dwFlags = flags;
+    SendInput(1, a, Marshal.SizeOf(typeof(INPUT)));
+  }
+  public static void Copy() {
+    Key(0x11, 0); System.Threading.Thread.Sleep(25);
+    Key(0x43, 0); System.Threading.Thread.Sleep(35);
+    Key(0x43, 2); System.Threading.Thread.Sleep(25);
+    Key(0x11, 2);
+  }
+}
+"@
+[V2PCopy]::Copy()
+`;
+    const b64 = Buffer.from(script, 'utf16le').toString('base64');
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-EncodedCommand', b64],
+      { timeout: 5000, windowsHide: true },
+      (err) => resolve(!err)
+    );
+  });
+}
+
+// 读取当前选中文字：备份剪贴板 → Ctrl+C → 读文本
+async function readSelection() {
+  const old = clipboard.readText() || '';
+  const ok = await copyViaSendInput();
+  if (!ok) return { text: '', oldClipboard: old, ok: false };
+  await new Promise((r) => setTimeout(r, 60));
+  const text = clipboard.readText() || '';
+  return { text, oldClipboard: old, ok: true };
+}
+
+module.exports = { insertText, readSelection, copyViaSendInput };

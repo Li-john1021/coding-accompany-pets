@@ -5,8 +5,14 @@ contextBridge.exposeInMainWorld('v2p', {
   getConfig: () => ipcRenderer.invoke('v2p:get-config'),
   saveConfig: (patch) => ipcRenderer.invoke('v2p:save-config', patch),
   validateModel: (kind, provider) => ipcRenderer.invoke('v2p:validate-model', { kind, provider }),
-  submit: (audio, mime) => ipcRenderer.invoke('v2p:submit', { audio, mime }),
+  submit: (audio, mime, options) => ipcRenderer.invoke('v2p:submit', { audio, mime, options: options || {} }),
   setRecordingFlag: (active) => ipcRenderer.invoke('v2p:recording-flag', active),
+  // 选中浮条
+  paletteRun: (mode) => ipcRenderer.invoke('v2p:palette-run', { mode }),
+  paletteCopyRaw: () => ipcRenderer.invoke('v2p:palette-copy-raw'),
+  paletteDismiss: (reason) => ipcRenderer.invoke('v2p:palette-dismiss', { reason }),
+  onPaletteShow: (cb) => ipcRenderer.on('v2p:palette-show', (_e, p) => cb(p)),
+  processText: (text, mode) => ipcRenderer.invoke('v2p:process-text', { text, mode }),
   petMove: (dx, dy) => ipcRenderer.invoke('v2p:pet-move', { dx, dy }),
   // 滚轮缩放宠物窗（+1 放大 / -1 缩小）
   petScale: (dir) => ipcRenderer.invoke('v2p:pet-scale', dir),

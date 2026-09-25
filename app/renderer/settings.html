@@ -30,10 +30,24 @@
     <section class="card">
       <h2>⚙️ 常规</h2>
       <div class="form-row">
-        <label>输出处理（两个独立开关）</label>
+        <label>输出处理（两个独立开关，默认都不勾 = 不处理）</label>
         <label class="chk"><input type="checkbox" id="enable-structure" /> 结构化整理：把口语组织成清晰分节/编号</label>
         <label class="chk"><input type="checkbox" id="enable-optimize" /> 提示词优化：补全角色/约束/输出格式等要素</label>
-        <span class="hint">两项都关闭 = 纯 ASR 转录，原文直插光标（不调用文字模型）</span>
+        <span class="hint">两项都关闭 = 不处理（纯 ASR 转录 / 原文），不调用文字模型</span>
+      </div>
+      <div class="form-row">
+        <label>语音预览卡</label>
+        <label class="chk"><input type="checkbox" id="preview-enabled" /> 启用语音预览卡：转写后先预览，再选择处理方式并写入</label>
+        <span class="hint">默认关闭，说完直接按上面两开关处理；开启后可改错字、选「不处理/结构化/优化」</span>
+      </div>
+      <div class="form-row">
+        <label>选中浮条（拖选文字后弹出）</label>
+        <label class="chk"><input type="checkbox" id="palette-enabled" /> 启用选中浮条</label>
+        <label class="chk"><input type="checkbox" id="write-back-copy-only" /> 仅复制到剪贴板，不替换选中文字</label>
+        <label class="chk"><input type="checkbox" id="clipboard-restore" /> 处理后恢复原来的剪贴板内容</label>
+        <span class="hint">默认：替换选区、结果顶掉剪贴板。勾选「仅复制」时强制不恢复剪贴板（保证结果可取）。弹出阈值：少于
+          <input type="number" id="palette-min-chars" min="1" max="100" style="width:3.5em" /> 字不弹；
+          超过 <input type="number" id="palette-long-hint" min="200" max="200000" style="width:5em" /> 字提示「建议进 App」（不阻断，2000 字内不提示）</span>
       </div>
       <div class="form-row">
         <label>全局热键（按下开始录音，再按结束；不受交互方式影响）</label>

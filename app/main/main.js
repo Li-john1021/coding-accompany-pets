@@ -230,6 +230,7 @@ function registerIpc() {
     Object.assign(cfg, patch);
     config.save();
     registerHotkey();
+    setMouseRecordHook();
     if (modelChanged) petBroadcast('v2p:pet-model-changed', { name: cfg.petModel });
     if (triggerChanged) petBroadcast('v2p:trigger-mode-changed', { mode: cfg.triggerMode });
     return { ok: true };
@@ -252,10 +253,15 @@ function registerIpc() {
   });
 
   // 宠物窗提交录音结果，跑完整管线
-  ipcMain.handle('v2p:submit', async (_e, { audio, mime }) => {
+  ipcMain.handle('v2p:submit', async (_e, { audio, mime, options }) => {
     try {
       const buf = Buffer.from(audio);
-      const result = await pipeline.run(buf, mime, setState);
+      const opts = options || {};
+      if (config.load().previewEnabled && !opts.mode && !opts.transcriptOnly) {
+        // 预览卡：只转写，等用户选模式后再 process
+        opts.transcriptOnly = true;
+      }
+      const result = await pipeline.run(buf, mime, setState, opts);
       petBroadcast('v2p:result', result);
       return { ok: true, ...result };
     } catch (err) {
@@ -264,6 +270,12 @@ function registerIpc() {
       petBroadcast('v2p:toast', { text: msg.slice(0, 120) });
       return { ok: false, error: msg };
     }
+  });
+
+  // 纯文本整理（选区浮条 / 预览卡共用）
+  ipcMain.handle('v2p:process-text', async (_e, { text, mode }) => {
+    const r = await pipeline.processText(String(text || ''), mode || 'default', setState);
+    return { ok: true, ...r };
   });
 
   ipcMain.handle('v2p:recording-flag', (_e, active) => {
@@ -556,37 +568,183 @@ app.whenReady().then(() => {
   if (!cfg.asrProviders.length || !cfg.llmProviders.length) openSettings();
 });
 
+// ---------------- 选中浮条：拖选后弹出，点选才处理（禁止自动过模型） ----------------
+let paletteWin = null;
+let lastSelection = { text: '', oldClipboard: '' };
+const { readSelection } = require('./insert');
+
+function createPaletteWindow() {
+  if (paletteWin && !paletteWin.isDestroyed()) return paletteWin;
+  paletteWin = new BrowserWindow({
+    width: 480,
+    height: 72,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    alwaysOnTop: true,
+    focusable: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      backgroundThrottling: true
+    }
+  });
+  paletteWin.loadFile(path.join(__dirname, '..', 'renderer', 'palette.html'));
+  paletteWin.setAlwaysOnTop(true, 'screen-saver');
+  paletteWin.on('closed', () => { paletteWin = null; });
+  return paletteWin;
+}
+
+function hidePalette() {
+  if (paletteWin && !paletteWin.isDestroyed()) paletteWin.hide();
+}
+
+function showPaletteAt(x, y, preview, longText) {
+  const win = createPaletteWindow();
+  if (!win) return;
+  const [w, h] = win.getSize();
+  const display = require('electron').screen.getDisplayNearestPoint({ x, y });
+  const area = display.workArea;
+  let left = Math.round(x) - 20;
+  let top = Math.round(y) + 18;
+  if (left + w > area.x + area.width) left = area.x + area.width - w - 8;
+  if (top + h > area.y + area.height) top = Math.round(y) - h - 12;
+  if (left < area.x) left = area.x + 8;
+  if (top < area.y) top = area.y + 8;
+  win.setPosition(left, top);
+  win.showInactive();
+  win.webContents.send('v2p:palette-show', { preview: String(preview || '').slice(0, 200), long: !!longText });
+}
+
+async function captureAndShowPalette(screenX, screenY) {
+  const cfg = config.load();
+  if (!cfg.paletteEnabled) return;
+  if (recordingActive) return;
+  const { text, oldClipboard, ok } = await readSelection();
+  if (!ok || !text || !text.trim()) return;
+  const minChars = Number(cfg.paletteMinChars) || 8;
+  if (text.trim().length < minChars) return;
+  lastSelection = { text, oldClipboard };
+  const longHint = Number(cfg.paletteLongHint) || 8000;
+  showPaletteAt(screenX, screenY, text, text.length >= longHint);
+}
+
+function applySelectionResult(text) {
+  const cfg = config.load();
+  const copyOnly = !!cfg.writeBackCopyOnly;
+  const clipboard = require('electron').clipboard;
+  if (copyOnly) {
+    clipboard.writeText(text);
+    // 仅复制时强制不恢复剪贴板，保证结果可取
+    return { inserted: false, copiedOnly: true, note: '结果已复制到剪贴板' };
+  }
+  clipboard.writeText(text);
+  return { inserted: true, copiedOnly: false, note: '' };
+}
+
+async function restoreClipboardIfEnabled(oldText) {
+  const cfg = config.load();
+  if (cfg.writeBackCopyOnly) return; // 仅复制模式禁止恢复
+  if (!cfg.clipboardRestore) return;
+  try { require('electron').clipboard.writeText(oldText || ''); } catch { /* ignore */ }
+}
+
+ipcMain.handle('v2p:palette-run', async (_e, { mode }) => {
+  try {
+    if (!lastSelection.text) return { ok: false, error: '没有选中的文本' };
+    const r = await pipeline.processText(lastSelection.text, mode === 'structure' ? 'structure' : 'optimize');
+    const write = applySelectionResult(r.text);
+    await restoreClipboardIfEnabled(lastSelection.oldClipboard);
+    // 替换失败兑底：尝试粘贴覆盖选区
+    if (write.inserted) {
+      const { insertText } = require('./insert');
+      // 已写入剪贴板，尝试 Ctrl+V 覆盖选区
+      await insertText(r.text, 'paste');
+    }
+    hidePalette();
+    return {
+      ok: true,
+      degraded: r.degraded,
+      note: r.note || write.note || '完成',
+      mode: r.mode
+    };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err).slice(0, 160) };
+  }
+});
+
+ipcMain.handle('v2p:palette-copy-raw', async () => {
+  require('electron').clipboard.writeText(lastSelection.text || '');
+  return { ok: true };
+});
+
+ipcMain.handle('v2p:palette-dismiss', () => {
+  hidePalette();
+  lastSelection = { text: '', oldClipboard: '' };
+  return { ok: true };
+});
+
 // ---------------- 鼠标侧键录音:全局鼠标钩子,侧键=热键的等价触发 ----------------
 let mouseHookOn = false;
+let selDown = false, selDragging = false, selStartX = 0, selStartY = 0;
 
 function setMouseRecordHook() {
-  const want = config.load().mouseRecord === true;
+  const cfg = config.load();
+  const want = cfg.mouseRecord === true || cfg.paletteEnabled !== false;
   if (want === mouseHookOn) return;
   if (want) {
     try {
       const { uIOhook } = require('uiohook-napi');
       // 注意:uiohook-napi 1.x 的事件名是小写字符串('mousedown'),不是 EventType 数值常量
       uIOhook.on('mousedown', (e) => {
-        if (e.button !== 4) return;   // 4 = XButton1(后退侧键)
-        if (!petWin || petWin.isDestroyed()) return;
-        if (recordingActive) {
-          recordingActive = false;
-          petBroadcast('v2p:hotkey-stop');
-        } else {
-          recordingActive = true;
-          petBroadcast('v2p:hotkey-start');
+        if (e.button === 4) {
+          if (!petWin || petWin.isDestroyed()) return;
+          if (config.load().mouseRecord === true) {
+            if (recordingActive) {
+              recordingActive = false;
+              petBroadcast('v2p:hotkey-stop');
+            } else {
+              recordingActive = true;
+              petBroadcast('v2p:hotkey-start');
+            }
+          }
+          return;
         }
+        if (e.button === 0 && config.load().paletteEnabled !== false) {
+          selDown = true;
+          selDragging = false;
+          selStartX = e.x;
+          selStartY = e.y;
+        }
+      });
+      uIOhook.on('mousemove', (e) => {
+        if (!selDown || selDragging) return;
+        if (Math.hypot(e.x - selStartX, e.y - selStartY) > 8) selDragging = true;
+      });
+      uIOhook.on('mouseup', (e) => {
+        if (e.button !== 0 || !selDown) return;
+        selDown = false;
+        const dragged = selDragging;
+        selDragging = false;
+        if (!dragged) return;
+        if (config.load().paletteEnabled === false) return;
+        // 延迟等文本控件进入选中态，再 Ctrl+C
+        setTimeout(() => { captureAndShowPalette(e.x, e.y).catch(() => {}); }, 120);
       });
       uIOhook.start();
       mouseHookOn = true;
-      console.log('[mouse] 侧键录音已启用');
+      console.log('[mouse] 全局鼠标钩子已启用');
     } catch (e) {
       console.log('[mouse] 钩子启动失败:' + (e.message || e));
     }
   } else {
     try { require('uiohook-napi').uIOhook.stop(); } catch { /* 未启动过 */ }
     mouseHookOn = false;
-    console.log('[mouse] 侧键录音已关闭');
+    console.log('[mouse] 全局鼠标钩子已关闭');
   }
 }
 
