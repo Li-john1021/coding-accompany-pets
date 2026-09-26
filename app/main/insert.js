@@ -116,10 +116,31 @@ public class V2PCopy {
 // 读取当前选中文字：备份剪贴板 → Ctrl+C → 读文本
 async function readSelection() {
   const old = clipboard.readText() || '';
-  const ok = await copyViaSendInput();
-  if (!ok) return { text: '', oldClipboard: old, ok: false };
-  await new Promise((r) => setTimeout(r, 60));
-  const text = clipboard.readText() || '';
+  const marker = ' v2p#' + Date.now();
+  clipboard.writeText(marker);
+  let pressed = false;
+  try {
+    const { uIOhook, UiohookKey } = require('uiohook-napi');
+    uIOhook.keyTap(UiohookKey.C, [UiohookKey.Ctrl]);
+    pressed = true;
+  } catch (e) {
+    pressed = await copyViaSendInput();
+  }
+  if (!pressed) {
+    clipboard.writeText(old);
+    return { text: '', oldClipboard: old, ok: false };
+  }
+  await new Promise((r) => setTimeout(r, 150));
+  let text = clipboard.readText() || '';
+  if (text === marker) {
+    await copyViaSendInput();
+    await new Promise((r) => setTimeout(r, 160));
+    text = clipboard.readText() || '';
+  }
+  if (text === marker) {
+    clipboard.writeText(old);
+    return { text: '', oldClipboard: old, ok: true };
+  }
   return { text, oldClipboard: old, ok: true };
 }
 

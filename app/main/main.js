@@ -644,6 +644,7 @@ async function captureAndShowPalette(screenX, screenY) {
   const minChars = Number(cfg.paletteMinChars) || 8;
   if (text.trim().length < minChars) return;
   lastSelection = { text, oldClipboard };
+  console.log('[palette] show len=' + text.length);
   // 2000 字内硬保证不提示；阈值再高也不能低于 2000
   const longHint = Math.max(2000, Number(cfg.paletteLongHint) || 8000);
   const longText = text.length > 2000 && text.length >= longHint;
@@ -796,8 +797,9 @@ function setMouseRecordHook() {
           }
           return;
         }
-        if (e.button === 0 && config.load().paletteEnabled !== false) {
-          // 浮条可见时：点外部 = 无副作用关闭
+        // uiohook 左键 = 1（0 兼容）
+        const isLeft = e.button === 1 || e.button === 0;
+        if (isLeft && config.load().paletteEnabled !== false) {
           if (isPaletteVisible() && paletteWin && !paletteWin.isDestroyed()) {
             const b = paletteWin.getBounds();
             const inBar = e.x >= b.x && e.x <= b.x + b.width && e.y >= b.y && e.y <= b.y + b.height;
@@ -810,25 +812,32 @@ function setMouseRecordHook() {
           selDragging = false;
           selStartX = e.x;
           selStartY = e.y;
+          // 双击/三击选词选段：clicks>=2 也触发
+          if (e.clicks >= 2) {
+            setTimeout(() => {
+              captureAndShowPalette(e.x, e.y).catch((err) => console.log('[palette]', err && err.message || err));
+            }, 160);
+          }
         }
       });
       uIOhook.on('mousemove', (e) => {
         if (!selDown || selDragging) return;
-        if (Math.hypot(e.x - selStartX, e.y - selStartY) > 8) selDragging = true;
+        if (Math.hypot(e.x - selStartX, e.y - selStartY) > 6) selDragging = true;
       });
       uIOhook.on('mouseup', (e) => {
-        if (e.button !== 0 || !selDown) return;
+        const isLeft = e.button === 1 || e.button === 0;
+        if (!isLeft || !selDown) return;
         selDown = false;
         const dragged = selDragging;
         selDragging = false;
         if (!dragged) return;
         if (config.load().paletteEnabled === false) return;
-        // 延迟等文本控件进入选中态，再 Ctrl+C
+        // 选中松手 → 立即取选区并弹浮条（豆包/钉钉式）
         setTimeout(() => {
           captureAndShowPalette(e.x, e.y).catch((err) => {
             console.log('[palette]', err && err.message ? err.message : err);
           });
-        }, 120);
+        }, 140);
       });
       // Esc：无副作用关闭浮条（focusable:false 收不到 keydown，走全局钩子）
       uIOhook.on('keydown', (e) => {
