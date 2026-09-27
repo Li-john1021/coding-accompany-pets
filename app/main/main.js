@@ -525,6 +525,7 @@ app.whenReady().then(() => {
   paint.register();
   createTray();
   createPetWindow();
+  try { if (petWin && !petWin.isDestroyed()) petWin.show(); } catch {}
   registerHotkey();
   // 置顶保活：别的置顶窗口弹出/全屏应用退出后 z 序可能压过宠物，定期把宠物顶回最上层。
   // moveTop 不抢焦点，不打断打字
@@ -666,7 +667,7 @@ function dismissPaletteIfVisible() {
 ipcMain.handle('v2p:palette-run', async (_e, { mode }) => {
   try {
     if (!lastSelection.text) return { ok: false, error: '没有选中的文本' };
-    const r = await pipeline.processText(lastSelection.text, mode === 'structure' ? 'structure' : 'optimize');
+    const r = await pipeline.processText(lastSelection.text, mode === 'structure' ? 'structure' : 'optimize', setState);
     const cfg = config.load();
     const copyOnly = !!cfg.writeBackCopyOnly;
     const { insertText } = require('./insert');

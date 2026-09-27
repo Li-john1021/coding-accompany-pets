@@ -33,7 +33,15 @@ $('#btn-more').addEventListener('click', (e) => {
 
 function setBusy(busy, text) {
   for (const id of ['btn-optimize', 'btn-structure', 'btn-close', 'btn-more']) {
-    $(id).disabled = busy;
+    const el = $(id);
+    el.disabled = busy;
+    if (!busy && el.dataset.html) {
+      el.innerHTML = el.dataset.html;
+      delete el.dataset.html;
+    } else if (busy && !el.dataset.html && (id === 'btn-optimize' || id === 'btn-structure')) {
+      el.dataset.html = el.innerHTML;
+      el.innerHTML = '<span class="spinner"></span>处理中';
+    }
   }
   status.style.display = text ? 'block' : 'none';
   status.textContent = text || '';
