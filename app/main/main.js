@@ -636,16 +636,61 @@ function showPaletteAt(x, y, preview, longText) {
   win.webContents.send('v2p:palette-show', { preview: String(preview || '').slice(0, 200), long: !!longText });
 }
 
+
+// -------- foreground process (terminal exclusion) --------
+function getForegroundProcessName() {
+  return new Promise((resolve) => {
+    const ps = [
+      'Add-Type -TypeDefinition @"',
+      'using System;',
+      'using System.Runtime.InteropServices;',
+      'public class V2PFg {',
+      '  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+      '  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);',
+      '}',
+      '"@',
+      '$h = [V2PFg]::GetForegroundWindow()',
+      '$procId = 0',
+      '[void][V2PFg]::GetWindowThreadProcessId($h, [ref]$procId)',
+      'if ($procId -gt 0) { (Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName }'
+    ].join('\n');
+    const b64 = Buffer.from(ps, 'utf16le').toString('base64');
+    require('child_process').execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-EncodedCommand', b64],
+      { timeout: 3000, windowsHide: true },
+      (err, stdout) => resolve(String(stdout || '').trim().toLowerCase())
+    );
+  });
+}
+
+const TERMINAL_RE = /^(windowsterminal|wt|cmd|powershell|pwsh|windowssystem32|conhost|wezterm|alacritty|hyper|cursorterminal|code)$/;
+function isTerminalProcess(name) {
+  return TERMINAL_RE.test(String(name || '').replace(/\.exe$/i, ''));
+}
+
+// 用户自己 Ctrl+C 复制意图：短窗口内不弹浮条
+let lastUserCopyAt = 0;
+
 async function captureAndShowPalette(screenX, screenY) {
   const cfg = config.load();
   if (!cfg.paletteEnabled) return;
   if (recordingActive) return;
+  if (Date.now() - lastUserCopyAt < 500) {
+    console.log('[palette] skip user-copy');
+    return;
+  }
+  const fg = await getForegroundProcessName();
+  if (isTerminalProcess(fg)) {
+    console.log('[palette] skip terminal:', fg || 'unknown');
+    return;
+  }
   const { text, oldClipboard, ok } = await readSelection();
   if (!ok || !text || !text.trim()) return;
   const minChars = Number(cfg.paletteMinChars) || 8;
   if (text.trim().length < minChars) return;
   lastSelection = { text, oldClipboard };
-  console.log('[palette] show len=' + text.length);
+  console.log('[palette] show len=' + text.length + ' fg=' + fg);
   // 2000 字内硬保证不提示；阈值再高也不能低于 2000
   const longHint = Math.max(2000, Number(cfg.paletteLongHint) || 8000);
   const longText = text.length > 2000 && text.length >= longHint;
@@ -843,19 +888,20 @@ function setMouseRecordHook() {
       // Esc：无副作用关闭浮条（focusable:false 收不到 keydown，走全局钩子）
       uIOhook.on('keydown', (e) => {
         if (e.keycode === 1 /* Escape */ || e.keycode === 27) {
-          if (dismissPaletteIfVisible()) console.log('[palette] Esc 关闭');
+          if (dismissPaletteIfVisible()) console.log('[palette] Esc close');
+        if (e.keycode === 46 && (e.ctrlKey || e.metaKey)) { lastUserCopyAt = Date.now(); dismissPaletteIfVisible(); }
         }
       });
       uIOhook.start();
       mouseHookOn = true;
-      console.log('[mouse] 全局鼠标钩子已启用');
+      console.log('[mouse] hook on');
     } catch (e) {
-      console.log('[mouse] 钩子启动失败:' + (e.message || e));
+      console.log('[mouse] hook fail:' + (e.message || e));
     }
   } else {
     try { require('uiohook-napi').uIOhook.stop(); } catch { /* 未启动过 */ }
     mouseHookOn = false;
-    console.log('[mouse] 全局鼠标钩子已关闭');
+    console.log('[mouse] hook off');
   }
 }
 

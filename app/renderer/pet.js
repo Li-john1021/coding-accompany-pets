@@ -285,7 +285,22 @@ window.v2p.onTriggerModeChanged(applyTriggerMode);
   } catch (e) { console.warn('[live2d] 启动加载失败，回退静态图', e); }
   if (!live2dOk) {
     const { dataUrl } = await window.v2p.petImage();
-    if (dataUrl) petImg.src = dataUrl;
+    if (dataUrl) {
+      petImg.src = dataUrl;
+    } else {
+      // 兜底：保证桌宠可见，避免透明空窗
+      try {
+        const c = document.createElement('canvas');
+        c.width = 240; c.height = 240;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#3a3d46';
+        ctx.beginPath(); ctx.arc(120, 120, 100, 0, Math.PI * 2); ctx.fill();
+        ctx.font = '120px serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('\uD83D\uDC31', 120, 130);
+        petImg.src = c.toDataURL('image/png');
+      } catch (e) { console.warn('[pet] fallback fail', e); }
+    }
   }
 })();
 
