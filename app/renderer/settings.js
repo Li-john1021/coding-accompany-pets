@@ -252,6 +252,8 @@ async function loadConfig() {
   $('#mouse-record').checked = cfg.mouseRecord === true;
   $('#enable-optimize').checked = !!cfg.enableOptimize;
   $('#preview-enabled').checked = !!cfg.previewEnabled;
+  $('#structure-no-think').checked = cfg.structureDisableThinking !== false;
+  $('#optimize-no-think').checked = cfg.optimizeDisableThinking !== false;
   $('#palette-enabled').checked = cfg.paletteEnabled !== false;
   $('#write-back-copy-only').checked = !!cfg.writeBackCopyOnly;
   $('#clipboard-restore').checked = !!cfg.clipboardRestore;
@@ -332,6 +334,8 @@ function wireEvents() {
       enableStructure: $('#enable-structure').checked,
       enableOptimize: $('#enable-optimize').checked,
       previewEnabled: $('#preview-enabled').checked,
+      structureDisableThinking: $('#structure-no-think').checked,
+      optimizeDisableThinking: $('#optimize-no-think').checked,
       paletteEnabled: $('#palette-enabled').checked,
       writeBackCopyOnly: $('#write-back-copy-only').checked,
       clipboardRestore: $('#clipboard-restore').checked,

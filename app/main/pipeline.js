@@ -81,8 +81,9 @@ function looksLikeDirectAnswer(input, output) {
   return false;
 }
 
-async function chatOnce(llm, sys, userText) {
-  return chatCompletion(llm, ensureRedline(sys), userText);
+async function chatOnce(llm, sys, userText, mode) {
+  const cfg = config.load();
+  return chatCompletion(llm, ensureRedline(sys), userText, { mode, cfg });
 }
 
 // 对文本按模式整理（语音 / 选区 / 预览共用）
@@ -99,12 +100,13 @@ async function processText(raw, mode = 'default', onState = () => {}) {
 
   if (resolved === 'structure') {
     try {
-      const text = await chatOnce(llm, STRUCTURE_ONLY_PROMPT, raw);
+      const text = await chatOnce(llm, STRUCTURE_ONLY_PROMPT, raw, 'structure');
       if (looksLikeDirectAnswer(raw, text)) {
         const retry = await chatOnce(
           llm,
           STRUCTURE_ONLY_PROMPT + '\n\n# 本次附加约束\n- 你刚才违规输出了非改写内容。本次只输出整理后的文本，禁止任何回答。',
-          raw
+          raw,
+          'structure'
         );
         if (!looksLikeDirectAnswer(raw, retry)) return { text: retry, mode: 'structure', degraded: false, note: '' };
         return { text: raw, mode: 'none', degraded: true, note: '已降级为原文' };
@@ -121,18 +123,19 @@ async function processText(raw, mode = 'default', onState = () => {}) {
     sys += '\n\n# 本次附加约束\n- 不强制分节与编号结构，可保持自然连贯；需要给 AI 用时仍可按需分节。';
   }
   try {
-    let text = await chatOnce(llm, sys, raw);
+    let text = await chatOnce(llm, sys, raw, 'optimize');
     if (looksLikeDirectAnswer(raw, text)) {
       text = await chatOnce(
         llm,
         sys + '\n\n# 本次附加约束\n- 你刚才违规回答了问题。本次只输出改写后的提示词/文本本体，禁止任何答案。',
-        raw
+        raw,
+        'optimize'
       );
     }
     if (looksLikeDirectAnswer(raw, text)) {
       // 降级仅结构化
       try {
-        const s = await chatOnce(llm, STRUCTURE_ONLY_PROMPT, raw);
+        const s = await chatOnce(llm, STRUCTURE_ONLY_PROMPT, raw, 'structure');
         if (!looksLikeDirectAnswer(raw, s)) {
           return { text: s, mode: 'structure', degraded: true, note: '优化跑偏，已降级为结构化' };
         }
@@ -142,7 +145,7 @@ async function processText(raw, mode = 'default', onState = () => {}) {
     return { text, mode: 'optimize', degraded: false, note: '' };
   } catch {
     try {
-      const s = await chatOnce(llm, STRUCTURE_ONLY_PROMPT, raw);
+      const s = await chatOnce(llm, STRUCTURE_ONLY_PROMPT, raw, 'structure');
       if (!looksLikeDirectAnswer(raw, s)) {
         return { text: s, mode: 'structure', degraded: true, note: '优化失败，已降级为结构化' };
       }

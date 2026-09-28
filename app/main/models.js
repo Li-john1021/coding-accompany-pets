@@ -14,13 +14,19 @@ function joinUrl(baseUrl, suffix) {
 // 思考模式控制:混合推理模型(MiMo v2.5 等)默认开思考,每次整理先烧
 // 一两百个 reasoning tokens(实测 4~8s)。noThinking: true=强制关,
 // false=保留, undefined=自动(仅 MiMo 域名自动关)。
-function shouldDisableThinking(provider) {
-  if (provider.noThinking === true) return true;
-  if (provider.noThinking === false) return false;
-  return /xiaomimimo/i.test(provider.baseUrl || '');
+function shouldDisableThinking(provider, mode, cfg) {
+  // 模式级强制关思考（结构化/优化各自 checkbox，默认开=关思考优先速度）
+  if (mode === 'structure' && cfg && cfg.structureDisableThinking === true) return true;
+  if (mode === 'optimize' && cfg && cfg.optimizeDisableThinking === true) return true;
+  if (provider && provider.noThinking === true) return true;
+  if (provider && provider.noThinking === false && !mode) return false;
+  if (provider && provider.noThinking === false) return false;
+  return /xiaomimimo/i.test((provider && provider.baseUrl) || '');
 }
 
-async function chatCompletion(provider, systemPrompt, userText) {
+async function chatCompletion(provider, systemPrompt, userText, opts) {
+  const mode = opts && opts.mode;
+  const cfg = opts && opts.cfg;
   const url = joinUrl(provider.baseUrl, '/chat/completions');
   const body = {
     model: provider.model,
@@ -30,7 +36,7 @@ async function chatCompletion(provider, systemPrompt, userText) {
     ],
     stream: false
   };
-  if (shouldDisableThinking(provider)) {
+  if (shouldDisableThinking(provider, mode, cfg)) {
     // GLM 式与 OpenAI 式各带一份,兼容多厂商;不认识的字段会被大多数兼容端点忽略
     body.thinking = { type: 'disabled' };
     body.reasoning_effort = 'none';
@@ -191,4 +197,4 @@ async function validateAsr(provider) {
   }
 }
 
-module.exports = { chatCompletion, transcribe, transcribeSmart, validateLlm, validateAsr };
+module.exports = { chatCompletion, transcribe, transcribeSmart, validateLlm, validateAsr, shouldDisableThinking };

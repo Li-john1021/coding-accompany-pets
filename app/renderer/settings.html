@@ -32,8 +32,10 @@
       <div class="form-row">
         <label>输出处理（两个独立开关，默认都不勾 = 不处理）</label>
         <label class="chk"><input type="checkbox" id="enable-structure" /> 结构化整理：把口语组织成清晰分节/编号</label>
+        <label class="chk"><input type="checkbox" id="structure-no-think" /> 结构化：强制关闭思考模式（更快）</label>
         <label class="chk"><input type="checkbox" id="enable-optimize" /> 提示词优化：补全角色/约束/输出格式等要素</label>
-        <span class="hint">两项都关闭 = 不处理（纯 ASR 转录 / 原文），不调用文字模型</span>
+        <label class="chk"><input type="checkbox" id="optimize-no-think" /> 提示词优化：强制关闭思考模式（更快）</label>
+        <span class="hint">两项都关闭 = 不处理（纯 ASR 转录 / 原文），不调用文字模型。思考模式默认关闭以优先速度；若优化质量不够可取消「优化：强制关闭思考」。</span>
       </div>
       <div class="form-row">
         <label>语音预览卡</label>

@@ -58,6 +58,8 @@ function defaultConfig() {
     enableStructure: false, // 默认不勾：仅结构化
     enableOptimize: false,  // 默认不勾：提示词优化（皆不勾 = 不处理）
     previewEnabled: false,  // 语音预览卡默认关闭
+    structureDisableThinking: true,  // 结构化强制关思考（默认勾）
+    optimizeDisableThinking: true,   // 提示词优化强制关思考（默认勾）
     writeBackCopyOnly: false,      // 选区回写：false=替换选区
     clipboardRestore: false,       // 处理后是否恢复原剪贴板
     paletteEnabled: true,          // 选中浮条总开关
