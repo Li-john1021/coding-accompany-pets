@@ -54,10 +54,19 @@ async function chatCompletion(provider, systemPrompt, userText, opts) {
     throw new Error(`LLM 调用失败 HTTP ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
   }
   const data = await resp.json();
-  const text = data?.choices?.[0]?.message?.content;
-  if (!text) throw new Error('LLM 返回为空');
+  const msg = data?.choices?.[0]?.message || {};
+  // 有的端点把思考写进 reasoning_content / thinking，content 才是正文；都拼进 content 时剥掉
+  let text = msg.content;
+  if (typeof text !== 'string') {
+    if (Array.isArray(text)) {
+      text = text.map((p) => (p && (p.text || p.content)) || '').join('');
+    } else {
+      text = msg.reasoning_content || msg.thinking || '';
+    }
+  }
+  if (!text || !String(text).trim()) throw new Error('LLM 返回为空');
   console.log(`[llm] ${Date.now() - t0}ms completion_tokens=${data?.usage?.completion_tokens ?? '?'} reasoning=${data?.usage?.completion_tokens_details?.reasoning_tokens ?? 0}`);
-  return text.trim();
+  return String(text).trim();
 }
 
 // ---------- ASR：OpenAI 兼容 /audio/transcriptions（multipart 手写，无第三方依赖） ----------

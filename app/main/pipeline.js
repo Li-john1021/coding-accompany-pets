@@ -34,6 +34,26 @@ function resolveMode(mode, cfg = config.load()) {
   return 'none';
 }
 
+// 模型把思考/规则复述当成正文（英文 meta）
+const FILLER_RE = /^(嗯+|啊+|哦+|噢+|呃+|额+|哎+|唉+|哈+|呵+|呐+|嘛+|吧+|啦+|[，,。.、\s])+$/;
+
+function stripFillers(raw) {
+  return String(raw || '')
+    .split(/[\n。.！!？?；;]/)
+    .map((x) => x.replace(/(嗯+|啊+|哦+|噢+|呃+|额+|哎+|唉+|那个|就是说|然后的话)/g, '').trim())
+    .filter(Boolean)
+    .join('。');
+}
+
+function looksLikeMetaReasoning(output) {
+  const out = String(output || '').trim();
+  if (!out) return true;
+  if (/^(the user|the instruction|according to|reasoning:|thinking:|hmm,?|wait,?)/i.test(out)) return true;
+  if (/filler (word|particle)|output empty|only output final text|remove filler/i.test(out)) return true;
+  if (/^好的[，,]?\s*以下是(我的|这段)(思考|推理|分析)/.test(out)) return true;
+  return false;
+}
+
 // 启发式：输出是否像「直接回答了问题」而非改写
 // 优先级：元话语 → 代码块 → 问句+回答体（先于任务框豁免）→ 形态豁免 → 膨胀
 function looksLikeDirectAnswer(input, output) {
@@ -91,6 +111,10 @@ async function chatOnce(llm, sys, userText, mode) {
 async function processText(raw, mode = 'default', onState = () => {}) {
   const cfg = config.load();
   const resolved = resolveMode(mode, cfg);
+  // 纯语气词：不调模型
+  if (!stripFillers(raw)) {
+    return { text: '', mode: 'none', degraded: false, note: '仅语气词，无实质内容' };
+  }
   if (resolved === 'none') {
     return { text: raw, mode: 'none', degraded: false, note: '' };
   }
@@ -190,4 +214,4 @@ async function run(audioBuffer, mime, onState, options = {}) {
   }
 }
 
-module.exports = { run, findProvider, processText, resolveMode, looksLikeDirectAnswer };
+module.exports = { run, findProvider, processText, resolveMode, looksLikeDirectAnswer, looksLikeMetaReasoning, stripFillers };
