@@ -60,6 +60,7 @@ function looksLikeDirectAnswer(input, output) {
   const inp = String(input || '').trim();
   const out = String(output || '').trim();
   if (!out) return true;
+  if (looksLikeMetaReasoning(out)) return true;
 
   // 元话语：含裸形态（整段就叫「好的」）与无标点前缀
   if (/^(好的|当然|当然可以|没问题)([，,。：:\s！!]|$)/.test(out)) return true;
