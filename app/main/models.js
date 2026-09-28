@@ -19,7 +19,6 @@ function shouldDisableThinking(provider, mode, cfg) {
   if (mode === 'structure' && cfg && cfg.structureDisableThinking === true) return true;
   if (mode === 'optimize' && cfg && cfg.optimizeDisableThinking === true) return true;
   if (provider && provider.noThinking === true) return true;
-  if (provider && provider.noThinking === false && !mode) return false;
   if (provider && provider.noThinking === false) return false;
   return /xiaomimimo/i.test((provider && provider.baseUrl) || '');
 }

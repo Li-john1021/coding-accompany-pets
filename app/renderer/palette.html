@@ -7,66 +7,102 @@
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
     html, body {
       background: transparent;
-      font: 13px/1.4 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      font: 12px/1.35 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
       overflow: hidden;
+      color: #111;
     }
+    /* 竖排极简：白底黑字，整体更小 */
     #bar {
       display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 8px;
-      background: #1e1f24;
-      color: #e8eaed;
-      border: 1px solid #3c3f46;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 2px;
+      padding: 6px;
+      background: #fff;
+      color: #111;
+      border: 1px solid rgba(0,0,0,.12);
       border-radius: 10px;
-      box-shadow: 0 8px 24px rgba(0,0,0,.35);
-      width: max-content;
-      max-width: 420px;
+      box-shadow: 0 6px 20px rgba(0,0,0,.18);
+      width: 132px;
     }
     button {
       border: 0;
       border-radius: 7px;
-      padding: 6px 10px;
-      background: #2c2e34;
+      padding: 7px 10px;
+      background: transparent;
       color: inherit;
       cursor: pointer;
       font: inherit;
+      text-align: left;
       white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
-    button:hover { background: #3a3d46; }
-    button.primary { background: #4f7cff; color: #fff; }
-    button.primary:hover { background: #6b91ff; }
-    button.ghost { background: transparent; opacity: .85; }
+    button:hover { background: #f2f3f5; }
+    button.primary { font-weight: 600; }
+    button:disabled { opacity: .55; cursor: default; }
     #hint {
       display: none;
-      max-width: 240px;
-      font-size: 11px;
-      opacity: .75;
-      padding: 0 4px;
+      font-size: 10px;
+      opacity: .7;
+      padding: 2px 4px 0;
     }
     #status {
       display: none;
-      max-width: 220px;
-      font-size: 12px;
-      padding: 0 4px;
+      font-size: 11px;
+      padding: 2px 4px 0;
+      opacity: .85;
     }
-    #menu { display: none; position: absolute; }
-    .spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; vertical-align: -2px; margin-right: 4px; }
+    .divider {
+      height: 1px;
+      background: rgba(0,0,0,.08);
+      margin: 2px 4px;
+    }
+    .spinner {
+      width: 11px;
+      height: 11px;
+      border: 2px solid rgba(0,0,0,.15);
+      border-top-color: #222;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex: 0 0 auto;
+    }
+    .dots::after {
+      content: "…";
+      animation: blink 1s steps(2, end) infinite;
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes blink { 50% { opacity: .25; } }
+    #more-menu {
+      display: none;
+      position: absolute;
+      left: 100%;
+      top: 0;
+      margin-left: 6px;
+      background: #fff;
+      border: 1px solid rgba(0,0,0,.12);
+      border-radius: 8px;
+      box-shadow: 0 6px 20px rgba(0,0,0,.12);
+      padding: 4px;
+      width: 140px;
+    }
+    #more-menu button { width: 100%; }
   </style>
 </head>
 <body>
   <div id="bar">
-    <button id="btn-optimize" class="primary" title="补全角色/约束/输出格式">✨ 优化提示词</button>
-    <button id="btn-structure" title="只整理断句编号，不补要素">≡ 结构化整理</button>
-    <button id="btn-more" class="ghost" title="更多">⋯</button>
-    <button id="btn-close" class="ghost" title="关闭（不处理）">×</button>
+    <button id="btn-structure" class="primary" title="只整理断句编号，不补要素">≡ 结构化整理</button>
+    <button id="btn-optimize" title="补全角色/约束/输出格式">✨ 优化提示词</button>
+    <div class="divider"></div>
+    <button id="btn-more" title="更多">⋯</button>
+    <button id="btn-close" title="关闭（不处理）">×</button>
     <div id="hint"></div>
     <div id="status"></div>
     <div id="more-menu">
-      <button id="btn-copy-raw" class="ghost">复制原文</button>
-      <button id="btn-open-app" class="ghost">打开 Voice2Prompt</button>
-      <button id="btn-feedback" class="ghost">反馈</button>
+      <button id="btn-copy-raw">复制原文</button>
+      <button id="btn-open-app">打开 Voice2Prompt</button>
+      <button id="btn-feedback">反馈</button>
     </div>
   </div>
   <script src="palette.js"></script>

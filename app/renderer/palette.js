@@ -1,46 +1,35 @@
-// palette.js — 选中浮条：仅展示与点选，绝不自动调模型
+// palette.js — 选中浮条：竖排极简，仅展示与点选，绝不自动调模型
 const $ = (s) => document.querySelector(s);
-const bar = $('#bar');
 const hint = $('#hint');
 const status = $('#status');
 const moreMenu = $('#more-menu');
-
-let lastPreview = '';
 
 function hideMenu() {
   moreMenu.style.display = 'none';
 }
 
 function showMenu() {
-  moreMenu.style.display = 'flex';
-  moreMenu.style.gap = '6px';
-  moreMenu.style.position = 'absolute';
-  moreMenu.style.top = '100%';
-  moreMenu.style.left = '8px';
-  moreMenu.style.marginTop = '6px';
-  moreMenu.style.padding = '6px';
-  moreMenu.style.background = '#2c2e34';
-  moreMenu.style.borderRadius = '8px';
-  moreMenu.style.flexDirection = 'column';
-  moreMenu.style.alignItems = 'stretch';
+  moreMenu.style.display = 'block';
 }
 
 $('#btn-more').addEventListener('click', (e) => {
   e.stopPropagation();
-  if (moreMenu.style.display === 'none' || !moreMenu.style.display) showMenu();
-  else hideMenu();
+  if (moreMenu.style.display === 'block') hideMenu();
+  else showMenu();
 });
 
-function setBusy(busy, text) {
+function setBusy(busy, text, activeId) {
   for (const id of ['btn-optimize', 'btn-structure', 'btn-close', 'btn-more']) {
     const el = $(id);
+    if (!el) continue;
     el.disabled = busy;
-    if (!busy && el.dataset.html) {
+    if (busy && id === activeId) {
+      if (!el.dataset.html) el.dataset.html = el.innerHTML;
+      const label = id === 'btn-structure' ? '结构化中' : '优化中';
+      el.innerHTML = '<span class="spinner"></span><span class="dots">' + label + '</span>';
+    } else if (!busy && el.dataset.html) {
       el.innerHTML = el.dataset.html;
       delete el.dataset.html;
-    } else if (busy && !el.dataset.html && (id === 'btn-optimize' || id === 'btn-structure')) {
-      el.dataset.html = el.innerHTML;
-      el.innerHTML = '<span class="spinner"></span>处理中';
     }
   }
   status.style.display = text ? 'block' : 'none';
@@ -48,12 +37,13 @@ function setBusy(busy, text) {
 }
 
 async function runMode(mode) {
-  setBusy(true, '处理中…');
+  const activeId = mode === 'structure' ? 'btn-structure' : 'btn-optimize';
+  setBusy(true, mode === 'structure' ? '结构化处理中…' : '提示词优化中…', activeId);
   try {
     const res = await window.v2p.paletteRun(mode);
     if (res && res.ok) {
       setBusy(false, res.note || (res.degraded ? '已降级处理' : '完成'));
-      setTimeout(() => window.v2p.paletteDismiss('done'), 600);
+      setTimeout(() => window.v2p.paletteDismiss('done'), 700);
     } else {
       setBusy(false, (res && res.error) || '失败，未改动文本');
     }
@@ -83,11 +73,9 @@ $('#btn-feedback').addEventListener('click', () => {
   hideMenu();
 });
 
-// 主进程推送：show({ preview, long }) / reset
 window.v2p.onPaletteShow((p) => {
-  lastPreview = (p && p.preview) || '';
   hint.style.display = p && p.long ? 'block' : 'none';
-  hint.textContent = p && p.long ? '较长，建议进 App 处理（仍可点上面按钮）' : '';
+  hint.textContent = p && p.long ? '较长，建议进 App 处理' : '';
   setBusy(false, '');
   hideMenu();
 });
