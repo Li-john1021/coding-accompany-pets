@@ -1,10 +1,12 @@
 # Palette Trigger Compatibility
 
-This implementation uses passive Windows UI Automation only. A candidate selection is accepted only when both mouse endpoints resolve to the same enabled `Edit` element, its `ValuePattern` explicitly reports `IsReadOnly = false`, and its `TextPattern` returns the same non-empty selected text at both endpoints. The selected process name must also be available and must not match a known terminal host. Action-time checks additionally require the same focused Edit; paste checks foreground process, focused Edit identity, and selected text immediately before sending Ctrl+V.
+Selection probing has two passive Windows paths. Standard native Win32 controls are accepted only when both points hit the same enabled, writable class `Edit` HWND and `EM_GETSEL` plus bounded Unicode `WM_GETTEXT` reads the same non-empty selected text. Other providers must expose a UIA `Edit`, writable `ValuePattern`, and `TextPattern` selection; the same element identity and text must match at both endpoints. The process name must be available and must not match a denied shell, terminal, or PDF process. Action-time checks retain the foreground/focused target and selected text immediately before Ctrl+V.
 
 ## Capability-Based Support
 
-The implementation can support a control/provider only when it exposes all required UIA patterns and stable identities. Native Win32 Edit/RichEdit, WinForms text boxes, WPF editors, and browser inputs are candidates, not experimentally confirmed support claims. Each provider must be verified in its actual application and Windows version.
+The native Win32 `Edit` path was exercised on an isolated Windows fixture with a Unicode selection: endpoint HWNDs matched, selected-text hash matched, a guarded replacement succeeded, and a changed focused target was canceled without writing into the newly focused Edit. This is evidence for the standard Win32 Edit class, not a compatibility claim for all applications or other native control classes. WinForms wrapper controls that do not expose UIA `Edit` are denied.
+
+WPF TextBox is explicitly unsupported on the tested Windows provider: `TextPatternRange.GetText` crashed its PowerShell child with `0xC0000005`. The production probe recognizes WPF and fails closed before making that call. Browser editable inputs remain candidates only when UIA safely exposes the required patterns; browser cases were not tested.
 
 Browser `contenteditable` is conditional. It is eligible only if UIA hit testing returns an `Edit` and the provider reports the required non-readonly value and non-empty TextPattern selection without side effects. A DOM text node, `Document`, `Text`, or missing/ambiguous provider evidence is denied. No browser DOM scripting or clipboard fallback is used.
 
@@ -16,6 +18,6 @@ The terminal list is not a universal classifier. Integrated terminals and custom
 
 ## Verification Status
 
-Pure-JavaScript eligibility, parsing, async guard, and source invariants are covered by unit tests. Generated PowerShell probe and paste-guard scripts pass the local PowerShell parser. These checks do not exercise UIA provider behavior, actual text selection, foreground changes, or end-to-end paste delivery.
+Pure-JavaScript eligibility and async guards are covered by unit tests. The Windows runtime fixture exercised native Edit selection, read-only/object/background/cross-control denials, guarded replacement, target-switch cancellation, and clipboard text restoration. The WPF TextPattern crash and fail-closed behavior were also observed. Browser editable/read-only behavior, ordinary Ctrl+C, recording, IME-open restoration, and voice workflows remain unverified.
 
 The palette window still uses Electron `focusable: false` and `showInactive()`. Runtime verification that clicking it preserves the original foreground/focus state is pending. If the original target is no longer active when processing or paste is attempted, the operation is canceled. A narrow race remains after the final focus/selection check and before `SendInput` takes effect.

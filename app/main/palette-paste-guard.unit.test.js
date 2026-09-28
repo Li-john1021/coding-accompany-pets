@@ -3,9 +3,15 @@ const assert = require('assert');
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { buildPasteTargetGuard, REQUIRE_TARGET, RESTORE_SHIFT_IF_TARGET } = require('./palette-paste-guard');
+const {
+  buildPasteTargetGuard,
+  REQUIRE_TARGET,
+  RESTORE_SHIFT_IF_TARGET,
+  REQUIRE_NATIVE_TARGET,
+  RESTORE_SHIFT_IF_NATIVE_TARGET
+} = require('./palette-paste-guard');
 
-const sample = { controlId: '123|456|7.8.9', text: 'selected text 漢字' };
+const sample = { provider: 'uia-textpattern', controlId: '123|456|7.8.9', text: 'selected text 漢字' };
 const script = buildPasteTargetGuard(sample);
 assert.ok(script.includes('$foregroundPid -eq 123'));
 assert.ok(script.includes("$focusedId -eq '123|456|7.8.9'"));
@@ -26,6 +32,18 @@ assert.equal(buildPasteTargetGuard({ controlId: 'bad', text: 'text' }), null);
 assert.equal(buildPasteTargetGuard({ controlId: '1|2|3', text: ' ' }), null);
 assert.ok(REQUIRE_TARGET.includes('exit 20'));
 assert.ok(RESTORE_SHIFT_IF_TARGET.includes('if (Test-V2PPasteTargetIdentity)'));
+const nativeSample = {
+  provider: 'win32-edit', controlId: '123|456|win32-edit', nativeHandle: 456, processId: 123,
+  text: 'selected text 漢字'
+};
+const nativeScript = buildPasteTargetGuard(nativeSample);
+assert.ok(nativeScript.includes('function Test-V2PNativePasteTargetIdentity'));
+assert.ok(nativeScript.includes('function Test-V2PNativePasteTarget'));
+assert.ok(nativeScript.includes('[V2PNativeEdit]::ReadSelectedText'));
+assert.ok(REQUIRE_NATIVE_TARGET.includes('Test-V2PNativePasteTarget') && REQUIRE_NATIVE_TARGET.includes('exit 20'));
+assert.ok(RESTORE_SHIFT_IF_NATIVE_TARGET.includes('if (Test-V2PNativePasteTargetIdentity)'));
+assert.ok(!RESTORE_SHIFT_IF_NATIVE_TARGET.includes('Test-V2PNativePasteTarget)'));
+assert.equal(buildPasteTargetGuard({ ...nativeSample, nativeHandle: 457 }), null, 'native identity fields must agree');
 
 const insert = fs.readFileSync(path.join(__dirname, 'insert.js'), 'utf8');
 const bodyStart = insert.indexOf('const script = `');
@@ -77,6 +95,18 @@ Write-Output 'PASS_RUNTIME_GUARD_FAIL_CLOSED'
   assert.ok(runtimeOutput.includes('PASS_RUNTIME_UIA_TYPES'));
   assert.ok(runtimeOutput.includes('PASS_RUNTIME_GUARD_FAIL_CLOSED'));
   console.log('PASS new PowerShell process resolves UIA types and executes guard');
+
+  const nativeRuntime = `
+${nativeScript}
+if (Test-V2PNativePasteTargetIdentity) { throw 'native identity guard unexpectedly accepted invalid target' }
+if (Test-V2PNativePasteTarget) { throw 'native selection guard unexpectedly accepted invalid target' }
+Write-Output 'PASS_RUNTIME_NATIVE_GUARD_FAIL_CLOSED'
+`;
+  const nativeEncoded = Buffer.from(nativeRuntime, 'utf16le').toString('base64');
+  const nativeRuntimeOutput = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', nativeEncoded],
+    { encoding: 'utf8', stdio: 'pipe' });
+  assert.ok(nativeRuntimeOutput.includes('PASS_RUNTIME_NATIVE_GUARD_FAIL_CLOSED'));
+  console.log('PASS native paste target guard runtime smoke');
 } else {
   console.log('SKIP PowerShell parser/runtime smoke (non-Windows host)');
 }

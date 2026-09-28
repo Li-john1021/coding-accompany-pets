@@ -1,6 +1,32 @@
 // Builds passive target checks for guarded palette key injection.
+const { buildNativeEditPowerShell } = require('./win32-edit');
+
+function buildNativePasteTargetGuard(target) {
+  const match = /^(\d+)\|(\d+)\|win32-edit$/.exec(String(target.controlId || ''));
+  const processId = Number(target.processId), nativeHandle = Number(target.nativeHandle);
+  if (!match || !Number.isInteger(processId) || !Number.isSafeInteger(nativeHandle) ||
+      Number(match[1]) !== processId || Number(match[2]) !== nativeHandle || nativeHandle <= 0) return null;
+  const expectedText = Buffer.from(target.text, 'utf8').toString('base64');
+  return `
+${buildNativeEditPowerShell()}
+function Test-V2PNativePasteTargetIdentity {
+  try { return [V2PNativeEdit]::IsFocusedTarget([IntPtr]${nativeHandle}, [uint32]${processId}) } catch { return $false }
+}
+function Test-V2PNativePasteTarget {
+  try {
+    if (-not (Test-V2PNativePasteTargetIdentity)) { return $false }
+    $selected = [V2PNativeEdit]::ReadSelectedText([IntPtr]${nativeHandle})
+    $expected = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${expectedText}'))
+    return ($selected -ceq $expected)
+  } catch { return $false }
+}
+`;
+}
+
 function buildPasteTargetGuard(target) {
   if (!target || typeof target.text !== 'string' || !target.text.trim()) return null;
+  if (target.provider === 'win32-edit') return buildNativePasteTargetGuard(target);
+  if (target.provider !== 'uia-textpattern') return null;
   const match = /^(\d+)\|(\d+)\|([\d.]+)$/.exec(String(target.controlId || ''));
   if (!match) return null;
   const expectedText = Buffer.from(target.text, 'utf8').toString('base64');
@@ -63,5 +89,13 @@ function Test-V2PPasteTarget {
 
 const REQUIRE_TARGET = `if (-not (Test-V2PPasteTarget)) { Write-Output 'V2P_CANCEL'; exit 20 }`;
 const RESTORE_SHIFT_IF_TARGET = `try { if (Test-V2PPasteTargetIdentity) { [V2PPaste]::TapShift() } } catch { }`;
+const REQUIRE_NATIVE_TARGET = `if (-not (Test-V2PNativePasteTarget)) { Write-Output 'V2P_CANCEL'; exit 20 }`;
+const RESTORE_SHIFT_IF_NATIVE_TARGET = `try { if (Test-V2PNativePasteTargetIdentity) { [V2PPaste]::TapShift() } } catch { }`;
 
-module.exports = { buildPasteTargetGuard, REQUIRE_TARGET, RESTORE_SHIFT_IF_TARGET };
+module.exports = {
+  buildPasteTargetGuard,
+  REQUIRE_TARGET,
+  RESTORE_SHIFT_IF_TARGET,
+  REQUIRE_NATIVE_TARGET,
+  RESTORE_SHIFT_IF_NATIVE_TARGET
+};

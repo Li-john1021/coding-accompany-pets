@@ -714,7 +714,8 @@ async function captureAndShowPalette(start, end, screenX, screenY, gestureId) {
   }
   const paletteSelection = {
     id: gestureId, start, end, controlId: selection.controlId,
-    text: selection.text, processName: selection.processName
+    nativeHandle: selection.nativeHandle, processId: selection.processId,
+    provider: selection.provider, text: selection.text, processName: selection.processName
   };
   activePaletteSelection = paletteSelection;
   paletteDebugLog('SHOW_BAR proc=' + selection.processName + ' len=' + selection.text.length);

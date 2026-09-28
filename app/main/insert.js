@@ -8,7 +8,13 @@
 // -Command 传参经过双层解析会把引号拆进按键流。
 const { clipboard } = require('electron');
 const { execFile } = require('child_process');
-const { buildPasteTargetGuard, REQUIRE_TARGET, RESTORE_SHIFT_IF_TARGET } = require('./palette-paste-guard');
+const {
+  buildPasteTargetGuard,
+  REQUIRE_TARGET,
+  RESTORE_SHIFT_IF_TARGET,
+  REQUIRE_NATIVE_TARGET,
+  RESTORE_SHIFT_IF_NATIVE_TARGET
+} = require('./palette-paste-guard');
 
 // true=注入成功（按键发出去了；目标是否受理无法检测，交给 copiedOnly 兜底语义）
 function pasteViaSendInput(target) {
@@ -19,8 +25,16 @@ function pasteViaSendInput(target) {
     if (target) {
       targetGuard = buildPasteTargetGuard(target);
       if (!targetGuard) { resolve('cancelled'); return; }
-      requireTarget = REQUIRE_TARGET;
-      restoreShift = RESTORE_SHIFT_IF_TARGET;
+      if (target.provider === 'win32-edit') {
+        requireTarget = REQUIRE_NATIVE_TARGET;
+        restoreShift = RESTORE_SHIFT_IF_NATIVE_TARGET;
+      } else if (target.provider === 'uia-textpattern') {
+        requireTarget = REQUIRE_TARGET;
+        restoreShift = RESTORE_SHIFT_IF_TARGET;
+      } else {
+        resolve('cancelled');
+        return;
+      }
     }
     const script = `
 Start-Sleep -Milliseconds 100

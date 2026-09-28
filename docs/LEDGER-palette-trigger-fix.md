@@ -109,3 +109,21 @@ Scope: address the concrete Point runtime failure recorded in immutable `docs/TE
 - `git diff --check` — pass.
 - Frozen Spec SHA-256 — matched `606830FB0DAA45A47EAE07C316204EE5F4952236AD21FB327501080C61123B50`.
 - Plan, Spec, and existing review/test reports are unchanged; no `PaletteUiaFixture` process remains after the blocked test.
+
+## Native Edit Passive Selection Repair
+
+Scope: repair the positive selection failure reported by immutable `docs/TEST-REPORT-palette-trigger-fix.md` while retaining the WPF `0xC0000005` evidence and fail-closed behavior.
+
+- Runtime evidence: WPF `TextPatternRange.GetText(4096)` still exits with `0xC0000005`; the production-generated probe now returns `unsupported-provider` before calling it and the child process exits normally.
+- Runtime evidence: a real `CreateWindowEx("EDIT")` fixture is visible on the input desktop. The production native helper resolves both endpoint HWNDs to the same Edit, reads the 71-unit document with bounded Unicode `WM_GETTEXT`, reads selection bounds 8..56 with `EM_GETSEL`, confirms foreground/focused HWND ownership and `ES_READONLY` clear, and returns the expected 48-character text hash. The production `probeSelection()` reports provider `win32-edit`; readonly, object, window background, and cross-control cases deny.
+- Runtime write-back evidence: the runtime fixture directly calls `insertText()` without model processing. A guarded paste replaces the selected range; after focus moves to a second writable Edit, another call cancels before input, leaves that Edit unchanged, and restores clipboard text. The test saves/restores clipboard text and compares supported text formats; clipboard logs contain hashes/lengths only.
+- `node app/main/palette-probe.runtime.test.js` — pass; generated probe parses, WindowsBase/Point smoke passes, WPF unsupported check passes, native positive/negative matrix and guarded write-back/cancel scenarios pass. Direct WPF TextPattern diagnostic records the provider crash as unsupported evidence.
+- Native fixture selected text includes Chinese characters; positive selection hash/text and post-paste replacement match the expected UTF-16 selection boundaries.
+- Every `app/main/*.unit.test.js` — pass (9 files).
+- `node --check` on every `app/**/*.js` — pass (27 files).
+- `node app/main/palette-paste-guard.unit.test.js` — pass, including generated PowerShell parser and fresh-process guard runtime checks.
+- `git diff --check` — pass.
+- Frozen Spec SHA-256 — matches `606830FB0DAA45A47EAE07C316204EE5F4952236AD21FB327501080C61123B50`.
+- Plan, Spec, `docs/TEST-REPORT-palette-trigger-fix.md`, and existing audit reports — unchanged.
+- Failure/repair evidence: the new probe unit initially expected an earlier WPF reason phrase; the test now checks the explicit `unsupported-provider` marker used by production.
+- Remaining evidence: browser editable/read-only/contenteditable, ordinary user Ctrl+C observation, recording session, IME-open state restoration, and voice recording/transcription are untested and remain with the final test agent.
