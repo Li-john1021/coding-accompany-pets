@@ -20,8 +20,8 @@ $('#btn-more').addEventListener('click', (e) => {
 
 function setBusy(busy, text, activeId) {
   for (const id of ['btn-optimize', 'btn-structure', 'btn-close', 'btn-more']) {
-    const el = $(id);
-    if (!el) continue;
+    const el = $('#' + id);
+    if (!el) throw new Error('missing #' + id);
     el.disabled = busy;
     if (busy && id === activeId) {
       if (!el.dataset.html) el.dataset.html = el.innerHTML;

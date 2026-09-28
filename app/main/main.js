@@ -601,8 +601,8 @@ const { shouldShowPalette } = require('./palette-gate');
 function createPaletteWindow() {
   if (paletteWin && !paletteWin.isDestroyed()) return paletteWin;
   paletteWin = new BrowserWindow({
-    width: 480,
-    height: 72,
+    width: 160,
+    height: 190,
     frame: false,
     transparent: true,
     resizable: false,
@@ -813,7 +813,7 @@ let pendingPreview = null;
 function createPreviewWindow() {
   if (previewWin && !previewWin.isDestroyed()) return previewWin;
   previewWin = new BrowserWindow({
-    width: 480,
+    width: 160,
     height: 360,
     frame: false,
     transparent: false,
