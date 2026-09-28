@@ -63,9 +63,9 @@ function defaultConfig() {
     writeBackCopyOnly: false,      // 选区回写：false=替换选区
     clipboardRestore: false,       // 处理后是否恢复原剪贴板
     paletteEnabled: true,          // 选中浮条总开关
-    paletteMinChars: 8,
+    paletteMinChars: 20,
     paletteLongHint: 8000,
-    previewSkipChars: 12,
+    previewSkipChars: 20,
     promptText: DEFAULT_PROMPT,
     petImage: '',           // 用户自定义宠物图片文件名（存 userData/pet/）
     petModel: 'keyboard',   // assets/models/ 下的 Live2D 皮肤目录名，空字符串=回退静态图

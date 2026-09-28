@@ -742,27 +742,13 @@ async function captureAndShowPalette(screenX, screenY) {
     now: Date.now()
   });
   if (!gate.ok) {
-    paletteDebugLog('SKIP ' + gate.reason + ' proc=' + ctx.proc + ' focus=' + ctx.focusClass + ' fg=' + ctx.fgClass + ' uia=' + ctx.uiaType + ' ro=' + ctx.readOnly + '/' + ctx.uiaReadOnly);
-    console.log('[palette] skip', gate.reason, ctx.proc, ctx.focusClass);
+    paletteDebugLog('SKIP ' + gate.reason + ' proc=' + ctx.proc + ' focus=' + ctx.focusClass);
     return;
   }
-  const { text, oldClipboard, ok } = await readSelection();
-  if (!ok || !text || !text.trim()) {
-    paletteDebugLog('EMPTY_SEL proc=' + ctx.proc + ' focus=' + ctx.focusClass);
-    return;
-  }
-  const minChars = Number(cfg.paletteMinChars) || 8;
-  if (text.trim().length < minChars) {
-    paletteDebugLog('SHORT len=' + text.trim().length + ' proc=' + ctx.proc);
-    return;
-  }
-  lastSelection = { text, oldClipboard };
-  console.log('[palette] show len=' + text.length + ' proc=' + ctx.proc);
-  paletteDebugLog('SHOW len=' + text.length + ' proc=' + ctx.proc + ' focus=' + ctx.focusClass + ' uia=' + ctx.uiaType);
-  // 2000 字内硬保证不提示；阈值再高也不能低于 2000
-  const longHint = Math.max(2000, Number(cfg.paletteLongHint) || 8000);
-  const longText = text.length > 2000 && text.length >= longHint;
-  showPaletteAt(screenX, screenY, text, longText);
+  // 只弹条，不复制、不读剪贴板、不判字数 —— 选中可继续剪切/拖拽/右键
+  paletteDebugLog('SHOW_BAR proc=' + ctx.proc + ' focus=' + ctx.focusClass);
+  lastSelection = { text: '', oldClipboard: '' };
+  showPaletteAt(screenX, screenY, '', false);
 }
 
 function isPaletteVisible() {
@@ -779,7 +765,24 @@ function dismissPaletteIfVisible() {
 
 ipcMain.handle('v2p:palette-run', async (_e, { mode }) => {
   try {
-    if (!lastSelection.text) return { ok: false, error: '没有选中的文本' };
+    // 点按钮才复制选区，避免打扰用户其它操作
+    const { readSelection } = require('./insert');
+    const cap = await readSelection();
+    if (!cap.ok || !cap.text || !cap.text.trim()) {
+      paletteDebugLog('RUN_NO_SEL');
+      hidePalette();
+      return { ok: false, error: '没有读到选中文字（选区可能已取消）' };
+    }
+    const cfg0 = config.load();
+    const minChars = Number(cfg0.paletteMinChars) || 20;
+    if (cap.text.trim().length < minChars) {
+      paletteDebugLog('RUN_SHORT len=' + cap.text.trim().length);
+      hidePalette();
+      return { ok: false, error: '选中不足 ' + minChars + ' 字，未处理' };
+    }
+    lastSelection = { text: cap.text, oldClipboard: cap.oldClipboard };
+    paletteDebugLog('RUN_COPY len=' + cap.text.length + ' mode=' + mode);
+
     const r = await pipeline.processText(lastSelection.text, mode === 'structure' ? 'structure' : 'optimize', setState);
     const cfg = config.load();
     const copyOnly = !!cfg.writeBackCopyOnly;
@@ -804,9 +807,8 @@ ipcMain.handle('v2p:palette-run', async (_e, { mode }) => {
       return { ok: true, ...payload };
     }
 
-    // 替换选区：写剪贴板并 Ctrl+V；以实际返回值为准
+    // 替换选区：写剪贴板并 Ctrl+V
     const ins = await insertText(r.text, 'paste');
-    // 恢复原剪贴板：仅在粘贴成功后；失败时结果必须留在剪贴板（否则手动粘贴不可用）
     if (ins.inserted && cfg.clipboardRestore) {
       try { clipboard.writeText(lastSelection.oldClipboard || ''); } catch { /* ignore */ }
     }
@@ -826,6 +828,7 @@ ipcMain.handle('v2p:palette-run', async (_e, { mode }) => {
     setTimeout(() => setState('idle'), 2500);
     return { ok: true, ...payload };
   } catch (err) {
+    paletteDebugLog('RUN_ERR ' + (err && err.message));
     return { ok: false, error: String(err.message || err).slice(0, 160) };
   }
 });
