@@ -64,18 +64,29 @@ function isEditableFocus(info) {
   return false;
 }
 
+const OUR_PROC_RE = /^(electron|voice2prompt|v2p)$/i;
+
+function isOurUiDrag(processName, focus) {
+  if (OUR_PROC_RE.test(String(processName || '').replace(/\.exe$/i, ''))) {
+    // 自家进程：只有明确的输入控件才可弹（设置页文本框）；拖宠/拖窗/点按钮不弹
+    return !isEditableFocus(focus);
+  }
+  return false;
+}
+
 function shouldShowPalette({ processName, focus, enabled, recording, userCopyAt, now }) {
   if (enabled === false) return { ok: false, reason: 'disabled' };
   if (recording) return { ok: false, reason: 'recording' };
   if (userCopyAt && now - userCopyAt < 500) return { ok: false, reason: 'user-copy' };
-  // 全开放：不再按可编辑/终端拦截（用户 2026-09-28 拍板）
-  // processName / focus 仍传入以便日志；旧 isTerminalProcess/isEditableFocus 保留供测试
-  void processName;
-  void focus;
+  // 自家 UI 拖拽（桌宠/浮条/设置窗等）禁止弹条
+  if (isOurUiDrag(processName, focus)) return { ok: false, reason: 'our-ui' };
+  // 其它场景全开放（2026-09-28 拍板）
   return { ok: true, reason: 'ok' };
 }
 
 module.exports = {
+  isOurUiDrag,
+  OUR_PROC_RE,
   WEB_HOST_RE,
   isTerminalProcess,
   isEditableFocus,

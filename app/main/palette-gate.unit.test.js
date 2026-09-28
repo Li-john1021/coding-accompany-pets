@@ -74,6 +74,21 @@ t('null / empty denied', () => {
   assert.equal(isEditableClassName('Editor'), false); // 无词边界 Editor 不中
 });
 
+t('our UI drag does not show palette', () => {
+  const { isOurUiDrag, shouldShowPalette } = require('./palette-gate.js');
+  assert.equal(isOurUiDrag('electron', { focusClass: 'Chrome_WidgetWin_1' }), true);
+  assert.equal(isOurUiDrag('Voice2Prompt', { focusClass: 'Chrome_RenderWidgetHostHWND' }), true);
+  assert.equal(isOurUiDrag('electron', { focusClass: 'Edit' }), false);
+  assert.equal(shouldShowPalette({
+    processName: 'electron',
+    focus: { focusClass: 'Chrome_WidgetWin_1' },
+    enabled: true,
+    recording: false,
+    userCopyAt: 0,
+    now: 1
+  }).reason, 'our-ui');
+});
+
 t('shouldShowPalette full-open combos', () => {
   const base = {
     processName: 'notepad',

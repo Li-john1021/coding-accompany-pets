@@ -731,6 +731,16 @@ function paletteDebugLog(line) {
   } catch { /* ignore */ }
 }
 
+function isOverOwnWindow(x, y) {
+  const wins = [petWin, paletteWin, settingsWin, previewWin, paintWin];
+  for (const w of wins) {
+    if (!w || w.isDestroyed() || !w.isVisible()) continue;
+    const b = w.getBounds();
+    if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) return true;
+  }
+  return false;
+}
+
 async function captureAndShowPalette(screenX, screenY) {
   const cfg = config.load();
   const ctx = await getSelectionContext();
@@ -744,6 +754,10 @@ async function captureAndShowPalette(screenX, screenY) {
   });
   if (!gate.ok) {
     paletteDebugLog('SKIP ' + gate.reason + ' proc=' + ctx.proc + ' focus=' + ctx.focusClass);
+    return;
+  }
+  if (isOverOwnWindow(screenX, screenY)) {
+    paletteDebugLog('SKIP own-window');
     return;
   }
   // 只弹条，不复制、不读剪贴板、不判字数 —— 选中可继续剪切/拖拽/右键
@@ -966,6 +980,7 @@ function setMouseRecordHook() {
         selDragging = false;
         if (!dragged) return;
         if (config.load().paletteEnabled === false) return;
+        if (isOverOwnWindow(e.x, e.y)) { selDown = false; return; }
         // 选中松手 → 立即取选区并弹浮条（豆包/钉钉式）
         setTimeout(() => {
           captureAndShowPalette(e.x, e.y).catch((err) => {
