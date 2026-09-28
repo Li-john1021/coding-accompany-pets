@@ -74,7 +74,7 @@ t('null / empty denied', () => {
   assert.equal(isEditableClassName('Editor'), false); // 无词边界 Editor 不中
 });
 
-t('shouldShowPalette combos', () => {
+t('shouldShowPalette full-open combos', () => {
   const base = {
     processName: 'notepad',
     focus: { focusClass: 'Edit', readOnly: false },
@@ -84,14 +84,12 @@ t('shouldShowPalette combos', () => {
     now: 10000
   };
   assert.equal(shouldShowPalette(base).ok, true);
-  assert.equal(shouldShowPalette({ ...base, processName: 'cmd' }).ok, false);
-  assert.equal(shouldShowPalette({ ...base, focus: { focusClass: 'Progman' } }).ok, false);
+  assert.equal(shouldShowPalette({ ...base, processName: 'cmd' }).ok, true); // 终端也可弹
+  assert.equal(shouldShowPalette({ ...base, focus: { focusClass: 'Progman' } }).ok, true);
   assert.equal(shouldShowPalette({ ...base, userCopyAt: 9800 }).reason, 'user-copy');
   assert.equal(shouldShowPalette({ ...base, enabled: false }).ok, false);
   assert.equal(shouldShowPalette({ ...base, recording: true }).reason, 'recording');
-  assert.equal(shouldShowPalette({ ...base, enabled: undefined }).ok, true); // undefined=开
-  assert.equal(shouldShowPalette({ ...base, focus: { focusClass: 'Edit', readOnly: true } }).ok, false);
-  assert.equal(shouldShowPalette({ ...base, processName: '' }).ok, true); // proc 失败时仍看焦点
+  assert.equal(shouldShowPalette({ ...base, enabled: undefined }).ok, true);
 });
 
 if (fail) {

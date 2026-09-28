@@ -68,8 +68,10 @@ function shouldShowPalette({ processName, focus, enabled, recording, userCopyAt,
   if (enabled === false) return { ok: false, reason: 'disabled' };
   if (recording) return { ok: false, reason: 'recording' };
   if (userCopyAt && now - userCopyAt < 500) return { ok: false, reason: 'user-copy' };
-  if (isTerminalProcess(processName)) return { ok: false, reason: 'terminal' };
-  if (!isEditableFocus(focus)) return { ok: false, reason: 'non-input' };
+  // 全开放：不再按可编辑/终端拦截（用户 2026-09-28 拍板）
+  // processName / focus 仍传入以便日志；旧 isTerminalProcess/isEditableFocus 保留供测试
+  void processName;
+  void focus;
   return { ok: true, reason: 'ok' };
 }
 
