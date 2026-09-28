@@ -596,6 +596,7 @@ app.whenReady().then(() => {
 let paletteWin = null;
 let lastSelection = { text: '', oldClipboard: '' };
 const { readSelection } = require('./insert');
+const { isTerminalProcess, isEditableFocus } = require('./palette-gate');
 
 function createPaletteWindow() {
   if (paletteWin && !paletteWin.isDestroyed()) return paletteWin;
@@ -672,13 +673,65 @@ function getForegroundProcessName() {
   });
 }
 
-const TERMINAL_RE = /^(windowsterminal|wt|cmd|powershell|pwsh|windowssystem32|conhost|wezterm|alacritty|hyper|cursorterminal|code)$/;
-function isTerminalProcess(name) {
-  return TERMINAL_RE.test(String(name || '').replace(/\.exe$/i, ''));
-}
 
 // 用户自己 Ctrl+C 复制意图：短窗口内不弹浮条
 let lastUserCopyAt = 0;
+
+
+// -------- focused control (only editable input areas may show palette) --------
+function getFocusedControlInfo() {
+  return new Promise((resolve) => {
+    const ps = [
+      'Add-Type -TypeDefinition @"',
+      'using System;',
+      'using System.Runtime.InteropServices;',
+      'using System.Text;',
+      'public class V2PFoc {',
+      '  [StructLayout(LayoutKind.Sequential)] public struct GUITHREADINFO { public int cbSize; public int flags; public IntPtr hwndActive; public IntPtr hwndFocus; public IntPtr hwndCapture; public IntPtr hwndMenuOwner; public IntPtr hwndMoveSize; public IntPtr hwndCaret; public RECT rcCaret; }',
+      '  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int left, top, right, bottom; }',
+      '  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+      '  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);',
+      '  [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint idThread, out GUITHREADINFO info);',
+      '  [DllImport("user32.dll")] public static extern int GetClassNameW(IntPtr hWnd, StringBuilder sb, int max);',
+      '  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);',
+      '}',
+      '"@',
+      '$fg = [V2PFoc]::GetForegroundWindow()',
+      '$procId = 0',
+      '$tid = [V2PFoc]::GetWindowThreadProcessId($fg, [ref]$procId)',
+      '$g = New-Object V2PFoc+GUITHREADINFO',
+      '$g.cbSize = [System.Runtime.InteropServices.Marshal]::SizeOf($g)',
+      '[void][V2PFoc]::GetGUIThreadInfo($tid, [ref]$g)',
+      '$hwnd = $g.hwndFocus',
+      'if ($hwnd -eq [IntPtr]::Zero) { $hwnd = $g.hwndCaret }',
+      'if ($hwnd -eq [IntPtr]::Zero) { $hwnd = $fg }',
+      '$cls = New-Object System.Text.StringBuilder 256',
+      '[void][V2PFoc]::GetClassNameW($hwnd, $cls, 256)',
+      '$fgCls = New-Object System.Text.StringBuilder 256',
+      '[void][V2PFoc]::GetClassNameW($fg, $fgCls, 256)',
+      '$proc = ""',
+      'if ($procId -gt 0) { $proc = (Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName }',
+      'Write-Output ($proc.ToLower() + "|" + $cls.ToString() + "|" + $fgCls.ToString() + "|" + ($g.hwndFocus -ne [IntPtr]::Zero))'
+    ].join('\n');
+    const b64 = Buffer.from(ps, 'utf16le').toString('base64');
+    require('child_process').execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-EncodedCommand', b64],
+      { timeout: 4000, windowsHide: true },
+      (err, stdout) => {
+        const line = String(stdout || '').trim().split(/\r?\n/).pop() || '';
+        const [proc = '', focusClass = '', fgClass = '', hasFocus = 'False'] = line.split('|');
+        resolve({
+          proc,
+          focusClass,
+          fgClass,
+          hasFocus: hasFocus === 'True'
+        });
+      }
+    );
+  });
+}
+
 
 async function captureAndShowPalette(screenX, screenY) {
   const cfg = config.load();
@@ -691,6 +744,11 @@ async function captureAndShowPalette(screenX, screenY) {
   const fg = await getForegroundProcessName();
   if (isTerminalProcess(fg)) {
     console.log('[palette] skip terminal:', fg || 'unknown');
+    return;
+  }
+  const foc = await getFocusedControlInfo();
+  if (!isEditableFocus(foc)) {
+    console.log('[palette] skip non-input:', fg, 'focus=' + (foc && foc.focusClass), 'fgCls=' + (foc && foc.fgClass));
     return;
   }
   const { text, oldClipboard, ok } = await readSelection();
