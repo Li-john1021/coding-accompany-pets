@@ -80,3 +80,17 @@ Scope: repair only F-001 and F-002 from immutable `docs/audits/palette-trigger-r
 - `git diff --quiet 3295294b0ebcad997a56f9f5b9d1c48dbebdde2c -- docs/audits/palette-trigger-review-1.md` — pass; review report unchanged.
 - Failure/repair evidence: after the guard helper changed from inline reject conditions to a reusable boolean predicate, one source assertion still expected the former `$... -ne` form and failed. The assertion now checks the pass predicate and generated-script ordering; the complete test suite then passed.
 - F-003: live Windows UIA, focus-preserving palette click, ordinary Ctrl+C, stale timing, and voice workflow evidence remain pending a dedicated test agent; no GUI execution is claimed.
+
+## Independent Review 2 Repairs
+
+Scope: repair only F-004/F-005 from immutable `docs/audits/palette-trigger-review-2.md`; F-001/F-002 are retained, and frozen Plan/Spec are unchanged.
+
+- F-004: generated guarded paste now runs `Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes -ErrorAction Stop` before defining guard functions. The unit test launches a new `powershell.exe`, verifies `AutomationElement` resolves at runtime, and invokes both guards against an impossible PID; both must fail closed.
+- F-005: pre-paste `Test-V2PPasteTarget` still requires the exact selected text and editable/non-readonly state. Post-paste `RESTORE_SHIFT_IF_TARGET` now calls `Test-V2PPasteTargetIdentity`, which checks original foreground PID and focused Edit runtime identity only, so a consumed selection does not prevent IME restoration. If identity changes, restore Shift is skipped.
+- `node app/main/palette-paste-guard.unit.test.js` — pass; verifies guard distinction/order, parses the composed script, and runs the fresh PowerShell runtime smoke.
+- Every `app/main/*.unit.test.js` — pass.
+- `node --check` on changed JavaScript — pass.
+- `git diff --check` — pass.
+- Frozen Spec SHA-256 rechecked — matches.
+- `git diff --quiet 243a1e8d3c37a0fcee9692974edaeb0edcc9b306 -- docs/audits/palette-trigger-review-2.md` — pass; review report unchanged.
+- F-003 actual Windows UIA/provider matrix, GUI paste, focus-preserving palette click, user Ctrl+C, stale timing, and voice observations remain pending the dedicated test agent. This runtime smoke is guard/type execution only, not end-to-end application evidence.
