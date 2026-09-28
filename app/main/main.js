@@ -596,7 +596,7 @@ app.whenReady().then(() => {
 let paletteWin = null;
 let lastSelection = { text: '', oldClipboard: '' };
 const { readSelection } = require('./insert');
-const { isTerminalProcess, isEditableFocus } = require('./palette-gate');
+const { shouldShowPalette } = require('./palette-gate');
 
 function createPaletteWindow() {
   if (paletteWin && !paletteWin.isDestroyed()) return paletteWin;
@@ -678,77 +678,87 @@ function getForegroundProcessName() {
 let lastUserCopyAt = 0;
 
 
-// -------- focused control (only editable input areas may show palette) --------
-function getFocusedControlInfo() {
+// -------- single atomic probe: process + focus class + readonly + UIA --------
+function getSelectionContext() {
   return new Promise((resolve) => {
     const ps = [
+      'Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes -ErrorAction SilentlyContinue',
       'Add-Type -TypeDefinition @"',
       'using System;',
       'using System.Runtime.InteropServices;',
       'using System.Text;',
-      'public class V2PFoc {',
+      'public class V2PProbe {',
       '  [StructLayout(LayoutKind.Sequential)] public struct GUITHREADINFO { public int cbSize; public int flags; public IntPtr hwndActive; public IntPtr hwndFocus; public IntPtr hwndCapture; public IntPtr hwndMenuOwner; public IntPtr hwndMoveSize; public IntPtr hwndCaret; public RECT rcCaret; }',
       '  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int left, top, right, bottom; }',
       '  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
       '  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);',
       '  [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint idThread, out GUITHREADINFO info);',
       '  [DllImport("user32.dll")] public static extern int GetClassNameW(IntPtr hWnd, StringBuilder sb, int max);',
-      '  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);',
+      '  [DllImport("user32.dll")] public static extern int GetWindowLongW(IntPtr hWnd, int nIndex);',
       '}',
       '"@',
-      '$fg = [V2PFoc]::GetForegroundWindow()',
+      '$fg = [V2PProbe]::GetForegroundWindow()',
       '$procId = 0',
-      '$tid = [V2PFoc]::GetWindowThreadProcessId($fg, [ref]$procId)',
-      '$g = New-Object V2PFoc+GUITHREADINFO',
+      '$tid = [V2PProbe]::GetWindowThreadProcessId($fg, [ref]$procId)',
+      '$g = New-Object V2PProbe+GUITHREADINFO',
       '$g.cbSize = [System.Runtime.InteropServices.Marshal]::SizeOf($g)',
-      '[void][V2PFoc]::GetGUIThreadInfo($tid, [ref]$g)',
+      '[void][V2PProbe]::GetGUIThreadInfo($tid, [ref]$g)',
       '$hwnd = $g.hwndFocus',
       'if ($hwnd -eq [IntPtr]::Zero) { $hwnd = $g.hwndCaret }',
       'if ($hwnd -eq [IntPtr]::Zero) { $hwnd = $fg }',
-      '$cls = New-Object System.Text.StringBuilder 256',
-      '[void][V2PFoc]::GetClassNameW($hwnd, $cls, 256)',
+      '$focusCls = New-Object System.Text.StringBuilder 256',
+      '[void][V2PProbe]::GetClassNameW($hwnd, $focusCls, 256)',
       '$fgCls = New-Object System.Text.StringBuilder 256',
-      '[void][V2PFoc]::GetClassNameW($fg, $fgCls, 256)',
+      '[void][V2PProbe]::GetClassNameW($fg, $fgCls, 256)',
+      '$style = [V2PProbe]::GetWindowLongW($hwnd, -16)',
+      '$ro = (($style -band 0x800) -ne 0)',
       '$proc = ""',
       'if ($procId -gt 0) { $proc = (Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName }',
-      'Write-Output ($proc.ToLower() + "|" + $cls.ToString() + "|" + $fgCls.ToString() + "|" + ($g.hwndFocus -ne [IntPtr]::Zero))'
+      '$uiaType = ""; $uiaRo = "False"',
+      'try {',
+      '  $el = [System.Windows.Automation.AutomationElement]::FocusedElement',
+      '  if ($el -ne $null) {',
+      '    $uiaType = [int]$el.Current.ControlType',
+      '    try { $p = $el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern); if ($p) { $uiaRo = $p.Current.IsReadOnly.ToString() } } catch {}',
+      '  }',
+      '} catch {}',
+      'Write-Output ($proc.ToLower() + "|" + $focusCls.ToString() + "|" + $fgCls.ToString() + "|" + ($g.hwndFocus -ne [IntPtr]::Zero) + "|" + $ro + "|" + $uiaType + "|" + $uiaRo)'
     ].join('\n');
     const b64 = Buffer.from(ps, 'utf16le').toString('base64');
     require('child_process').execFile(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-EncodedCommand', b64],
-      { timeout: 4000, windowsHide: true },
+      { timeout: 5000, windowsHide: true },
       (err, stdout) => {
         const line = String(stdout || '').trim().split(/\r?\n/).pop() || '';
-        const [proc = '', focusClass = '', fgClass = '', hasFocus = 'False'] = line.split('|');
+        const parts = line.split('|');
         resolve({
-          proc,
-          focusClass,
-          fgClass,
-          hasFocus: hasFocus === 'True'
+          proc: parts[0] || '',
+          focusClass: parts[1] || '',
+          fgClass: parts[2] || '',
+          hasFocus: parts[3] === 'True',
+          readOnly: parts[4] === 'True',
+          uiaType: parts[5] ? Number(parts[5]) : null,
+          uiaReadOnly: parts[6] === 'True'
         });
       }
     );
   });
 }
 
-
 async function captureAndShowPalette(screenX, screenY) {
   const cfg = config.load();
-  if (!cfg.paletteEnabled) return;
-  if (recordingActive) return;
-  if (Date.now() - lastUserCopyAt < 500) {
-    console.log('[palette] skip user-copy');
-    return;
-  }
-  const fg = await getForegroundProcessName();
-  if (isTerminalProcess(fg)) {
-    console.log('[palette] skip terminal:', fg || 'unknown');
-    return;
-  }
-  const foc = await getFocusedControlInfo();
-  if (!isEditableFocus(foc)) {
-    console.log('[palette] skip non-input:', fg, 'focus=' + (foc && foc.focusClass), 'fgCls=' + (foc && foc.fgClass));
+  const ctx = await getSelectionContext();
+  const gate = shouldShowPalette({
+    processName: ctx.proc,
+    focus: ctx,
+    enabled: cfg.paletteEnabled !== false,
+    recording: recordingActive,
+    userCopyAt: lastUserCopyAt,
+    now: Date.now()
+  });
+  if (!gate.ok) {
+    console.log('[palette] skip', gate.reason, ctx.proc, ctx.focusClass);
     return;
   }
   const { text, oldClipboard, ok } = await readSelection();
@@ -953,9 +963,13 @@ function setMouseRecordHook() {
       });
       // Esc：无副作用关闭浮条（focusable:false 收不到 keydown，走全局钩子）
       uIOhook.on('keydown', (e) => {
-        if (e.keycode === 1 /* Escape */ || e.keycode === 27) {
+        if (e.keycode === 1 || e.keycode === 27) {
           if (dismissPaletteIfVisible()) console.log('[palette] Esc close');
-        if (e.keycode === 46 && (e.ctrlKey || e.metaKey)) { lastUserCopyAt = Date.now(); dismissPaletteIfVisible(); }
+          return;
+        }
+        if (e.keycode === 46 && (e.ctrlKey || e.metaKey)) {
+          lastUserCopyAt = Date.now();
+          dismissPaletteIfVisible();
         }
       });
       uIOhook.start();
