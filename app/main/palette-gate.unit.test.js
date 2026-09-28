@@ -52,11 +52,13 @@ t('browser chrome without UIA type denied', () => {
   assert.equal(isEditableFocus({ focusClass: 'Chrome_WidgetWin_1', hasFocus: true }), false);
 });
 
-t('UIA edit type allowed / readonly denied', () => {
+t('UIA edit type allowed / Document not sufficient / readonly denied', () => {
   assert.equal(isEditableFocus({ uiaType: 50004, uiaReadOnly: false, focusClass: 'x' }), true);
-  assert.equal(isEditableFocus({ uiaType: 50030, uiaReadOnly: false }), true);
+  assert.equal(isEditableFocus({ uiaType: 50030, uiaReadOnly: false }), false); // Document 过宽
+  assert.equal(isEditableFocus({ uiaType: 50027 }), false); // Text 过宽
   assert.equal(isEditableFocus({ uiaType: 50004, uiaReadOnly: true }), false);
   assert.equal(isEditableFocus({ uiaType: 50004, readOnly: true }), false);
+  assert.equal(isEditableFocus({ focusClass: 'TEdit', readOnly: false }), true);
 });
 
 t('null / empty denied', () => {

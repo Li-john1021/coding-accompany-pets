@@ -647,32 +647,6 @@ function showPaletteAt(x, y, preview, longText) {
 
 
 // -------- foreground process (terminal exclusion) --------
-function getForegroundProcessName() {
-  return new Promise((resolve) => {
-    const ps = [
-      'Add-Type -TypeDefinition @"',
-      'using System;',
-      'using System.Runtime.InteropServices;',
-      'public class V2PFg {',
-      '  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
-      '  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);',
-      '}',
-      '"@',
-      '$h = [V2PFg]::GetForegroundWindow()',
-      '$procId = 0',
-      '[void][V2PFg]::GetWindowThreadProcessId($h, [ref]$procId)',
-      'if ($procId -gt 0) { (Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName }'
-    ].join('\n');
-    const b64 = Buffer.from(ps, 'utf16le').toString('base64');
-    require('child_process').execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-EncodedCommand', b64],
-      { timeout: 3000, windowsHide: true },
-      (err, stdout) => resolve(String(stdout || '').trim().toLowerCase())
-    );
-  });
-}
-
 
 // 用户自己 Ctrl+C 复制意图：短窗口内不弹浮条
 let lastUserCopyAt = 0;
@@ -766,7 +740,7 @@ async function captureAndShowPalette(screenX, screenY) {
   const minChars = Number(cfg.paletteMinChars) || 8;
   if (text.trim().length < minChars) return;
   lastSelection = { text, oldClipboard };
-  console.log('[palette] show len=' + text.length + ' fg=' + fg);
+  console.log('[palette] show len=' + text.length + ' proc=' + ctx.proc);
   // 2000 字内硬保证不提示；阈值再高也不能低于 2000
   const longHint = Math.max(2000, Number(cfg.paletteLongHint) || 8000);
   const longText = text.length > 2000 && text.length >= longHint;

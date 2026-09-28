@@ -10,11 +10,11 @@ const TERMINAL_RE =
 
 // Win32 / WinForms 等可编辑控件类（词边界 + contains-EDIT 两套）
 const EDITABLE_CLASS_RE =
-  /^(edit|richedit.*|scintilla|avalonedit|tsynedit)$/i;
+  /^(edit|richedit.*|scintilla|avalonedit|tsynedit|tedit|tcomboboxex32)$/i;
 const EDITABLE_CLASS_CONTAINS_RE = /(\bedit\b|^windowsforms10\.edit|\.edit\.)/i;
 
 // UIA ControlType（Win32）：Edit=50004, Document=50030, Text=50027
-const UIA_EDITABLE_TYPES = new Set([50004, 50027, 50030]);
+const UIA_EDITABLE_TYPES = new Set([50004]);
 
 function isTerminalProcess(name) {
   return TERMINAL_RE.test(String(name || '').replace(/\.exe$/i, ''));
