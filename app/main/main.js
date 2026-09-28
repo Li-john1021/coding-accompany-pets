@@ -602,8 +602,8 @@ const { shouldShowPalette } = require('./palette-gate');
 function createPaletteWindow() {
   if (paletteWin && !paletteWin.isDestroyed()) return paletteWin;
   paletteWin = new BrowserWindow({
-    width: 160,
-    height: 190,
+    width: 170,
+    height: 230,
     frame: false,
     transparent: true,
     resizable: false,
@@ -616,7 +616,8 @@ function createPaletteWindow() {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      backgroundThrottling: true
+      // 浮条永不抢焦点，若允许节流则 spinner/状态会冻住
+      backgroundThrottling: false
     }
   });
   paletteWin.loadFile(path.join(__dirname, '..', 'renderer', 'palette.html'));
