@@ -1,6 +1,6 @@
 # Palette Trigger Fix Plan
 
-Status: approved for implementation planning, v1  
+Status: approved for implementation planning, v1
 Scope: automatic selection palette trigger safety only. This plan does not authorize a new shortcut, palette redesign, or unrelated UI changes.
 
 ## Product request
