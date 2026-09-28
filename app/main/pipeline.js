@@ -95,7 +95,7 @@ async function processText(raw, mode = 'default', onState = () => {}) {
     return { text: raw, mode: 'none', degraded: false, note: '' };
   }
 
-  onState('polishing');
+  onState(resolved === 'structure' ? 'structuring' : 'optimizing');
   const llm = findProvider('llm');
 
   if (resolved === 'structure') {

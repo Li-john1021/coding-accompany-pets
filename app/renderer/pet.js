@@ -14,10 +14,19 @@ const STATUS_TEXT = {
   idle: '按住我说话',
   listening: '🎙️ 正在聆听…松开结束',
   transcribing: '👂 语音转文字…',
+  structuring: '≡ 结构化中…',
+  optimizing: '✨ 优化提示词中…',
   polishing: '✨ 整理优化中…',
   inserting: '📋 写入光标…',
   done: '✅ 完成',
   error: '❌ 出错了'
+};
+
+const STATUS_CLASS = {
+  structuring: 'mode-structure',
+  optimizing: 'mode-optimize',
+  polishing: 'mode-optimize',
+  error: 'mode-error'
 };
 
 let bubbleTimer = null;
@@ -28,11 +37,23 @@ function say(text, ms = 3500) {
   bubbleTimer = setTimeout(() => bubble.classList.remove('show'), ms);
 }
 
-function setState(s) {
+function setState(s, detail) {
   const prev = curStage;
   curStage = s;
   stage.className = s + (window.petLive2d && window.petLive2d.active() ? ' live2d' : '');
-  statusEl.textContent = STATUS_TEXT[s] || s;
+  statusEl.className = STATUS_CLASS[s] || '';
+  let text = STATUS_TEXT[s] || s;
+  if ((s === 'structuring' || s === 'optimizing' || s === 'polishing') && !statusEl.classList.contains('done')) {
+    text = '<span class="pulse">' + text + '</span>';
+    statusEl.innerHTML = text;
+  } else {
+    statusEl.textContent = text;
+  }
+  if (detail && detail.note) {
+    const base = s === 'structuring' ? '≡ 结构化' : s === 'optimizing' ? '✨ 优化' : '完成';
+    statusEl.className = (s === 'structuring' ? 'mode-done-structure' : s === 'optimizing' ? 'mode-done-optimize' : statusEl.className);
+    statusEl.textContent = base + '：' + detail.note;
+  }
   if (window.petLive2d) window.petLive2d.setState(s);
   if (s === 'listening' && prev !== 'listening') {
     say(LISTEN_LINES[(Math.random() * LISTEN_LINES.length) | 0], 2600);
@@ -255,8 +276,13 @@ window.v2p.onLoudness((v) => { if (window.petLive2d) window.petLive2d.setLoudnes
 if (window.v2p.onProbe) window.v2p.onProbe((o) => { if (window.petLive2d) window.petLive2d.setProbe(o); });
 window.v2p.onResult((r) => {
   setState('done');
-  const note = r.copiedOnly ? '（已复制到剪贴板）' : '';
-  say(r.polished.slice(0, 90) + (r.polished.length > 90 ? '…' : '') + note, 5000);
+  // 底部文字条：结构化/优化分色完成态
+  const modeTag = r.mode === 'structure' ? '≡ 结构化完成' : r.mode === 'optimize' ? '✨ 优化完成' : '✅ 完成';
+  statusEl.className = r.mode === 'structure' ? 'mode-done-structure' : r.mode === 'optimize' ? 'mode-done-optimize' : '';
+  const note = r.copiedOnly ? '（已复制）' : '';
+  const body = (r.note ? r.note + ' ' : '') + (r.polished || r.raw || '').slice(0, 60);
+  statusEl.textContent = modeTag + note + ' · ' + body;
+  say((r.polished || '').slice(0, 90) + ((r.polished || '').length > 90 ? '…' : '') + note, 5000);
   setTimeout(() => setState('idle'), 3000);
 });
 window.v2p.onToast((text) => { say(text, 5000); setState('error'); setTimeout(() => setState('idle'), 3500); });

@@ -57,15 +57,32 @@
       0% { filter: hue-rotate(0deg); }
       100% { filter: hue-rotate(20deg); }
     }
+    /* 底部文字条：结构化/优化分色，字号加大 */
     #status {
-      margin-top: 8px;
-      font-size: 12px;
+      margin-top: 6px;
+      width: 284px;
+      min-height: 28px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: .02em;
       color: #fff;
-      background: rgba(0,0,0,.55);
-      padding: 3px 10px;
+      background: rgba(0,0,0,.62);
+      padding: 6px 12px;
       border-radius: 10px;
       pointer-events: none;
+      text-align: center;
+      transition: background .2s;
     }
+    #status.mode-structure { background: rgba(52,152,219,.92); }
+    #status.mode-optimize { background: rgba(155,89,182,.92); }
+    #status.mode-done-structure { background: rgba(41,128,185,.95); }
+    #status.mode-done-optimize { background: rgba(142,68,173,.95); }
+    #status.mode-error { background: rgba(192,57,43,.95); }
+    #status .pulse {
+      display: inline-block;
+      animation: pulse 1s ease-in-out infinite;
+    }
+    @keyframes pulse { 50% { opacity: .55; } }
     #rec-dot {
       position: absolute; top: -4px; right: -4px;
       width: 16px; height: 16px;

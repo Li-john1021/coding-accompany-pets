@@ -813,7 +813,7 @@ let pendingPreview = null;
 function createPreviewWindow() {
   if (previewWin && !previewWin.isDestroyed()) return previewWin;
   previewWin = new BrowserWindow({
-    width: 160,
+    width: 480,
     height: 360,
     frame: false,
     transparent: false,
