@@ -8,10 +8,16 @@
 // -Command 传参经过双层解析会把引号拆进按键流。
 const { clipboard } = require('electron');
 const { execFile } = require('child_process');
+const { buildPasteTargetGuard } = require('./palette-paste-guard');
 
 // true=注入成功（按键发出去了；目标是否受理无法检测，交给 copiedOnly 兜底语义）
-function pasteViaSendInput() {
+function pasteViaSendInput(target) {
   return new Promise((resolve) => {
+    let targetGuard = '';
+    if (target) {
+      targetGuard = buildPasteTargetGuard(target);
+      if (!targetGuard) { resolve('cancelled'); return; }
+    }
     const script = `
 Start-Sleep -Milliseconds 100
 Add-Type -TypeDefinition @"
@@ -28,6 +34,7 @@ public struct INPUT { public uint type; public INPUTUNION u; }
 public class V2PPaste {
   [DllImport("user32.dll")] public static extern uint SendInput(uint n, INPUT[] inputs, int size);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
   [DllImport("imm32.dll")] public static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hwnd);
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
   static void Key(ushort vk, uint flags) {
@@ -51,6 +58,7 @@ public class V2PPaste {
 Start-Sleep -Milliseconds 60
 $ime = [V2PPaste]::ImeOpen()
 if ($ime) { [V2PPaste]::TapShift(); Start-Sleep -Milliseconds 120 }
+${targetGuard}
 [V2PPaste]::Paste()
 Start-Sleep -Milliseconds 160
 if ($ime) { [V2PPaste]::TapShift() }
@@ -60,16 +68,28 @@ if ($ime) { [V2PPaste]::TapShift() }
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-EncodedCommand', b64],
       { timeout: 8000, windowsHide: true },
-      (err) => resolve(!err)
+      (err, stdout) => {
+        if (target && (err || String(stdout || '').includes('V2P_CANCEL'))) resolve('cancelled');
+        else resolve(!err);
+      }
     );
   });
 }
 
 // 返回 { inserted: boolean }
-async function insertText(text, mode) {
+async function insertText(text, mode, options = {}) {
+  const guarded = !!options.target;
+  const oldClipboard = guarded ? clipboard.readText() || '' : '';
   clipboard.writeText(text);
   if (mode !== 'paste') return { inserted: false, copiedOnly: true };
-  const ok = await pasteViaSendInput();
+  const result = await pasteViaSendInput(options.target);
+  if (result === 'cancelled') {
+    if (guarded && clipboard.readText() === text) {
+      try { clipboard.writeText(oldClipboard); } catch { /* ignore */ }
+    }
+    return { inserted: false, copiedOnly: false, cancelled: true };
+  }
+  const ok = !!result;
   return { inserted: ok, copiedOnly: !ok };
 }
 

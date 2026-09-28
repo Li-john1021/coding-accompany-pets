@@ -10,10 +10,22 @@ function numberArg(value) {
   return Math.round(n);
 }
 
-function buildProbeScript(start, end) {
+function buildProbeScript(start, end, options = {}) {
   const sx = numberArg(start.x), sy = numberArg(start.y);
   const ex = numberArg(end.x), ey = numberArg(end.y);
+  const focusCheck = options.requireFocusedTarget ? `
+  $focus = [System.Windows.Automation.AutomationElement]::FocusedElement
+  for ($i = 0; $i -lt 12 -and $null -ne $focus; $i++) {
+    if ($focus.Current.ControlType.Id -eq 50004) { break }
+    $focus = $walker.GetParent($focus)
+  }
+  if ($null -eq $focus -or $focus.Current.ControlType.Id -ne 50004) { throw 'focused Edit unavailable' }
+  $focusRuntime = (@($focus.GetRuntimeId()) | ForEach-Object { [string]$_ }) -join '.'
+  $focusId = ([string]$focus.Current.ProcessId + '|' + [string]$focus.Current.NativeWindowHandle + '|' + $focusRuntime)
+  if ($focusId -ne $a.controlId) { throw 'active target changed' }
+` : '';
   return `
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes -ErrorAction Stop
 function Probe-Point([int]$x, [int]$y) {
   $hit = [System.Windows.Automation.AutomationElement]::FromPoint((New-Object System.Windows.Point($x, $y)))
@@ -35,7 +47,7 @@ function Probe-Point([int]$x, [int]$y) {
   $parts = @()
   foreach ($range in $selected) { $parts += $range.GetText(100000) }
   $text = [string]::Join('', $parts)
-  if ([string]::IsNullOrWhiteSpace($text)) { throw 'empty selection' }
+  if ([string]::IsNullOrEmpty($text)) { throw 'empty selection' }
   $runtimeId = (@($element.GetRuntimeId()) | ForEach-Object { [string]$_ }) -join '.'
   if ([string]::IsNullOrEmpty($runtimeId)) { throw 'runtime identity unavailable' }
   $proc = (Get-Process -Id $element.Current.ProcessId -ErrorAction Stop).ProcessName
@@ -45,6 +57,7 @@ try {
   $a = Probe-Point ${sx} ${sy}
   $b = Probe-Point ${ex} ${ey}
   if ($a.controlId -ne $b.controlId -or $a.text -cne $b.text) { throw 'endpoint evidence mismatch' }
+${focusCheck}
   @{ ok = $true; controlId = $a.controlId; text = $a.text; processName = $a.processName } | ConvertTo-Json -Compress
 } catch {
   @{ ok = $false; reason = 'probe-failed' } | ConvertTo-Json -Compress
@@ -56,16 +69,17 @@ function parseProbeOutput(stdout) {
   try {
     const parsed = JSON.parse(String(stdout || '').trim().split(/\r?\n/).pop());
     if (!parsed || parsed.ok !== true || typeof parsed.controlId !== 'string' || !parsed.controlId ||
-        typeof parsed.text !== 'string' || !parsed.text.trim()) return null;
-    return { confirmed: true, controlId: parsed.controlId, text: parsed.text, processName: String(parsed.processName || '') };
+        typeof parsed.text !== 'string' || parsed.text.length === 0 ||
+        typeof parsed.processName !== 'string' || !parsed.processName) return null;
+    return { confirmed: true, controlId: parsed.controlId, text: parsed.text, processName: parsed.processName };
   } catch {
     return null;
   }
 }
 
-function probeSelection(start, end) {
+function probeSelection(start, end, options = {}) {
   let script;
-  try { script = buildProbeScript(start, end); } catch { return Promise.resolve(null); }
+  try { script = buildProbeScript(start, end, options); } catch { return Promise.resolve(null); }
   const encoded = Buffer.from(script, 'utf16le').toString('base64');
   return new Promise((resolve) => {
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],

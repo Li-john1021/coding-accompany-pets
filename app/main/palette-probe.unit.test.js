@@ -15,7 +15,8 @@ t('parses only positive non-empty confirmed evidence', () => {
     confirmed: true, controlId: '1|2|3', text: 'hello', processName: 'notepad'
   });
   for (const output of ['', 'not json', '{"ok":false}', '{"ok":true,"controlId":"","text":"x"}',
-    '{"ok":true,"controlId":"1","text":"  "}']) assert.equal(parseProbeOutput(output), null);
+    '{"ok":true,"controlId":"1","text":""}']) assert.equal(parseProbeOutput(output), null);
+  assert.equal(parseProbeOutput('{"ok":true,"controlId":"1","text":"  ","processName":"notepad"}').text, '  ');
 });
 
 t('probe compares hit elements and reads only UIA selected text', () => {
@@ -26,6 +27,9 @@ t('probe compares hit elements and reads only UIA selected text', () => {
   assert.ok(script.includes('$a.controlId -ne $b.controlId'));
   assert.ok(script.includes('$a.text -cne $b.text'));
   assert.ok(!/SendInput|keyTap|clipboard|FocusedElement|SetFocus|Select\(/i.test(script));
+  const actionScript = buildProbeScript({ x: 10, y: 20 }, { x: 30, y: 40 }, { requireFocusedTarget: true });
+  assert.ok(actionScript.includes('AutomationElement]::FocusedElement'));
+  assert.ok(actionScript.includes('$focusId -ne $a.controlId'));
   assert.throws(() => buildProbeScript({ x: NaN, y: 0 }, { x: 1, y: 1 }));
 });
 

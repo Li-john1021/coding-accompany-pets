@@ -10,7 +10,8 @@ function shouldShowPalette({ selection, enabled, recording, userCopyAt, now }) {
   if (recording) return { ok: false, reason: 'recording' };
   if (userCopyAt && now - userCopyAt < 500) return { ok: false, reason: 'user-copy' };
   if (!selection || selection.confirmed !== true || !selection.controlId ||
-      typeof selection.text !== 'string' || !selection.text.trim()) {
+      typeof selection.text !== 'string' || selection.text.length === 0 ||
+      typeof selection.processName !== 'string' || !selection.processName) {
     return { ok: false, reason: 'selection-unconfirmed' };
   }
   if (isTerminalProcess(selection.processName)) return { ok: false, reason: 'terminal' };
@@ -18,7 +19,7 @@ function shouldShowPalette({ selection, enabled, recording, userCopyAt, now }) {
 }
 
 function meetsMinimumCharacters(selection, minimum) {
-  if (!selection || selection.confirmed !== true || typeof selection.text !== 'string' || !selection.text.trim()) {
+  if (!selection || selection.confirmed !== true || typeof selection.text !== 'string' || selection.text.length === 0) {
     return false;
   }
   const limit = Number(minimum);

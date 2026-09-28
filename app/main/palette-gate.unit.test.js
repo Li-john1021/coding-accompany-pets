@@ -13,9 +13,10 @@ const selection = { confirmed: true, controlId: 'pid|hwnd|runtime', text: 'selec
 t('only confirmed non-empty selection with identity passes', () => {
   assert.equal(shouldShowPalette({ selection, enabled: true, now: 1000 }).ok, true);
   for (const bad of [null, {}, { ...selection, confirmed: false }, { ...selection, controlId: '' },
-    { ...selection, text: '' }, { ...selection, text: '  ' }]) {
+    { ...selection, text: '' }, { ...selection, processName: '' }]) {
     assert.equal(shouldShowPalette({ selection: bad, enabled: true, now: 1000 }).ok, false);
   }
+  assert.equal(shouldShowPalette({ selection: { ...selection, text: '  ' }, enabled: true, now: 1000 }).ok, true);
 });
 
 t('disabled, recording, recent user copy, and terminal deny', () => {

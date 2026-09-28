@@ -8,9 +8,9 @@ contextBridge.exposeInMainWorld('v2p', {
   submit: (audio, mime, options) => ipcRenderer.invoke('v2p:submit', { audio, mime, options: options || {} }),
   setRecordingFlag: (active) => ipcRenderer.invoke('v2p:recording-flag', active),
   // 选中浮条
-  paletteRun: (mode) => ipcRenderer.invoke('v2p:palette-run', { mode }),
-  paletteCopyRaw: () => ipcRenderer.invoke('v2p:palette-copy-raw'),
-  paletteDismiss: (reason) => ipcRenderer.invoke('v2p:palette-dismiss', { reason }),
+  paletteRun: (mode, selectionId) => ipcRenderer.invoke('v2p:palette-run', { mode, selectionId }),
+  paletteCopyRaw: (selectionId) => ipcRenderer.invoke('v2p:palette-copy-raw', { selectionId }),
+  paletteDismiss: (reason, selectionId) => ipcRenderer.invoke('v2p:palette-dismiss', { reason, selectionId }),
   onPaletteShow: (cb) => ipcRenderer.on('v2p:palette-show', (_e, p) => cb(p)),
   processText: (text, mode) => ipcRenderer.invoke('v2p:process-text', { text, mode }),
   previewInsert: (payload) => ipcRenderer.invoke('v2p:preview-insert', payload),
