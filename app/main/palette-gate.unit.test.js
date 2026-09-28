@@ -61,6 +61,12 @@ t('UIA edit type allowed / Document not sufficient / readonly denied', () => {
   assert.equal(isEditableFocus({ focusClass: 'TEdit', readOnly: false }), true);
 });
 
+t('chrome render host allowed only when UIA Edit', () => {
+  assert.equal(isEditableFocus({ focusClass: 'Chrome_RenderWidgetHostHWND', uiaType: 50004, uiaReadOnly: false }), true);
+  assert.equal(isEditableFocus({ focusClass: 'Chrome_RenderWidgetHostHWND', uiaType: null }), false);
+  assert.equal(isEditableFocus({ focusClass: 'Chrome_WidgetWin_1', uiaType: 50004, readOnly: true }), false);
+});
+
 t('null / empty denied', () => {
   assert.equal(isEditableFocus(null), false);
   assert.equal(isEditableFocus({}), false);

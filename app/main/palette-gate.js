@@ -12,6 +12,8 @@ const TERMINAL_RE =
 const EDITABLE_CLASS_RE =
   /^(edit|richedit.*|scintilla|avalonedit|tsynedit|tedit|tcomboboxex32)$/i;
 const EDITABLE_CLASS_CONTAINS_RE = /(\bedit\b|^windowsforms10\.edit|\.edit\.)/i;
+// Chromium/Electron 内嵌输入框宿主（需结合 UIA/只读再判定）
+const WEB_HOST_RE = /^(chrome_widgetwin_\d+|chrome_renderwidgethosthwnd|electron|window\.webview|wpfgfx_win32)/i;
 
 // UIA ControlType（Win32）：Edit=50004, Document=50030, Text=50027
 const UIA_EDITABLE_TYPES = new Set([50004]);
@@ -54,6 +56,11 @@ function isEditableFocus(info) {
   // Win32 类名
   if (isEditableClassName(focusClass)) return true;
 
+  // Chromium/Electron 宿主：UIA 认为是 Edit 才放行（避免只读正文误弹）
+  if (WEB_HOST_RE.test(focusClass) || WEB_HOST_RE.test(fgClass)) {
+    return Number(info.uiaType) === 50004 && info.uiaReadOnly !== true;
+  }
+
   return false;
 }
 
@@ -67,6 +74,7 @@ function shouldShowPalette({ processName, focus, enabled, recording, userCopyAt,
 }
 
 module.exports = {
+  WEB_HOST_RE,
   isTerminalProcess,
   isEditableFocus,
   isEditableClassName,

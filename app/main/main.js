@@ -721,6 +721,15 @@ function getSelectionContext() {
   });
 }
 
+function paletteDebugLog(line) {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const f = path.join(require('electron').app.getPath('userData'), 'palette-debug.log');
+    fs.appendFileSync(f, new Date().toISOString() + ' ' + line + '\n');
+  } catch { /* ignore */ }
+}
+
 async function captureAndShowPalette(screenX, screenY) {
   const cfg = config.load();
   const ctx = await getSelectionContext();
@@ -733,15 +742,23 @@ async function captureAndShowPalette(screenX, screenY) {
     now: Date.now()
   });
   if (!gate.ok) {
+    paletteDebugLog('SKIP ' + gate.reason + ' proc=' + ctx.proc + ' focus=' + ctx.focusClass + ' fg=' + ctx.fgClass + ' uia=' + ctx.uiaType + ' ro=' + ctx.readOnly + '/' + ctx.uiaReadOnly);
     console.log('[palette] skip', gate.reason, ctx.proc, ctx.focusClass);
     return;
   }
   const { text, oldClipboard, ok } = await readSelection();
-  if (!ok || !text || !text.trim()) return;
+  if (!ok || !text || !text.trim()) {
+    paletteDebugLog('EMPTY_SEL proc=' + ctx.proc + ' focus=' + ctx.focusClass);
+    return;
+  }
   const minChars = Number(cfg.paletteMinChars) || 8;
-  if (text.trim().length < minChars) return;
+  if (text.trim().length < minChars) {
+    paletteDebugLog('SHORT len=' + text.trim().length + ' proc=' + ctx.proc);
+    return;
+  }
   lastSelection = { text, oldClipboard };
   console.log('[palette] show len=' + text.length + ' proc=' + ctx.proc);
+  paletteDebugLog('SHOW len=' + text.length + ' proc=' + ctx.proc + ' focus=' + ctx.focusClass + ' uia=' + ctx.uiaType);
   // 2000 字内硬保证不提示；阈值再高也不能低于 2000
   const longHint = Math.max(2000, Number(cfg.paletteLongHint) || 8000);
   const longText = text.length > 2000 && text.length >= longHint;
