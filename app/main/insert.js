@@ -8,15 +8,19 @@
 // -Command 传参经过双层解析会把引号拆进按键流。
 const { clipboard } = require('electron');
 const { execFile } = require('child_process');
-const { buildPasteTargetGuard } = require('./palette-paste-guard');
+const { buildPasteTargetGuard, REQUIRE_TARGET, RESTORE_SHIFT_IF_TARGET } = require('./palette-paste-guard');
 
 // true=注入成功（按键发出去了；目标是否受理无法检测，交给 copiedOnly 兜底语义）
 function pasteViaSendInput(target) {
   return new Promise((resolve) => {
     let targetGuard = '';
+    let requireTarget = '';
+    let restoreShift = '[V2PPaste]::TapShift()';
     if (target) {
       targetGuard = buildPasteTargetGuard(target);
       if (!targetGuard) { resolve('cancelled'); return; }
+      requireTarget = REQUIRE_TARGET;
+      restoreShift = RESTORE_SHIFT_IF_TARGET;
     }
     const script = `
 Start-Sleep -Milliseconds 100
@@ -55,13 +59,19 @@ public class V2PPaste {
   }
 }
 "@
-Start-Sleep -Milliseconds 60
-$ime = [V2PPaste]::ImeOpen()
-if ($ime) { [V2PPaste]::TapShift(); Start-Sleep -Milliseconds 120 }
 ${targetGuard}
+Start-Sleep -Milliseconds 60
+${requireTarget}
+$ime = [V2PPaste]::ImeOpen()
+if ($ime) {
+  ${requireTarget}
+  [V2PPaste]::TapShift()
+  Start-Sleep -Milliseconds 120
+}
+${requireTarget}
 [V2PPaste]::Paste()
 Start-Sleep -Milliseconds 160
-if ($ime) { [V2PPaste]::TapShift() }
+if ($ime) { ${restoreShift} }
 `;
     const b64 = Buffer.from(script, 'utf16le').toString('base64');
     execFile(

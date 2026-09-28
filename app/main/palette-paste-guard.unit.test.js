@@ -1,20 +1,42 @@
 // palette-paste-guard.unit.test.js — validates the final native paste guard.
 const assert = require('assert');
 const { execFileSync } = require('child_process');
-const { buildPasteTargetGuard } = require('./palette-paste-guard');
+const fs = require('fs');
+const path = require('path');
+const { buildPasteTargetGuard, REQUIRE_TARGET, RESTORE_SHIFT_IF_TARGET } = require('./palette-paste-guard');
 
 const sample = { controlId: '123|456|7.8.9', text: 'selected text 漢字' };
 const script = buildPasteTargetGuard(sample);
-assert.ok(script.includes('$foregroundPid -ne 123'));
-assert.ok(script.includes("$focusedId -ne '123|456|7.8.9'"));
-assert.ok(script.includes('$selectedText -cne $expectedText'));
+assert.ok(script.includes('$foregroundPid -eq 123'));
+assert.ok(script.includes("$focusedId -eq '123|456|7.8.9'"));
+assert.ok(script.includes('$selectedText -ceq $expectedText'));
 assert.ok(script.includes(Buffer.from(sample.text, 'utf8').toString('base64')));
 assert.ok(!script.includes(sample.text), 'selection is base64 encoded before script construction');
 assert.equal(buildPasteTargetGuard({ controlId: 'bad', text: 'text' }), null);
 assert.equal(buildPasteTargetGuard({ controlId: '1|2|3', text: ' ' }), null);
+assert.ok(REQUIRE_TARGET.includes('exit 20'));
+assert.ok(RESTORE_SHIFT_IF_TARGET.includes('if (Test-V2PPasteTarget)'));
+
+const insert = fs.readFileSync(path.join(__dirname, 'insert.js'), 'utf8');
+const bodyStart = insert.indexOf('const script = `');
+const bodyEnd = insert.indexOf('\n`;', bodyStart);
+assert.ok(bodyStart >= 0 && bodyEnd > bodyStart, 'paste script template exists');
+const templateStart = bodyStart + 'const script = `'.length;
+const body = insert.slice(templateStart, bodyEnd);
+const checks = [...body.matchAll(/\$\{requireTarget\}/g)].map((m) => m.index);
+const imeQuery = body.indexOf('$ime = [V2PPaste]::ImeOpen()');
+const shift = body.indexOf('[V2PPaste]::TapShift()');
+const paste = body.indexOf('[V2PPaste]::Paste()');
+const restore = body.indexOf('${restoreShift}');
+assert.equal(checks.length, 3, 'guard runs after initial delay, before IME Shift, and before paste');
+assert.ok(checks[0] < imeQuery && imeQuery < checks[1] && checks[1] < shift && shift < checks[2] &&
+  checks[2] < paste && paste < restore, 'all synthetic key sends are ordered after target checks');
+const fullScript = body.replace('${targetGuard}', script)
+  .replaceAll('${requireTarget}', REQUIRE_TARGET)
+  .replace('${restoreShift}', RESTORE_SHIFT_IF_TARGET);
 
 if (process.platform === 'win32') {
-  const encoded = Buffer.from(script, 'utf8').toString('base64');
+  const encoded = Buffer.from(fullScript, 'utf8').toString('base64');
   const parse = `$source = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}')); ` +
     '$tokens = $null; $errors = $null; ' +
     '[System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokens, [ref]$errors) | Out-Null; ' +

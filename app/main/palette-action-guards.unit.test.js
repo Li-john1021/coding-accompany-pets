@@ -28,9 +28,9 @@ assert.ok(renderer.includes('const selectionId = activeSelectionId;') && rendere
 assert.ok(renderer.includes("paletteDismiss('done', selectionId)"), 'delayed dismissal is bound to its original selection');
 assert.ok(renderer.includes('if (selectionId !== activeSelectionId) return;'), 'late IPC results do not update a newer palette');
 assert.ok(insert.includes("resolve('cancelled')"), 'invalid target cancels injection');
-assert.ok(pasteGuard.includes('$foregroundPid -ne ${match[1]}') && pasteGuard.includes('$focusedId -ne'),
+assert.ok(pasteGuard.includes('$foregroundPid -eq ${match[1]}') && pasteGuard.includes('$focusedId -eq'),
   'native paste checks foreground process and focused control identity');
-assert.ok(pasteGuard.includes('$textPattern.GetSelection()') && pasteGuard.includes('$selectedText -cne $expectedText'),
+assert.ok(pasteGuard.includes('$textPattern.GetSelection()') && pasteGuard.includes('$selectedText -ceq $expectedText'),
   'native paste checks the original selection text immediately before injection');
 assert.ok(insert.indexOf('${targetGuard}') < insert.indexOf('[V2PPaste]::Paste()'),
   'native target guard runs before simulated paste');

@@ -64,3 +64,19 @@ Checks:
 - `git diff --quiet 046135b606313bf4467735d873b64166148102b1 -- app/main/pipeline.js app/renderer/palette.html app/renderer/pet.js app/renderer/pet-live2d.js` — pass; voice pipeline, existing palette HTML, and pet renderers are unchanged.
 
 Validation boundary: VB-003 / L1 is warranted because providers differ and trigger changes share the app process with voice flows. UIA compatibility and focusable-false behavior remain unverified on actual Windows controls; no runtime test is claimed.
+
+## Independent Review 1 Repairs
+
+Scope: repair only F-001 and F-002 from immutable `docs/audits/palette-trigger-review-1.md`; frozen Spec unchanged.
+
+- F-001: guarded paste now has a reusable passive target test. It runs after the initial delay before IME state query, again before the initial Shift, and before Ctrl+V. IME restoration Shift is conditional on the original foreground PID, focused Edit runtime identity, and selected text still matching. A failed guard exits before sending input; a failed post-paste restore check skips the Shift instead of targeting another window.
+- F-002: the gate explicitly rejects Explorer and named desktop/shell process identities (`explorer`, `progman`, `workerw`, `ShellExperienceHost`, `StartMenuExperienceHost`, `SearchHost`, `SearchApp`, `ApplicationFrameHost`, `ShellHost`, `Taskbar`, `Dv2ControlHost`) independent of UIA element type.
+- `node app/main/palette-paste-guard.unit.test.js` — pass; verifies the initial guard precedes IME query, each IME Shift and Ctrl+V has a preceding target check, and post-paste restoration is conditional. On this Windows host, the test parses the fully composed PowerShell paste script with `System.Management.Automation.Language.Parser`.
+- `node app/main/palette-gate.unit.test.js` — pass; covers Explorer and named shell process denials independent of UIA evidence.
+- Every `app/main/*.unit.test.js` — pass.
+- `node --check` on changed JavaScript — pass.
+- `git diff --check` — pass.
+- Frozen Spec SHA-256 rechecked — matches.
+- `git diff --quiet 3295294b0ebcad997a56f9f5b9d1c48dbebdde2c -- docs/audits/palette-trigger-review-1.md` — pass; review report unchanged.
+- Failure/repair evidence: after the guard helper changed from inline reject conditions to a reusable boolean predicate, one source assertion still expected the former `$... -ne` form and failed. The assertion now checks the pass predicate and generated-script ordering; the complete test suite then passed.
+- F-003: live Windows UIA, focus-preserving palette click, ordinary Ctrl+C, stale timing, and voice workflow evidence remain pending a dedicated test agent; no GUI execution is claimed.

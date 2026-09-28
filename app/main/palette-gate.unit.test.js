@@ -1,6 +1,6 @@
 // palette-gate.unit.test.js — fail-closed passive palette eligibility
 const assert = require('assert');
-const { isTerminalProcess, isPdfViewerProcess, shouldShowPalette, meetsMinimumCharacters } = require('./palette-gate.js');
+const { isTerminalProcess, isPdfViewerProcess, isShellProcess, shouldShowPalette, meetsMinimumCharacters } = require('./palette-gate.js');
 
 let fail = 0;
 function t(name, fn) {
@@ -29,6 +29,14 @@ t('disabled, recording, recent user copy, and terminal deny', () => {
   assert.equal(shouldShowPalette({ selection: { ...selection, processName: 'WindowsTerminal' }, now: 1000 }).reason, 'terminal');
   for (const name of ['Acrobat.exe', 'FoxitPDFReader', 'SumatraPDF']) assert.equal(isPdfViewerProcess(name), true);
   assert.equal(shouldShowPalette({ selection: { ...selection, processName: 'Acrobat' }, now: 1000 }).reason, 'pdf-viewer');
+});
+
+t('Explorer and shell processes deny independently of UIA evidence', () => {
+  for (const name of ['explorer.exe', 'Progman', 'WorkerW', 'ShellExperienceHost', 'SearchHost']) {
+    assert.equal(isShellProcess(name), true);
+    assert.equal(shouldShowPalette({ selection: { ...selection, processName: name }, now: 1000 }).reason, 'shell');
+  }
+  assert.equal(isShellProcess('notepad'), false);
 });
 
 t('threshold is considered only for confirmed text', () => {
