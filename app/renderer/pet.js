@@ -37,22 +37,17 @@ function say(text, ms = 3500) {
   bubbleTimer = setTimeout(() => bubble.classList.remove('show'), ms);
 }
 
-function setState(s, detail) {
+function setState(s) {
   const prev = curStage;
   curStage = s;
   stage.className = s + (window.petLive2d && window.petLive2d.active() ? ' live2d' : '');
   statusEl.className = STATUS_CLASS[s] || '';
   let text = STATUS_TEXT[s] || s;
-  if ((s === 'structuring' || s === 'optimizing' || s === 'polishing') && !statusEl.classList.contains('done')) {
+  if (s === 'structuring' || s === 'optimizing' || s === 'polishing') {
     text = '<span class="pulse">' + text + '</span>';
     statusEl.innerHTML = text;
   } else {
     statusEl.textContent = text;
-  }
-  if (detail && detail.note) {
-    const base = s === 'structuring' ? '≡ 结构化' : s === 'optimizing' ? '✨ 优化' : '完成';
-    statusEl.className = (s === 'structuring' ? 'mode-done-structure' : s === 'optimizing' ? 'mode-done-optimize' : statusEl.className);
-    statusEl.textContent = base + '：' + detail.note;
   }
   if (window.petLive2d) window.petLive2d.setState(s);
   if (s === 'listening' && prev !== 'listening') {
@@ -276,12 +271,17 @@ window.v2p.onLoudness((v) => { if (window.petLive2d) window.petLive2d.setLoudnes
 if (window.v2p.onProbe) window.v2p.onProbe((o) => { if (window.petLive2d) window.petLive2d.setProbe(o); });
 window.v2p.onResult((r) => {
   setState('done');
-  // 底部文字条：结构化/优化分色完成态
-  const modeTag = r.mode === 'structure' ? '≡ 结构化完成' : r.mode === 'optimize' ? '✨ 优化完成' : '✅ 完成';
-  statusEl.className = r.mode === 'structure' ? 'mode-done-structure' : r.mode === 'optimize' ? 'mode-done-optimize' : '';
+  // 底部文字条：分色完成态；降级用警示色并写明级别
   const note = r.copiedOnly ? '（已复制）' : '';
-  const body = (r.note ? r.note + ' ' : '') + (r.polished || r.raw || '').slice(0, 60);
-  statusEl.textContent = modeTag + note + ' · ' + body;
+  const body = (r.polished || r.raw || '').slice(0, 60);
+  if (r.degraded) {
+    statusEl.className = 'mode-error';
+    statusEl.textContent = '⚠ ' + (r.note || '已降级') + note + ' · ' + body;
+  } else {
+    const modeTag = r.mode === 'structure' ? '≡ 结构化完成' : r.mode === 'optimize' ? '✨ 优化完成' : '✅ 完成';
+    statusEl.className = r.mode === 'structure' ? 'mode-done-structure' : r.mode === 'optimize' ? 'mode-done-optimize' : '';
+    statusEl.textContent = modeTag + note + (r.note ? ' · ' + r.note : '') + ' · ' + body;
+  }
   say((r.polished || '').slice(0, 90) + ((r.polished || '').length > 90 ? '…' : '') + note, 5000);
   setTimeout(() => setState('idle'), 3000);
 });

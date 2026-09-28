@@ -298,6 +298,7 @@ function registerIpc() {
   // 纯文本整理（选区浮条 / 预览卡共用）
   ipcMain.handle('v2p:process-text', async (_e, { text, mode }) => {
     const r = await pipeline.processText(String(text || ''), mode || 'default', setState);
+    pendingPreview = Object.assign({ raw: String(text || '') }, r);
     return { ok: true, ...r };
   });
 
@@ -771,7 +772,19 @@ ipcMain.handle('v2p:palette-run', async (_e, { mode }) => {
     if (copyOnly) {
       clipboard.writeText(r.text);
       hidePalette();
-      return { ok: true, degraded: r.degraded, note: r.note || '结果已复制到剪贴板', mode: r.mode, copiedOnly: true };
+      const payload = {
+        raw: lastSelection.text,
+        polished: r.text,
+        mode: r.mode,
+        degraded: r.degraded,
+        note: r.note || '结果已复制到剪贴板',
+        inserted: false,
+        copiedOnly: true
+      };
+      setState('done');
+      petBroadcast('v2p:result', payload);
+      setTimeout(() => setState('idle'), 2500);
+      return { ok: true, ...payload };
     }
 
     // 替换选区：写剪贴板并 Ctrl+V；以实际返回值为准
@@ -782,14 +795,19 @@ ipcMain.handle('v2p:palette-run', async (_e, { mode }) => {
     }
     hidePalette();
     const fallbackNote = ins.inserted ? (r.note || '完成') : (r.note ? r.note + '；' : '') + '已复制，请手动粘贴';
-    return {
-      ok: true,
+    const payload = {
+      raw: lastSelection.text,
+      polished: r.text,
+      mode: r.mode,
       degraded: r.degraded,
       note: fallbackNote,
-      mode: r.mode,
       inserted: ins.inserted,
       copiedOnly: ins.copiedOnly
     };
+    setState('done');
+    petBroadcast('v2p:result', payload);
+    setTimeout(() => setState('idle'), 2500);
+    return { ok: true, ...payload };
   } catch (err) {
     return { ok: false, error: String(err.message || err).slice(0, 160) };
   }
@@ -856,6 +874,9 @@ ipcMain.handle('v2p:preview-close', (_e, payload) => {
     petBroadcast('v2p:result', {
       raw: (pendingPreview && pendingPreview.raw) || '',
       polished: (payload && payload.text) || (pendingPreview && pendingPreview.raw) || '',
+      mode: payload.mode || (pendingPreview && pendingPreview.mode) || 'none',
+      degraded: !!(payload && payload.degraded) || !!(pendingPreview && pendingPreview.degraded),
+      note: (payload && payload.note) || (pendingPreview && pendingPreview.note) || '',
       inserted: !!payload.inserted,
       copiedOnly: payload.copiedOnly !== false
     });

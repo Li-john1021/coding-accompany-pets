@@ -49,7 +49,7 @@
     }
     #stage.idle #pet { animation: breathe 3s ease-in-out infinite; }
     #stage.listening #pet { transform: scale(1.06); box-shadow: 0 0 0 5px rgba(231,76,60,.55), 0 4px 16px rgba(0,0,0,.25); }
-    #stage.processing #pet { box-shadow: 0 0 0 5px rgba(52,152,219,.55), 0 4px 16px rgba(0,0,0,.25); animation: spin-glow 1.2s linear infinite; }
+    #stage.structuring #pet, #stage.optimizing #pet, #stage.processing #pet, #stage.polishing #pet { box-shadow: 0 0 0 5px rgba(52,152,219,.55), 0 4px 16px rgba(0,0,0,.25); animation: spin-glow 1.2s linear infinite; }
     #stage.done #pet { box-shadow: 0 0 0 5px rgba(39,174,96,.55), 0 4px 16px rgba(0,0,0,.25); }
     #stage.error #pet { box-shadow: 0 0 0 5px rgba(231,76,60,.8), 0 4px 16px rgba(0,0,0,.25); }
     @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04); } }
@@ -94,7 +94,7 @@
     #stage.listening #rec-dot { display: block; }
     /* Live2D 模式下的状态光晕（#pet 上的选择器命中不到 canvas，单独给） */
     #stage.listening #l2d { filter: drop-shadow(0 0 6px rgba(231,76,60,.65)); }
-    #stage.transcribing #l2d, #stage.polishing #l2d, #stage.inserting #l2d { filter: drop-shadow(0 0 6px rgba(52,152,219,.65)); }
+    #stage.transcribing #l2d, #stage.polishing #l2d, #stage.structuring #l2d, #stage.optimizing #l2d, #stage.inserting #l2d { filter: drop-shadow(0 0 6px rgba(52,152,219,.65)); }
     #stage.done #l2d { filter: drop-shadow(0 0 6px rgba(39,174,96,.65)); }
     #stage.error #l2d { filter: drop-shadow(0 0 6px rgba(231,76,60,.85)); }
     @keyframes blink { 50% { opacity: .3; } }
