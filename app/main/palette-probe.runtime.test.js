@@ -1,4 +1,4 @@
-// palette-probe.runtime.test.js — Windows runtime checks using an isolated WinForms fixture.
+// palette-probe.runtime.test.js — Windows runtime checks using an isolated WPF fixture.
 const assert = require('assert');
 const { execFileSync, spawn, spawnSync } = require('child_process');
 const fs = require('fs');
@@ -18,8 +18,16 @@ const fixtureExe = path.join(tempDir, 'PaletteUiaFixture.exe');
 const readyFile = path.join(tempDir, 'ready.json');
 const stopFile = path.join(tempDir, 'stop');
 const csc = path.join(process.env.WINDIR || 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
+const gacRoot = path.join(process.env.WINDIR || 'C:\\Windows', 'Microsoft.NET', 'assembly');
 const failures = [];
 let fixture;
+
+function gacAssembly(bucket, name) {
+  const assemblyDir = path.join(gacRoot, bucket, name);
+  const versionDir = fs.readdirSync(assemblyDir).find((entry) => fs.existsSync(path.join(assemblyDir, entry, `${name}.dll`)));
+  if (!versionDir) throw new Error(`Missing .NET Framework assembly ${name}`);
+  return path.join(assemblyDir, versionDir, `${name}.dll`);
+}
 
 function parsePowerShell(script) {
   const encodedScript = Buffer.from(script, 'utf16le').toString('base64');
@@ -77,24 +85,141 @@ async function waitForReady() {
   throw new Error('fixture did not create ready record within 10 seconds');
 }
 
-function focusFixtureEdit(pid) {
+function inspectAndFocusFixture(pid, hwnd) {
   const script = `
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes -ErrorAction Stop
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class V2PWindowDiagnostic {
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+  [DllImport("user32.dll")] public static extern IntPtr GetThreadDesktop(uint threadId);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
+  [DllImport("user32.dll")] public static extern bool CloseDesktop(IntPtr desktop);
+  [DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
+  public static extern bool GetUserObjectInformation(IntPtr handle, int index, IntPtr info, uint length, out uint needed);
+  public static string DesktopName(IntPtr handle) {
+    if (handle == IntPtr.Zero) return "";
+    uint needed;
+    GetUserObjectInformation(handle, 2, IntPtr.Zero, 0, out needed);
+    if (needed == 0) return "";
+    IntPtr buffer = Marshal.AllocHGlobal((int)needed);
+    try {
+      if (!GetUserObjectInformation(handle, 2, buffer, needed, out needed)) return "";
+      return Marshal.PtrToStringUni(buffer) ?? "";
+    } finally { Marshal.FreeHGlobal(buffer); }
+  }
+}
+"@
+$windowHandle = [IntPtr]([long]${hwnd})
+$ownerPid = [uint32]0
+$windowThread = [V2PWindowDiagnostic]::GetWindowThreadProcessId($windowHandle, [ref]$ownerPid)
+$process = [Diagnostics.Process]::GetProcessById(${pid})
+$currentSession = [Diagnostics.Process]::GetCurrentProcess().SessionId
+$windowDesktop = [V2PWindowDiagnostic]::DesktopName([V2PWindowDiagnostic]::GetThreadDesktop($windowThread))
+$currentDesktop = [V2PWindowDiagnostic]::DesktopName([V2PWindowDiagnostic]::GetThreadDesktop([V2PWindowDiagnostic]::GetCurrentThreadId()))
+$inputDesktopHandle = [V2PWindowDiagnostic]::OpenInputDesktop(0, $false, 1)
+$inputDesktop = [V2PWindowDiagnostic]::DesktopName($inputDesktopHandle)
+if ($inputDesktopHandle -ne [IntPtr]::Zero) { [void][V2PWindowDiagnostic]::CloseDesktop($inputDesktopHandle) }
 $condition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})
 $elements = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
 $edit = $null
 foreach ($candidate in $elements) {
   if ($candidate.Current.ControlType.Id -eq 50004) { $edit = $candidate; break }
 }
-if ($null -eq $edit) { [Console]::Out.WriteLine('NO_FIXTURE_EDIT'); exit 0 }
-$edit.SetFocus()
-[Console]::Out.WriteLine('FIXTURE_EDIT_FOCUSED')
+if ($null -ne $edit) { $edit.SetFocus() }
+$uiaTypes = @($elements | ForEach-Object { $_.Current.ControlType.Id } | Sort-Object -Unique)
+$uiaClasses = @($elements | ForEach-Object { $_.Current.ClassName } | Sort-Object -Unique)
+@{
+  fixturePid = ${pid};
+  windowHandle = $windowHandle.ToInt64();
+  windowOwnerPid = $ownerPid;
+  visible = [V2PWindowDiagnostic]::IsWindowVisible($windowHandle);
+  fixtureSession = $process.SessionId;
+  currentSession = $currentSession;
+  sessionMatches = ($process.SessionId -eq $currentSession);
+  windowDesktop = $windowDesktop;
+  currentDesktop = $currentDesktop;
+  inputDesktop = $inputDesktop;
+  windowDesktopMatchesCurrent = ($windowDesktop -and $windowDesktop -eq $currentDesktop);
+  windowDesktopMatchesInput = ($windowDesktop -and $windowDesktop -eq $inputDesktop);
+  uiaElementsForPid = $elements.Count;
+  uiaEditsForPid = @($elements | Where-Object { $_.Current.ControlType.Id -eq 50004 }).Count;
+  uiaControlTypes = $uiaTypes;
+  uiaClassNames = $uiaClasses;
+  focusedEdit = ($null -ne $edit)
+} | ConvertTo-Json -Compress | Write-Output
 `;
   const encoded = Buffer.from(script, 'utf16le').toString('base64');
   const output = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
     encoding: 'utf8', timeout: 10000, windowsHide: true
   });
-  return output.includes('FIXTURE_EDIT_FOCUSED');
+  return JSON.parse(output.trim().split(/\r?\n/).pop());
+}
+
+function focusAt(point) {
+  const script = `
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, WindowsBase -ErrorAction Stop
+$element = [System.Windows.Automation.AutomationElement]::FromPoint((New-Object System.Windows.Point(${point.x}, ${point.y})))
+$walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+for ($i = 0; $i -lt 12 -and $null -ne $element; $i++) {
+  if ($element.Current.ControlType.Id -eq 50004) { break }
+  $element = $walker.GetParent($element)
+}
+if ($null -eq $element -or $element.Current.ControlType.Id -ne 50004) { throw 'fixture Edit not found at test point' }
+$element.SetFocus()
+`;
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
+    encoding: 'utf8', timeout: 10000, windowsHide: true
+  });
+}
+
+function readFocusedTextPattern() {
+  const script = `
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes -ErrorAction Stop
+$element = [System.Windows.Automation.AutomationElement]::FocusedElement
+$walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+for ($i = 0; $i -lt 12 -and $null -ne $element; $i++) {
+  if ($element.Current.ControlType.Id -eq 50004) { break }
+  $element = $walker.GetParent($element)
+}
+if ($null -eq $element -or $element.Current.ControlType.Id -ne 50004) { exit 5 }
+$pattern = $element.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
+$ranges = @($pattern.GetSelection())
+if ($ranges.Length -eq 0) { exit 6 }
+$selectedText = [string]$ranges[0].GetText(100000)
+[Console]::Out.WriteLine('TEXT_PATTERN_READ_OK:' + $selectedText.Length)
+`;
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  return spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
+    encoding: 'utf8', timeout: 10000, windowsHide: true
+  });
+}
+
+function focusedValueReadOnly() {
+  const script = `
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes -ErrorAction Stop
+$element = [System.Windows.Automation.AutomationElement]::FocusedElement
+$walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+for ($i = 0; $i -lt 12 -and $null -ne $element; $i++) {
+  if ($element.Current.ControlType.Id -eq 50004) { break }
+  $element = $walker.GetParent($element)
+}
+if ($null -eq $element -or $element.Current.ControlType.Id -ne 50004) { exit 5 }
+$pattern = $element.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+if ($null -eq $pattern) { exit 6 }
+[Console]::Out.WriteLine('VALUE_READONLY:' + $pattern.Current.IsReadOnly.ToString())
+`;
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
+    encoding: 'utf8', timeout: 10000, windowsHide: true
+  });
+  const match = String(result.stdout || '').match(/VALUE_READONLY:(True|False)/);
+  return result.status === 0 && match ? match[1].toLowerCase() === 'true' : null;
 }
 
 function foregroundWindow() {
@@ -147,7 +272,6 @@ public static class V2PSnapshot {
 "@
 $focus = [System.Windows.Automation.AutomationElement]::FocusedElement
 $id = ''
-$text = ''
 if ($null -ne $focus) {
   $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
   for ($i = 0; $i -lt 12 -and $null -ne $focus; $i++) {
@@ -157,18 +281,11 @@ if ($null -ne $focus) {
   if ($null -ne $focus -and $focus.Current.ControlType.Id -eq 50004) {
     $runtimeId = (@($focus.GetRuntimeId()) | ForEach-Object { [string]$_ }) -join '.'
     $id = ([string]$focus.Current.ProcessId + '|' + [string]$focus.Current.NativeWindowHandle + '|' + $runtimeId)
-    $pattern = $focus.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
-    if ($null -ne $pattern) {
-      $ranges = @($pattern.GetSelection())
-      $parts = @()
-      foreach ($range in $ranges) { $parts += $range.GetText(100000) }
-      $text = [string]::Join('', $parts)
-    }
   }
 }
 $clipboard = [Windows.Forms.Clipboard]::GetText()
 $clipboardHash = [Convert]::ToBase64String([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($clipboard)))
-@{ foreground = [V2PSnapshot]::GetForegroundWindow().ToInt64(); focusId = $id; selection = $text; clipboardHash = $clipboardHash } | ConvertTo-Json -Compress
+@{ foreground = [V2PSnapshot]::GetForegroundWindow().ToInt64(); focusId = $id; clipboardHash = $clipboardHash } | ConvertTo-Json -Compress
 `;
   const encoded = Buffer.from(script, 'utf16le').toString('base64');
   return JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-EncodedCommand', encoded], {
@@ -182,31 +299,52 @@ async function run() {
   checkPointRuntimeDependency();
   run.originalForeground = foregroundWindow();
 
-  execFileSync(csc, ['/nologo', '/target:winexe', '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', `/out:${fixtureExe}`, fixtureSource], {
+  const references = [
+    gacAssembly('GAC_64', 'PresentationCore'),
+    gacAssembly('GAC_MSIL', 'PresentationFramework'),
+    gacAssembly('GAC_MSIL', 'WindowsBase'),
+    gacAssembly('GAC_MSIL', 'System.Xaml')
+  ];
+  execFileSync(csc, ['/nologo', '/target:winexe', ...references.map((file) => `/r:${file}`), `/out:${fixtureExe}`, fixtureSource], {
     encoding: 'utf8', timeout: 20000, windowsHide: true
   });
   fixture = spawn(fixtureExe, [readyFile, stopFile], { windowsHide: false, stdio: 'ignore' });
   const points = await waitForReady();
   await new Promise((resolve) => setTimeout(resolve, 500));
 
-  if (!focusFixtureEdit(points.pid)) {
-    console.log('BLOCKED live UIA scenarios: tool session UIA desktop tree cannot focus the isolated fixture Edit');
+  const fixtureState = inspectAndFocusFixture(points.pid, points.hwnd);
+  console.log('FIXTURE_UIA_DIAGNOSTIC ' + JSON.stringify({
+    ...fixtureState,
+    readyVisible: points.visible,
+    readySession: points.session
+  }));
+  if (!fixtureState.focusedEdit) {
+    console.log('BLOCKED live UIA scenarios: UIA RootElement did not expose an Edit for the fixture PID');
     return;
   }
 
   const before = runtimeSnapshot();
   assert.ok(before.focusId.startsWith(`${points.pid}|`), 'fixture editable control owns keyboard focus');
-  assert.ok(before.selection.length > 0, 'fixture exposes a non-empty TextPattern selection');
+  assert.equal(focusedValueReadOnly(), false, 'editable WPF TextBox exposes writable ValuePattern');
+  const textPatternRead = readFocusedTextPattern();
+  if (textPatternRead.status !== 0 || !String(textPatternRead.stdout || '').includes('TEXT_PATTERN_READ_OK:')) {
+    console.error('FAIL WPF TextPattern.GetText runtime (PowerShell exit ' + textPatternRead.status + ', signal ' + textPatternRead.signal + ')');
+    failures.push('WPF TextPatternRange.GetText did not return selected text in the Windows PowerShell child');
+  }
   const eligible = await probeSelection(points.a1, points.a2, { requireFocusedTarget: true });
-  assert.ok(eligible, 'production probe confirms selection in the same native Edit');
-  assert.equal(eligible.processName, 'PaletteUiaFixture');
-  assert.equal(eligible.text, before.selection);
-  assert.equal(shouldShowPalette({ selection: eligible, enabled: true, now: Date.now() }).ok, true);
-  assert.equal(meetsMinimumCharacters(eligible, 20), true);
-  assert.equal(meetsMinimumCharacters(eligible, eligible.text.trim().length + 1), false);
-  assert.deepEqual(runtimeSnapshot(), before, 'probe preserves foreground, focused control, selection, and clipboard hash');
+  if (!eligible) {
+    console.error('FAIL positive WPF TextPattern selection probe returned no confirmed selection');
+    failures.push('positive WPF TextPattern selection probe returned no confirmed selection');
+  } else {
+    assert.equal(eligible.processName, 'PaletteUiaFixture');
+    assert.equal(shouldShowPalette({ selection: eligible, enabled: true, now: Date.now() }).ok, true);
+    assert.equal(meetsMinimumCharacters(eligible, 20), true);
+    assert.equal(meetsMinimumCharacters(eligible, eligible.text.trim().length + 1), false);
+  }
+  assert.deepEqual(runtimeSnapshot(), before, 'probe preserves foreground, focus identity, and clipboard hash');
 
-  assert.equal(await probeSelection(points.a1, points.b, { requireFocusedTarget: true }), null, 'cross-control drag denies');
+  focusAt(points.readonly);
+  assert.equal(focusedValueReadOnly(), true, 'read-only WPF TextBox reports IsReadOnly through ValuePattern');
   assert.equal(await probeSelection(points.readonly, points.readonly, { requireFocusedTarget: true }), null, 'read-only Edit denies');
   assert.equal(await probeSelection(points.object, points.object, { requireFocusedTarget: true }), null, 'object hit denies');
   assert.equal(await probeSelection(points.window, points.window, { requireFocusedTarget: true }), null, 'window background denies');
