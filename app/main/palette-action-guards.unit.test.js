@@ -35,5 +35,12 @@ assert.ok(pasteGuard.includes('$textPattern.GetSelection()') && pasteGuard.inclu
 assert.ok(insert.indexOf('${targetGuard}') < insert.indexOf('[V2PPaste]::Paste()'),
   'native target guard runs before simulated paste');
 assert.ok(insert.includes("clipboard.readText() === text"), 'cancel only restores clipboard if this attempt still owns it');
+assert.ok(!main.includes('readSelection'), 'automatic palette path does not use simulated-copy selection reading');
+const captureStart = main.indexOf('async function captureAndShowPalette');
+const captureEnd = main.indexOf('function isPaletteVisible', captureStart);
+const capture = main.slice(captureStart, captureEnd);
+assert.ok(capture.indexOf('shouldShowPalette') < capture.indexOf('meetsMinimumCharacters') &&
+  capture.indexOf('meetsMinimumCharacters') < capture.indexOf('showPaletteAt'),
+  'threshold and display follow confirmed selection gating');
 
 console.log('PASS palette stale/action-target guards');

@@ -1,6 +1,6 @@
 // palette-gate.unit.test.js — fail-closed passive palette eligibility
 const assert = require('assert');
-const { isTerminalProcess, shouldShowPalette, meetsMinimumCharacters } = require('./palette-gate.js');
+const { isTerminalProcess, isPdfViewerProcess, shouldShowPalette, meetsMinimumCharacters } = require('./palette-gate.js');
 
 let fail = 0;
 function t(name, fn) {
@@ -23,8 +23,12 @@ t('disabled, recording, recent user copy, and terminal deny', () => {
   assert.equal(shouldShowPalette({ selection, enabled: false, now: 1000 }).reason, 'disabled');
   assert.equal(shouldShowPalette({ selection, recording: true, now: 1000 }).reason, 'recording');
   assert.equal(shouldShowPalette({ selection, userCopyAt: 800, now: 1000 }).reason, 'user-copy');
-  for (const name of ['WindowsTerminal', 'pwsh.exe', 'cmd']) assert.equal(isTerminalProcess(name), true);
+  for (const name of ['WindowsTerminal', 'pwsh.exe', 'cmd', 'ConEmu64', 'mintty', 'wezterm-gui', 'tabby']) {
+    assert.equal(isTerminalProcess(name), true);
+  }
   assert.equal(shouldShowPalette({ selection: { ...selection, processName: 'WindowsTerminal' }, now: 1000 }).reason, 'terminal');
+  for (const name of ['Acrobat.exe', 'FoxitPDFReader', 'SumatraPDF']) assert.equal(isPdfViewerProcess(name), true);
+  assert.equal(shouldShowPalette({ selection: { ...selection, processName: 'Acrobat' }, now: 1000 }).reason, 'pdf-viewer');
 });
 
 t('threshold is considered only for confirmed text', () => {

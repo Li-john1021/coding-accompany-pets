@@ -48,3 +48,19 @@ Failure/repair evidence: one full-suite run initially failed the probe parser te
 Evidence limits: PowerShell parser validation proves only generated guard syntax. Tests do not execute UIA providers, foreground comparisons, or end-to-end paste routing. No Windows control/browser scenario is claimed as tested.
 
 Validation boundary: VB-002 / L1 is warranted because asynchronous processing and cross-process paste affect target state. Reviewer evidence is not yet recorded.
+
+## WU-003
+
+Status: compatibility review documented; deterministic regression checks passed. Independent boundary review and targeted Windows validation are pending.
+
+Changes: expanded explicit terminal process denial and denied common PDF viewer process names; documented the strict UIA capability contract, candidate providers, unsupported/fail-closed cases, runtime validation gaps, and the remaining check-to-SendInput race in `docs/COMPATIBILITY-palette-trigger-fix.md`.
+
+Checks:
+
+- Every `app/main/*.unit.test.js` — pass.
+- `node --check` on changed JavaScript — pass.
+- `git diff --check` — pass.
+- Frozen Spec hash rechecked — matches.
+- `git diff --quiet 046135b606313bf4467735d873b64166148102b1 -- app/main/pipeline.js app/renderer/palette.html app/renderer/pet.js app/renderer/pet-live2d.js` — pass; voice pipeline, existing palette HTML, and pet renderers are unchanged.
+
+Validation boundary: VB-003 / L1 is warranted because providers differ and trigger changes share the app process with voice flows. UIA compatibility and focusable-false behavior remain unverified on actual Windows controls; no runtime test is claimed.

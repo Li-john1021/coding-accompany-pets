@@ -1,8 +1,13 @@
 // Fail-closed policy for automatic selection palette eligibility.
-const TERMINAL_RE = /^(windowsterminal|wt|cmd|powershell|pwsh|windowssystem32|conhost|wezterm|alacritty|hyper)$/i;
+const TERMINAL_RE = /^(windowsterminal|wt|cmd|powershell|pwsh|windowssystem32|conhost|conemu|conemu64|mintty|bash|wsl|ubuntu|debian|wezterm|wezterm-gui|alacritty|hyper|tabby|kitty|putty|cmder|fluentterminal|terminus|rio|xterm)$/i;
+const PDF_VIEWER_RE = /^(acrobat|acrord32|foxitreader|foxitpdfreader|foxitpdfeditor|sumatrapdf|pdfxedit|pdfxeditor|nitropdf|nitropdfreader)$/i;
 
 function isTerminalProcess(name) {
   return TERMINAL_RE.test(String(name || '').replace(/\.exe$/i, ''));
+}
+
+function isPdfViewerProcess(name) {
+  return PDF_VIEWER_RE.test(String(name || '').replace(/\.exe$/i, ''));
 }
 
 function shouldShowPalette({ selection, enabled, recording, userCopyAt, now }) {
@@ -15,6 +20,7 @@ function shouldShowPalette({ selection, enabled, recording, userCopyAt, now }) {
     return { ok: false, reason: 'selection-unconfirmed' };
   }
   if (isTerminalProcess(selection.processName)) return { ok: false, reason: 'terminal' };
+  if (isPdfViewerProcess(selection.processName)) return { ok: false, reason: 'pdf-viewer' };
   return { ok: true, reason: 'ok' };
 }
 
@@ -26,4 +32,4 @@ function meetsMinimumCharacters(selection, minimum) {
   return selection.text.trim().length >= (Number.isFinite(limit) && limit > 0 ? limit : 0);
 }
 
-module.exports = { isTerminalProcess, shouldShowPalette, meetsMinimumCharacters };
+module.exports = { isTerminalProcess, isPdfViewerProcess, shouldShowPalette, meetsMinimumCharacters };
