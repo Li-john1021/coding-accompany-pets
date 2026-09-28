@@ -97,7 +97,15 @@ function openPaint(opts = {}) {
 }
 
 function createPetWindow() {
-  const s = Math.max(0.3, Math.min(2.5, Number(config.load().petScale) || 1));
+  let s = Math.max(0.3, Math.min(2.5, Number(config.load().petScale) || 1));
+  // 用户滚轮误拧到极小时桌宠几乎不可见，创建时抬到可辨识尺寸
+  if (s < 0.8) {
+    console.log('[pet] scale too small: ' + s + ' -> 1');
+    s = 1;
+    const cfg = config.load();
+    cfg.petScale = 1;
+    config.save();
+  }
   petWin = new BrowserWindow({
     width: Math.round(300 * s),
     height: Math.round(230 * s),

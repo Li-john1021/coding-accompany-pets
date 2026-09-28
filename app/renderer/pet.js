@@ -274,31 +274,46 @@ window.v2p.getConfig().then((cfg) => applyTriggerMode(cfg && cfg.triggerMode));
 window.v2p.onTriggerModeChanged(applyTriggerMode);
 
 (async () => {
-  // 优先 Live2D 皮肤；加载失败（无模型/无运行时）回退静态图
   let live2dOk = false;
   try {
     const { url } = await window.v2p.petModel();
+    console.log('[pet] model url=' + (url || '(none)'));
     if (url && window.petLive2d) {
       const entry = url + 'cat.model3.json';
       live2dOk = await window.petLive2d.loadModel(entry);
+      console.log('[pet] live2d load=' + live2dOk);
+      if (live2dOk) {
+        await new Promise((r) => setTimeout(r, 400));
+        const visible = !window.petLive2d.hasVisiblePixels || window.petLive2d.hasVisiblePixels();
+        console.log('[pet] live2d pixels=' + visible);
+        if (!visible) {
+          live2dOk = false;
+          try { if (window.petLive2d.unload) window.petLive2d.unload(); } catch (e) {}
+          stage.classList.remove('live2d');
+        }
+      }
     }
-  } catch (e) { console.warn('[live2d] 启动加载失败，回退静态图', e); }
+  } catch (e) { console.warn('[pet] live2d fail', e); live2dOk = false; }
+
   if (!live2dOk) {
+    stage.classList.remove('live2d');
     const { dataUrl } = await window.v2p.petImage();
     if (dataUrl) {
       petImg.src = dataUrl;
+      console.log('[pet] fallback image ok');
     } else {
-      // 兜底：保证桌宠可见，避免透明空窗
       try {
         const c = document.createElement('canvas');
         c.width = 240; c.height = 240;
         const ctx = c.getContext('2d');
-        ctx.fillStyle = '#3a3d46';
+        ctx.fillStyle = '#f2c94c';
         ctx.beginPath(); ctx.arc(120, 120, 100, 0, Math.PI * 2); ctx.fill();
-        ctx.font = '120px serif';
+        ctx.fillStyle = '#2c3e50';
+        ctx.font = 'bold 120px serif';
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('\uD83D\uDC31', 120, 130);
+        ctx.fillText('CAT', 120, 130);
         petImg.src = c.toDataURL('image/png');
+        console.log('[pet] fallback placeholder ok');
       } catch (e) { console.warn('[pet] fallback fail', e); }
     }
   }

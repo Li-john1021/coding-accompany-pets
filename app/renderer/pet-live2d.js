@@ -265,7 +265,23 @@
     app.render();
   }
 
+  function hasVisiblePixels() {
+    try {
+      if (!canvas) return false;
+      const c = document.createElement('canvas');
+      c.width = canvas.width; c.height = canvas.height;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(canvas, 0, 0);
+      const d = x.getImageData(0, 0, c.width, c.height).data;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 8) return true;
+      return false;
+    } catch (e) {
+      return true;
+    }
+  }
+
   window.petLive2d = {
+    hasVisiblePixels,
     setState(s) {
       if (BEHAVIOR[s]) state = s;
       else if (s === 'recording') state = 'listening';
