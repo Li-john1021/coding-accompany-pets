@@ -42,9 +42,11 @@ async function runMode(mode) {
   try {
     const res = await window.v2p.paletteRun(mode);
     if (res && res.ok) {
+      // 先展示完成态再关，保证用户看到反馈
       setBusy(false, res.note || (res.degraded ? '已降级处理' : '完成'));
-      setTimeout(() => window.v2p.paletteDismiss('done'), 700);
+      setTimeout(() => window.v2p.paletteDismiss('done'), 1200);
     } else {
+      // 失败保留浮条与错误文案，禁止主进程提前关窗
       setBusy(false, (res && res.error) || '失败，未改动文本');
     }
   } catch (e) {

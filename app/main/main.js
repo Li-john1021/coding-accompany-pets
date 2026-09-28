@@ -771,14 +771,12 @@ ipcMain.handle('v2p:palette-run', async (_e, { mode }) => {
     const cap = await readSelection();
     if (!cap.ok || !cap.text || !cap.text.trim()) {
       paletteDebugLog('RUN_NO_SEL');
-      hidePalette();
-      return { ok: false, error: '没有读到选中文字（选区可能已取消）' };
+      return { ok: false, error: '没有读到选中文字（选区可能已取消），浮条保留' };
     }
     const cfg0 = config.load();
     const minChars = Number(cfg0.paletteMinChars) || 20;
     if (cap.text.trim().length < minChars) {
       paletteDebugLog('RUN_SHORT len=' + cap.text.trim().length);
-      hidePalette();
       return { ok: false, error: '选中不足 ' + minChars + ' 字，未处理' };
     }
     lastSelection = { text: cap.text, oldClipboard: cap.oldClipboard };
@@ -792,7 +790,6 @@ ipcMain.handle('v2p:palette-run', async (_e, { mode }) => {
 
     if (copyOnly) {
       clipboard.writeText(r.text);
-      hidePalette();
       const payload = {
         raw: lastSelection.text,
         polished: r.text,
@@ -813,7 +810,6 @@ ipcMain.handle('v2p:palette-run', async (_e, { mode }) => {
     if (ins.inserted && cfg.clipboardRestore) {
       try { clipboard.writeText(lastSelection.oldClipboard || ''); } catch { /* ignore */ }
     }
-    hidePalette();
     const fallbackNote = ins.inserted ? (r.note || '完成') : (r.note ? r.note + '；' : '') + '已复制，请手动粘贴';
     const payload = {
       raw: lastSelection.text,
@@ -960,7 +956,7 @@ function setMouseRecordHook() {
       });
       uIOhook.on('mousemove', (e) => {
         if (!selDown || selDragging) return;
-        if (Math.hypot(e.x - selStartX, e.y - selStartY) > 6) selDragging = true;
+        if (Math.hypot(e.x - selStartX, e.y - selStartY) > 12) selDragging = true;
       });
       uIOhook.on('mouseup', (e) => {
         const isLeft = e.button === 1 || e.button === 0;
