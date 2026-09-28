@@ -26,7 +26,7 @@ function buildProbeScript(start, end, options = {}) {
 ` : '';
   return `
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes -ErrorAction Stop
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, WindowsBase -ErrorAction Stop
 function Probe-Point([int]$x, [int]$y) {
   $hit = [System.Windows.Automation.AutomationElement]::FromPoint((New-Object System.Windows.Point($x, $y)))
   if ($null -eq $hit) { throw 'no element at point' }

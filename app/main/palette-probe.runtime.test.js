@@ -33,12 +33,20 @@ function parsePowerShell(script) {
 }
 
 function checkPointRuntimeDependency() {
+  const probeScript = buildProbeScript({ x: 20, y: 20 }, { x: 40, y: 40 });
+  const assemblyLoad = probeScript.match(/^Add-Type -AssemblyName [^\r\n]+/m);
+  const pointCall = probeScript.match(/^\s*\$hit = .*AutomationElement\]::FromPoint\(.*System\.Windows\.Point\(\$x, \$y\).*$/m);
+  if (!assemblyLoad || !pointCall) {
+    failures.push('could not locate runtime assembly load and point call in generated production probe');
+    console.error('FAIL production UIA Point runtime setup');
+    return false;
+  }
+  const runtimePointCall = pointCall[0].replace(/\$x\b/g, '20').replace(/\$y\b/g, '20');
   const script = `
 $ErrorActionPreference = 'Stop'
 try {
-  Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes -ErrorAction Stop
-  $point = New-Object System.Windows.Point(0, 0)
-  $hit = [System.Windows.Automation.AutomationElement]::FromPoint($point)
+  ${assemblyLoad[0]}
+  ${runtimePointCall}
   if ($null -eq $hit) { throw 'FromPoint returned no element' }
   [Console]::Out.WriteLine('PASS_PROBE_POINT_RUNTIME')
 } catch {

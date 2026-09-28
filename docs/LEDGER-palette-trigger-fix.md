@@ -94,3 +94,18 @@ Scope: repair only F-004/F-005 from immutable `docs/audits/palette-trigger-revie
 - Frozen Spec SHA-256 rechecked — matches.
 - `git diff --quiet 243a1e8d3c37a0fcee9692974edaeb0edcc9b306 -- docs/audits/palette-trigger-review-2.md` — pass; review report unchanged.
 - F-003 actual Windows UIA/provider matrix, GUI paste, focus-preserving palette click, user Ctrl+C, stale timing, and voice observations remain pending the dedicated test agent. This runtime smoke is guard/type execution only, not end-to-end application evidence.
+
+## Production Probe Point Runtime Repair
+
+Scope: address the concrete Point runtime failure recorded in immutable `docs/TEST-REPORT-palette-trigger-fix.md`; Plan, Spec, and reports remain unchanged.
+
+- `app/main/palette-probe.js` now explicitly loads `WindowsBase` with the UI Automation assemblies before calling `System.Windows.Point`.
+- `app/main/palette-probe.runtime.test.js` builds the production probe, extracts its actual `Add-Type` line and `AutomationElement.FromPoint(New-Object System.Windows.Point(...))` line, and runs those lines in a fresh `powershell.exe`. It no longer substitutes a hard-coded legacy assembly list.
+- `node app/main/palette-probe.runtime.test.js` — Point runtime passed using production-generated lines. Live fixture selection/UIA scenarios printed `BLOCKED` because the tool session could not focus the isolated fixture Edit; no provider scenario is claimed passed.
+- `node app/main/palette-probe.runtime.test.js` — exit 0; generated production probe parsed and the production-loaded WindowsBase/Point/FromPoint runtime smoke passed. The isolated fixture scenario remained `BLOCKED` because the tool-session UIA desktop tree could not focus its Edit control.
+- Every `app/main/*.unit.test.js` — pass (9 files).
+- `node --check` on every `app/**/*.js` — pass (26 files).
+- `node app/main/palette-paste-guard.unit.test.js` — pass, including fresh-process PowerShell runtime guard smoke.
+- `git diff --check` — pass.
+- Frozen Spec SHA-256 — matched `606830FB0DAA45A47EAE07C316204EE5F4952236AD21FB327501080C61123B50`.
+- Plan, Spec, and existing review/test reports are unchanged; no `PaletteUiaFixture` process remains after the blocked test.
