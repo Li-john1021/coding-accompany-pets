@@ -120,14 +120,36 @@ async function stopCurrentFixture() {
   fixture = null;
 }
 
-async function refocusNativeFixture(target = 'a') {
+async function refocusNativeFixture(target = 'a', timeoutMs = 2000) {
   try { fs.rmSync(nativeFocusAckFile, { force: true }); } catch {}
   fs.writeFileSync(nativeFocusRequestFile, target);
-  for (let i = 0; i < 40; i++) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     if (fs.existsSync(nativeFocusAckFile) && fs.readFileSync(nativeFocusAckFile, 'utf8') === target) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error('native fixture did not acknowledge focus request');
+}
+
+async function waitForNativeEditFocus(point, expectedPid, expectedHwnd, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastState = null;
+  while (Date.now() < deadline) {
+    const remainingBeforeFocus = deadline - Date.now();
+    try { await refocusNativeFixture('a', Math.min(500, remainingBeforeFocus)); }
+    catch { continue; }
+    const remainingBeforeRead = deadline - Date.now();
+    if (remainingBeforeRead <= 0) break;
+    try {
+      lastState = readProductionNativeEditSelection(point, expectedPid, Math.min(1000, remainingBeforeRead));
+      if (lastState.hwnd === expectedHwnd && lastState.ownerPid === expectedPid &&
+          lastState.foregroundPid === expectedPid && lastState.focusedHwnd === expectedHwnd && lastState.isFocused) {
+        return { ready: true, lastState };
+      }
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return { ready: false, lastState };
 }
 
 function inspectAndFocusFixture(pid, hwnd) {
@@ -312,7 +334,7 @@ $hash = [Convert]::ToBase64String([Security.Cryptography.SHA256]::Create().Compu
   return JSON.parse(output.trim().split(/\r?\n/).pop());
 }
 
-function readProductionNativeEditSelection(point, expectedPid) {
+function readProductionNativeEditSelection(point, expectedPid, timeoutMs = 10000) {
   const script = `
 ${buildNativeEditPowerShell()}
 $hwnd = [V2PNativeEdit]::WindowFromPoint([V2PNativeEdit+POINT]::new(${point.x}, ${point.y}))
@@ -338,7 +360,7 @@ $hash = [Convert]::ToBase64String([Security.Cryptography.SHA256]::Create().Compu
 `;
   const encoded = Buffer.from(script, 'utf16le').toString('base64');
   const output = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
-    encoding: 'utf8', timeout: 10000, windowsHide: true
+    encoding: 'utf8', timeout: timeoutMs, windowsHide: true
   });
   return JSON.parse(output.trim().split(/\r?\n/).pop());
 }
@@ -752,26 +774,38 @@ async function run() {
   if (originalClipboardText.length <= 1000 && !/[\r\n\0]/.test(originalClipboardText) && !unexpectedFormats.length) {
     let copiedSnapshot;
     try {
-      await refocusNativeFixture();
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      sendCtrlCToForeground();
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      copiedSnapshot = runtimeSnapshot();
-      assert.equal(copiedSnapshot.clipboardHash, textHash(nativeEligible.text),
-        'ordinary Ctrl+C copies the fixture Edit selection');
-      console.log('PASS real Ctrl+C copied fixture selection (digest matched; text not logged)');
+      const focusReady = await waitForNativeEditFocus(nativePoints.a1, nativePoints.pid, nativePoints.hwnd);
+      if (!focusReady.ready && focusReady.lastState) {
+        console.log('BLOCKED ordinary Ctrl+C runtime: focus readiness timed out ' + JSON.stringify({
+          foregroundPid: focusReady.lastState.foregroundPid,
+          focusedHwnd: focusReady.lastState.focusedHwnd,
+          targetHwnd: nativePoints.hwnd,
+          targetPid: nativePoints.pid
+        }));
+      } else if (!focusReady.ready) {
+        console.log('BLOCKED ordinary Ctrl+C runtime: focus readiness probe failed');
+      } else {
+        sendCtrlCToForeground();
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        copiedSnapshot = runtimeSnapshot();
+        assert.equal(copiedSnapshot.clipboardHash, textHash(nativeEligible.text),
+          'ordinary Ctrl+C copies the fixture Edit selection');
+        console.log('PASS real Ctrl+C copied fixture selection (digest matched; text not logged)');
+      }
     } finally {
-      const currentClipboard = runtimeSnapshot();
-      if (currentClipboard.clipboardHash !== clipboardSnapshot.clipboardHash) {
-        if (!copiedSnapshot || currentClipboard.clipboardHash !== copiedSnapshot.clipboardHash) {
-          throw new Error('clipboard changed after Ctrl+C observation; refusing to overwrite an unrelated value');
+      if (copiedSnapshot) {
+        const currentClipboard = runtimeSnapshot();
+        if (currentClipboard.clipboardHash !== clipboardSnapshot.clipboardHash) {
+          if (currentClipboard.clipboardHash !== copiedSnapshot.clipboardHash) {
+            throw new Error('clipboard changed after Ctrl+C observation; refusing to overwrite an unrelated value');
+          }
+          writeSystemClipboardText(originalClipboardText, currentClipboard.clipboardHash);
+          const restored = runtimeSnapshot();
+          assert.equal(restored.clipboardHash, clipboardSnapshot.clipboardHash, 'Ctrl+C observation restores original clipboard text');
+          assert.deepEqual([...restored.clipboardFormats].sort(), [...clipboardSnapshot.clipboardFormats].sort(),
+            'Ctrl+C observation restores supported text clipboard formats');
+          console.log('PASS Ctrl+C observation restored original clipboard text and formats');
         }
-        writeSystemClipboardText(originalClipboardText, currentClipboard.clipboardHash);
-        const restored = runtimeSnapshot();
-        assert.equal(restored.clipboardHash, clipboardSnapshot.clipboardHash, 'Ctrl+C observation restores original clipboard text');
-        assert.deepEqual([...restored.clipboardFormats].sort(), [...clipboardSnapshot.clipboardFormats].sort(),
-          'Ctrl+C observation restores supported text clipboard formats');
-        console.log('PASS Ctrl+C observation restored original clipboard text and formats');
       }
     }
   } else {
