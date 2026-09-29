@@ -542,6 +542,25 @@ $updated = [Windows.Forms.Clipboard]::GetText()
   return output.trim().split(/\r?\n/).pop();
 }
 
+function sendCtrlCToForeground() {
+  const script = `
+Add-Type -TypeDefinition @"
+using System.Runtime.InteropServices;
+public static class V2PCopyKey {
+  [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, System.UIntPtr extra);
+}
+"@
+[V2PCopyKey]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
+[V2PCopyKey]::keybd_event(0x43, 0, 0, [UIntPtr]::Zero)
+[V2PCopyKey]::keybd_event(0x43, 0, 2, [UIntPtr]::Zero)
+[V2PCopyKey]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
+`;
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
+    encoding: 'utf8', timeout: 10000, windowsHide: true
+  });
+}
+
 function loadInsertModuleWithClipboard(clipboard) {
   const Module = require('module');
   const modulePath = require.resolve('./insert');
@@ -730,6 +749,34 @@ async function run() {
   const originalClipboardText = Buffer.from(clipboardSnapshot.clipboardText, 'base64').toString('utf8');
   const safeTextFormats = new Set(['System.String', 'UnicodeText', 'Text', 'Locale', 'OEMText']);
   const unexpectedFormats = (clipboardSnapshot.clipboardFormats || []).filter((format) => !safeTextFormats.has(format));
+  if (originalClipboardText.length <= 1000 && !/[\r\n\0]/.test(originalClipboardText) && !unexpectedFormats.length) {
+    let copiedSnapshot;
+    try {
+      await refocusNativeFixture();
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      sendCtrlCToForeground();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      copiedSnapshot = runtimeSnapshot();
+      assert.equal(copiedSnapshot.clipboardHash, textHash(nativeEligible.text),
+        'ordinary Ctrl+C copies the fixture Edit selection');
+      console.log('PASS real Ctrl+C copied fixture selection (digest matched; text not logged)');
+    } finally {
+      const currentClipboard = runtimeSnapshot();
+      if (currentClipboard.clipboardHash !== clipboardSnapshot.clipboardHash) {
+        if (!copiedSnapshot || currentClipboard.clipboardHash !== copiedSnapshot.clipboardHash) {
+          throw new Error('clipboard changed after Ctrl+C observation; refusing to overwrite an unrelated value');
+        }
+        writeSystemClipboardText(originalClipboardText, currentClipboard.clipboardHash);
+        const restored = runtimeSnapshot();
+        assert.equal(restored.clipboardHash, clipboardSnapshot.clipboardHash, 'Ctrl+C observation restores original clipboard text');
+        assert.deepEqual([...restored.clipboardFormats].sort(), [...clipboardSnapshot.clipboardFormats].sort(),
+          'Ctrl+C observation restores supported text clipboard formats');
+        console.log('PASS Ctrl+C observation restored original clipboard text and formats');
+      }
+    }
+  } else {
+    console.log('BLOCKED ordinary Ctrl+C runtime: clipboard is multiline, too large, or has non-text formats');
+  }
   if (!originalClipboardText || originalClipboardText.length > 1000 || /[\r\n\0]/.test(originalClipboardText) || unexpectedFormats.length) {
     console.log('BLOCKED guarded insertText runtime: clipboard is empty, multiline, too large, or has non-text formats');
     return;
