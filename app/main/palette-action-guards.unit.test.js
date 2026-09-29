@@ -8,6 +8,7 @@ const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
 const renderer = fs.readFileSync(path.join(__dirname, '../renderer/palette.js'), 'utf8');
 const insert = fs.readFileSync(path.join(__dirname, 'insert.js'), 'utf8');
 const pasteGuard = fs.readFileSync(path.join(__dirname, 'palette-paste-guard.js'), 'utf8');
+const nativeHelper = fs.readFileSync(path.join(__dirname, 'win32-edit.js'), 'utf8');
 const runStart = main.indexOf("ipcMain.handle('v2p:palette-run'");
 const rawStart = main.indexOf("ipcMain.handle('v2p:palette-copy-raw'");
 assert.ok(runStart >= 0 && rawStart > runStart, 'palette run handler exists');
@@ -28,16 +29,18 @@ assert.ok(renderer.includes('const selectionId = activeSelectionId;') && rendere
 assert.ok(renderer.includes("paletteDismiss('done', selectionId)"), 'delayed dismissal is bound to its original selection');
 assert.ok(renderer.includes('if (selectionId !== activeSelectionId) return;'), 'late IPC results do not update a newer palette');
 assert.ok(insert.includes("resolve('cancelled')"), 'invalid target cancels injection');
-assert.ok(pasteGuard.includes('$foregroundPid -eq ${match[1]}') && pasteGuard.includes('$focusedId -eq'),
-  'native paste checks foreground process and focused control identity');
-assert.ok(pasteGuard.includes('$textPattern.GetSelection()') && pasteGuard.includes('$selectedText -ceq $expectedText'),
-  'UIA paste checks the original selection text immediately before injection');
+assert.ok(pasteGuard.includes('[V2PNativeEdit]::IsFocusedTarget') && nativeHelper.includes('ProcessId(hwnd) != expectedPid'),
+  'native paste checks foreground owner and current HWND identity');
 assert.ok(pasteGuard.includes('[V2PNativeEdit]::ReadSelection') &&
   pasteGuard.includes('$selection.Start -eq ${selectionStart}') && pasteGuard.includes('$selection.End -eq ${selectionEnd}'),
   'native paste checks the original selection range immediately before injection');
+assert.ok(!pasteGuard.includes('TextPattern') && !pasteGuard.includes('GetSelection'),
+  'no UIA text-only paste path remains');
 assert.ok(main.includes('current.selectionStart === selection.selectionStart') &&
   main.includes('current.selectionEnd === selection.selectionEnd'),
   'palette action revalidation rejects a changed native range even when selected text is equal');
+assert.ok(main.includes("selection.provider !== 'win32-edit'"),
+  'palette revalidation fails closed for providers without range identity');
 assert.ok(main.includes('nativeParentHandle: selection.nativeParentHandle') &&
   main.includes('nativeThreadId: selection.nativeThreadId'), 'captured native target keeps stable window/thread identity');
 assert.ok(insert.indexOf('${targetGuard}') < insert.indexOf('[V2PPaste]::Paste()'),

@@ -12,14 +12,12 @@ function t(name, fn) {
 }
 
 t('parses only positive non-empty confirmed evidence', () => {
-  assert.deepEqual(parseProbeOutput('{"ok":true,"controlId":"1|2|3","nativeHandle":2,"processId":1,"provider":"uia-textpattern","text":"hello","processName":"notepad"}'), {
-    confirmed: true, controlId: '1|2|3', nativeHandle: 2, processId: 1, provider: 'uia-textpattern', text: 'hello', processName: 'notepad'
-  });
+  assert.equal(parseProbeOutput('{"ok":true,"controlId":"1|2|3","nativeHandle":2,"processId":1,"provider":"uia-textpattern","text":"identical selection text","processName":"notepad"}'), null,
+    'duplicate-text UIA selections without stable range identity are denied');
   for (const output of ['', 'not json', '{"ok":false}', '{"ok":true,"controlId":"","text":"x"}',
     '{"ok":true,"controlId":"1","text":""}',
     '{"ok":true,"controlId":"1|2|native-edit","nativeHandle":3,"processId":1,"provider":"win32-edit","text":"x","processName":"fixture"}',
     '{"ok":true,"controlId":"1|2|3","provider":"unknown","text":"x","processName":"fixture"}']) assert.equal(parseProbeOutput(output), null);
-  assert.equal(parseProbeOutput('{"ok":true,"controlId":"1|2|3","provider":"uia-textpattern","text":"  ","processName":"notepad"}').text, '  ');
   const native = parseProbeOutput('{"ok":true,"controlId":"1|2|win32-edit","nativeHandle":2,"processId":1,"nativeThreadId":3,"nativeParentHandle":4,"nativeControlId":5,"selectionStart":6,"selectionEnd":12,"provider":"win32-edit","text":"native","processName":"fixture"}');
   assert.equal(native.provider, 'win32-edit');
   assert.equal(native.selectionStart, 6);
@@ -27,24 +25,24 @@ t('parses only positive non-empty confirmed evidence', () => {
     'native evidence selection bounds must agree with selected text length');
 });
 
-t('probe compares UIA and native Edit evidence while staying passive', () => {
+t('probe accepts native evidence and fails closed for UIA ranges without identity', () => {
   const script = buildProbeScript({ x: 10, y: 20 }, { x: 30, y: 40 });
   assert.ok(script.includes('AutomationElement]::FromPoint'));
-  assert.ok(script.includes('TextPattern]::Pattern'));
-  assert.ok(script.includes('ValuePattern]::Pattern'));
+  assert.ok(!script.includes('TextPattern]::Pattern'));
+  assert.ok(!script.includes('ValuePattern]::Pattern'));
+  assert.ok(!script.includes('.GetText('));
+  assert.ok(script.includes('unsupported-provider: UIA selection range identity is unavailable'));
   assert.ok(script.includes('[V2PNativeEdit]::WindowFromPoint'));
   assert.ok(script.includes('[V2PNativeEdit]::ReadSelection'));
   assert.ok(script.includes('SendMessageTimeoutW'));
   assert.ok(script.includes('unsupported-provider: observed WPF TextPatternRange.GetText crash'));
-  assert.ok(script.includes('$a.provider -eq $b.provider') || script.includes('$a.controlId -ne $b.controlId'));
-  assert.ok(script.includes('$a.controlId -ne $b.controlId'));
-  assert.ok(script.includes('$a.text -cne $b.text'));
+  assert.ok(script.includes('$nativeA.controlId -ne $nativeB.controlId'));
+  assert.ok(script.includes('$nativeA.text -cne $nativeB.text'));
   assert.ok(script.includes('$nativeA.selectionStart -ne $nativeB.selectionStart'));
   assert.ok(script.includes('$nativeA.selectionEnd -ne $nativeB.selectionEnd'));
   assert.ok(!/SendInput|keyTap|clipboard|FocusedElement|SetFocus|Select\(/i.test(script));
   const actionScript = buildProbeScript({ x: 10, y: 20 }, { x: 30, y: 40 }, { requireFocusedTarget: true });
-  assert.ok(actionScript.includes('AutomationElement]::FocusedElement'));
-  assert.ok(actionScript.includes('$focusId -ne $a.controlId'));
+  assert.ok(actionScript.includes('IsFocusedTarget([IntPtr]$a.nativeHandle'));
   assert.ok(actionScript.includes('nativeThreadId') && actionScript.includes('nativeParentHandle') && actionScript.includes('nativeControlId'));
   assert.ok(actionScript.includes('IsFocusedTarget([IntPtr]$a.nativeHandle, [uint32]$a.processId, [uint32]$a.nativeThreadId'));
   assert.throws(() => buildProbeScript({ x: NaN, y: 0 }, { x: 1, y: 1 }));

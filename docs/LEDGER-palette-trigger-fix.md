@@ -141,3 +141,18 @@ Scope: repair only F-001/F-002 from immutable `docs/audits/palette-trigger-revie
 - `git diff --check` — pass.
 - Frozen Spec SHA-256 — matches `606830FB0DAA45A47EAE07C316204EE5F4952236AD21FB327501080C61123B50`; Plan, Spec, and existing review/test reports are unchanged.
 - Remaining evidence: actual HWND destruction/reuse, browser editable/read-only/contenteditable, ordinary user Ctrl+C, recording session, IME-open restoration, focus-preserving palette interaction, and voice recording/transcription remain untested. Same-process same-thread same-parent HWND reuse cannot be fully distinguished by the current Win32 identity tuple alone.
+
+## Independent Review 5 Repairs
+
+Scope: repair F-002/F-003 from immutable `docs/audits/palette-trigger-review-5.md`; preserve F-001 as an explicit native HWND reuse limitation; do not alter earlier audits or reports.
+
+- F-002: UIA-only selection is now categorically unsupported before ValuePattern/TextPattern selection reads. The probe returns `unsupported-provider` for WPF and other UIA Edit providers, the output parser accepts only `win32-edit`, main-process action revalidation requires `win32-edit`, and `buildPasteTargetGuard` has no UIA text-only path. Thus duplicate text in a UIA range cannot reach model processing or paste; support remains disabled until a stable, non-text range identity is proven. Unit checks assert UIA probe source has no `GetText`, parser rejects UIA results, UIA targets cannot build guards, and revalidation rejects non-native providers.
+- F-003: `runPowerShellFile` consumes child stdin `error` events, kills a child whose input pipe fails, resolves with a normal error after close, and removes the invocation temp directory through the shared finish path. `powershell-file.unit.test.js` runs `exit 0` with 533336 bytes pending on stdin; child EPIPE is contained, Node stays alive, and no temp directory remains.
+- F-001: identity still binds HWND/PID/thread/parent/control ID/focus, but Win32 exposes no generation identity in this path. Reuse with the same tuple and matching selection remains unprevented; this is explicitly documented in the compatibility guide and is not claimed as fixed.
+- Windows runtime fixture completed with exit 0: production WPF probe failed closed; native Edit selection confirmed; wrong-owner PID denied; guarded native replacement passed; changed focus and equal-text/different-offset stale requests canceled without changing the target; clipboard text/formats restored. No fixture or `v2p-palette-ps-*` process/temp directory remained. The fixture had Chrome overlap in one WPF diagnostic endpoint, but the fail-closed WPF check uses the same point at both ends; native endpoint checks hit the same fixture Edit on this run.
+- Every `app/main/*.unit.test.js` — pass (10 files), including PowerShell parser/runtime and stdin early-exit cleanup coverage.
+- `node --check` on every `app/**/*.js` — pass (29 files).
+- `node app/main/palette-probe.runtime.test.js` — pass; actual Windows native/WPF fixture and guarded paste path executed.
+- `git diff --check` — pass.
+- Frozen Spec SHA-256 matches `606830FB0DAA45A47EAE07C316204EE5F4952236AD21FB327501080C61123B50`; Plan, Spec, all prior audits, and existing test reports remain unchanged.
+- Remaining release evidence: browser UIA selection stays disabled; browser behavior, ordinary Ctrl+C, recording, IME-open restoration, palette click focus preservation, and voice recording/transcription remain unverified. Same-tuple HWND reuse remains a known limitation.

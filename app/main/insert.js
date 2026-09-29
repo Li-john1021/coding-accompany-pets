@@ -4,15 +4,12 @@
 // IME 拦截转成 VK_PROCESSKEY（Chromium 里 e.key="Process"），应用永远收不到，
 // 结果就是"只进了剪贴板，还是要手动 Ctrl+V"。
 // 解法：注入前先敲一下 Shift 让 IME 切到英文直通，粘完再敲一下恢复原状态；
-// IME 未打开（纯英文键盘）则直接 SendInput。另外必须 -EncodedCommand：
-// -Command 传参经过双层解析会把引号拆进按键流。
+// IME 未打开（纯英文键盘）则直接 SendInput。Target text is passed separately on stdin.
 const { clipboard } = require('electron');
 const { execFile } = require('child_process');
 const { runPowerShellFile } = require('./powershell-file');
 const {
   buildPasteTargetGuard,
-  REQUIRE_TARGET,
-  RESTORE_SHIFT_IF_TARGET,
   REQUIRE_NATIVE_TARGET,
   RESTORE_SHIFT_IF_NATIVE_TARGET
 } = require('./palette-paste-guard');
@@ -29,9 +26,6 @@ function pasteViaSendInput(target) {
       if (target.provider === 'win32-edit') {
         requireTarget = REQUIRE_NATIVE_TARGET;
         restoreShift = RESTORE_SHIFT_IF_NATIVE_TARGET;
-      } else if (target.provider === 'uia-textpattern') {
-        requireTarget = REQUIRE_TARGET;
-        restoreShift = RESTORE_SHIFT_IF_TARGET;
       } else {
         resolve('cancelled');
         return;
@@ -102,6 +96,9 @@ if ($ime) { ${restoreShift} }
 // 返回 { inserted: boolean }
 async function insertText(text, mode, options = {}) {
   const guarded = !!options.target;
+  if (guarded && !buildPasteTargetGuard(options.target)) {
+    return { inserted: false, copiedOnly: false, cancelled: true };
+  }
   const oldClipboard = guarded ? clipboard.readText() || '' : '';
   clipboard.writeText(text);
   if (mode !== 'paste') return { inserted: false, copiedOnly: true };

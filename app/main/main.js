@@ -682,17 +682,15 @@ function isCurrentPaletteSelection(selection) {
 }
 
 async function revalidatePaletteSelection(selection) {
-  if (!isCurrentPaletteSelection(selection) || recordingActive || config.load().paletteEnabled === false) return false;
+  if (!isCurrentPaletteSelection(selection) || selection.provider !== 'win32-edit' ||
+      recordingActive || config.load().paletteEnabled === false) return false;
   const current = await probeSelection(selection.start, selection.end, { requireFocusedTarget: true });
   if (!isCurrentPaletteSelection(selection) || !current ||
       current.controlId !== selection.controlId || current.text !== selection.text) return false;
-  if (selection.provider === 'win32-edit') {
-    return current.nativeHandle === selection.nativeHandle && current.processId === selection.processId &&
-      current.nativeThreadId === selection.nativeThreadId && current.nativeParentHandle === selection.nativeParentHandle &&
-      current.nativeControlId === selection.nativeControlId && current.selectionStart === selection.selectionStart &&
-      current.selectionEnd === selection.selectionEnd;
-  }
-  return true;
+  return current.nativeHandle === selection.nativeHandle && current.processId === selection.processId &&
+    current.nativeThreadId === selection.nativeThreadId && current.nativeParentHandle === selection.nativeParentHandle &&
+    current.nativeControlId === selection.nativeControlId && current.selectionStart === selection.selectionStart &&
+    current.selectionEnd === selection.selectionEnd;
 }
 
 async function captureAndShowPalette(start, end, screenX, screenY, gestureId) {

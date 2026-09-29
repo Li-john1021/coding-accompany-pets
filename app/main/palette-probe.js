@@ -17,17 +17,6 @@ function buildProbeScript(start, end, options = {}) {
   const focusCheck = options.requireFocusedTarget ? `
   if ($a.provider -eq 'win32-edit') {
     if (-not [V2PNativeEdit]::IsFocusedTarget([IntPtr]$a.nativeHandle, [uint32]$a.processId, [uint32]$a.nativeThreadId, [IntPtr]$a.nativeParentHandle, [int]$a.nativeControlId)) { throw 'active native Edit changed' }
-  } else {
-    $focus = [System.Windows.Automation.AutomationElement]::FocusedElement
-    $focusWalker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
-    for ($i = 0; $i -lt 12 -and $null -ne $focus; $i++) {
-      if ($focus.Current.ControlType.Id -eq 50004) { break }
-      $focus = $focusWalker.GetParent($focus)
-    }
-    if ($null -eq $focus -or $focus.Current.ControlType.Id -ne 50004) { throw 'focused Edit unavailable' }
-    $focusRuntime = (@($focus.GetRuntimeId()) | ForEach-Object { [string]$_ }) -join '.'
-    $focusId = ([string]$focus.Current.ProcessId + '|' + [string]$focus.Current.NativeWindowHandle + '|' + $focusRuntime)
-    if ($focusId -ne $a.controlId) { throw 'active target changed' }
   }
 ` : '';
   return `
@@ -92,20 +81,7 @@ function Probe-Point([int]$x, [int]$y) {
     }
     if (-not $element.Current.IsEnabled -or $element.Current.IsOffscreen) { throw 'edit unavailable' }
     if ($element.Current.FrameworkId -eq 'WPF') { throw 'unsupported-provider: observed WPF TextPatternRange.GetText crash' }
-  $value = $element.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-  if ($null -eq $value -or $value.Current.IsReadOnly) { throw 'edit is readonly or readonly status unknown' }
-  $textPattern = $element.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
-  if ($null -eq $textPattern) { throw 'TextPattern unavailable' }
-  $selected = @($textPattern.GetSelection())
-  if ($null -eq $selected -or $selected.Length -eq 0) { throw 'empty selection' }
-  $parts = @()
-  foreach ($range in $selected) { $parts += $range.GetText(100000) }
-  $text = [string]::Join('', $parts)
-  if ([string]::IsNullOrEmpty($text)) { throw 'empty selection' }
-  $runtimeId = (@($element.GetRuntimeId()) | ForEach-Object { [string]$_ }) -join '.'
-  if ([string]::IsNullOrEmpty($runtimeId)) { throw 'runtime identity unavailable' }
-  $proc = (Get-Process -Id $element.Current.ProcessId -ErrorAction Stop).ProcessName
-  return @{ controlId = ([string]$element.Current.ProcessId + '|' + [string]$element.Current.NativeWindowHandle + '|' + $runtimeId); nativeHandle = [long]$element.Current.NativeWindowHandle; processId = [int]$element.Current.ProcessId; provider = 'uia-textpattern'; text = $text; processName = $proc }
+    throw 'unsupported-provider: UIA selection range identity is unavailable'
 }
 try {
   $a = Probe-Point ${sx} ${sy}
@@ -127,7 +103,7 @@ function parseProbeOutput(stdout) {
     if (!parsed || parsed.ok !== true || typeof parsed.controlId !== 'string' || !parsed.controlId ||
         typeof parsed.text !== 'string' || parsed.text.length === 0 ||
         typeof parsed.processName !== 'string' || !parsed.processName ||
-        !['win32-edit', 'uia-textpattern'].includes(parsed.provider)) return null;
+        parsed.provider !== 'win32-edit') return null;
     let nativeIdentity = null;
     if (parsed.provider === 'win32-edit') {
       const nativeHandle = Number(parsed.nativeHandle), processId = Number(parsed.processId);

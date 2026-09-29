@@ -30,6 +30,7 @@ function runPowerShellFile(script, options, callback) {
   let completed = false;
   let timedOut = false;
   let overflow = false;
+  let stdinFailed = false;
   const finish = (error) => {
     if (completed) return;
     completed = true;
@@ -42,6 +43,10 @@ function runPowerShellFile(script, options, callback) {
     child.kill();
   }, options.timeout);
   child.on('error', (error) => finish(error));
+  child.stdin.on('error', () => {
+    stdinFailed = true;
+    child.kill();
+  });
   child.stdout.on('data', (chunk) => {
     outputBytes += chunk.length;
     if (outputBytes > options.maxBuffer) {
@@ -54,10 +59,15 @@ function runPowerShellFile(script, options, callback) {
   child.on('close', (code) => {
     if (timedOut) return finish(new Error('PowerShell script timed out'));
     if (overflow) return finish(new Error('PowerShell output exceeded limit'));
+    if (stdinFailed) return finish(new Error('PowerShell stdin closed before payload was consumed'));
     if (code !== 0) return finish(new Error(`PowerShell script exited with code ${code}`));
     finish(null);
   });
-  child.stdin.end(options.stdin || '');
+  try { child.stdin.end(options.stdin || ''); }
+  catch {
+    stdinFailed = true;
+    child.kill();
+  }
   return child;
 }
 
