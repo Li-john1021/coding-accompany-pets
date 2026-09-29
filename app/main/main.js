@@ -684,8 +684,15 @@ function isCurrentPaletteSelection(selection) {
 async function revalidatePaletteSelection(selection) {
   if (!isCurrentPaletteSelection(selection) || recordingActive || config.load().paletteEnabled === false) return false;
   const current = await probeSelection(selection.start, selection.end, { requireFocusedTarget: true });
-  return isCurrentPaletteSelection(selection) && current &&
-    current.controlId === selection.controlId && current.text === selection.text;
+  if (!isCurrentPaletteSelection(selection) || !current ||
+      current.controlId !== selection.controlId || current.text !== selection.text) return false;
+  if (selection.provider === 'win32-edit') {
+    return current.nativeHandle === selection.nativeHandle && current.processId === selection.processId &&
+      current.nativeThreadId === selection.nativeThreadId && current.nativeParentHandle === selection.nativeParentHandle &&
+      current.nativeControlId === selection.nativeControlId && current.selectionStart === selection.selectionStart &&
+      current.selectionEnd === selection.selectionEnd;
+  }
+  return true;
 }
 
 async function captureAndShowPalette(start, end, screenX, screenY, gestureId) {
@@ -715,6 +722,9 @@ async function captureAndShowPalette(start, end, screenX, screenY, gestureId) {
   const paletteSelection = {
     id: gestureId, start, end, controlId: selection.controlId,
     nativeHandle: selection.nativeHandle, processId: selection.processId,
+    nativeThreadId: selection.nativeThreadId, nativeParentHandle: selection.nativeParentHandle,
+    nativeControlId: selection.nativeControlId, selectionStart: selection.selectionStart,
+    selectionEnd: selection.selectionEnd,
     provider: selection.provider, text: selection.text, processName: selection.processName
   };
   activePaletteSelection = paletteSelection;

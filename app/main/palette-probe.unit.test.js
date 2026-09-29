@@ -20,7 +20,11 @@ t('parses only positive non-empty confirmed evidence', () => {
     '{"ok":true,"controlId":"1|2|native-edit","nativeHandle":3,"processId":1,"provider":"win32-edit","text":"x","processName":"fixture"}',
     '{"ok":true,"controlId":"1|2|3","provider":"unknown","text":"x","processName":"fixture"}']) assert.equal(parseProbeOutput(output), null);
   assert.equal(parseProbeOutput('{"ok":true,"controlId":"1|2|3","provider":"uia-textpattern","text":"  ","processName":"notepad"}').text, '  ');
-  assert.equal(parseProbeOutput('{"ok":true,"controlId":"1|2|win32-edit","nativeHandle":2,"processId":1,"provider":"win32-edit","text":"native","processName":"fixture"}').provider, 'win32-edit');
+  const native = parseProbeOutput('{"ok":true,"controlId":"1|2|win32-edit","nativeHandle":2,"processId":1,"nativeThreadId":3,"nativeParentHandle":4,"nativeControlId":5,"selectionStart":6,"selectionEnd":12,"provider":"win32-edit","text":"native","processName":"fixture"}');
+  assert.equal(native.provider, 'win32-edit');
+  assert.equal(native.selectionStart, 6);
+  assert.equal(parseProbeOutput('{"ok":true,"controlId":"1|2|win32-edit","nativeHandle":2,"processId":1,"nativeThreadId":3,"nativeParentHandle":4,"nativeControlId":5,"selectionStart":6,"selectionEnd":12,"provider":"win32-edit","text":"different length","processName":"fixture"}'), null,
+    'native evidence selection bounds must agree with selected text length');
 });
 
 t('probe compares UIA and native Edit evidence while staying passive', () => {
@@ -29,16 +33,20 @@ t('probe compares UIA and native Edit evidence while staying passive', () => {
   assert.ok(script.includes('TextPattern]::Pattern'));
   assert.ok(script.includes('ValuePattern]::Pattern'));
   assert.ok(script.includes('[V2PNativeEdit]::WindowFromPoint'));
-  assert.ok(script.includes('[V2PNativeEdit]::ReadSelectedText'));
+  assert.ok(script.includes('[V2PNativeEdit]::ReadSelection'));
   assert.ok(script.includes('SendMessageTimeoutW'));
   assert.ok(script.includes('unsupported-provider: observed WPF TextPatternRange.GetText crash'));
   assert.ok(script.includes('$a.provider -eq $b.provider') || script.includes('$a.controlId -ne $b.controlId'));
   assert.ok(script.includes('$a.controlId -ne $b.controlId'));
   assert.ok(script.includes('$a.text -cne $b.text'));
+  assert.ok(script.includes('$nativeA.selectionStart -ne $nativeB.selectionStart'));
+  assert.ok(script.includes('$nativeA.selectionEnd -ne $nativeB.selectionEnd'));
   assert.ok(!/SendInput|keyTap|clipboard|FocusedElement|SetFocus|Select\(/i.test(script));
   const actionScript = buildProbeScript({ x: 10, y: 20 }, { x: 30, y: 40 }, { requireFocusedTarget: true });
   assert.ok(actionScript.includes('AutomationElement]::FocusedElement'));
   assert.ok(actionScript.includes('$focusId -ne $a.controlId'));
+  assert.ok(actionScript.includes('nativeThreadId') && actionScript.includes('nativeParentHandle') && actionScript.includes('nativeControlId'));
+  assert.ok(actionScript.includes('IsFocusedTarget([IntPtr]$a.nativeHandle, [uint32]$a.processId, [uint32]$a.nativeThreadId'));
   assert.throws(() => buildProbeScript({ x: NaN, y: 0 }, { x: 1, y: 1 }));
 });
 
@@ -48,7 +56,12 @@ t('native Edit reads are bounded and deny readonly/invalid selections', () => {
   assert.ok(NATIVE_EDIT_HELPER.includes('length > 100000'));
   assert.ok(NATIVE_EDIT_HELPER.includes('end <= start') && NATIVE_EDIT_HELPER.includes('end > text.Length'));
   assert.ok(NATIVE_EDIT_HELPER.includes('(Style(hwnd) & 0x0800) != 0'));
+  assert.ok(NATIVE_EDIT_HELPER.includes('IsWindow(hwnd)'));
+  assert.ok(NATIVE_EDIT_HELPER.includes('ProcessId(hwnd) != expectedPid'));
+  assert.ok(NATIVE_EDIT_HELPER.includes('GetParent(hwnd) != expectedParent'));
+  assert.ok(NATIVE_EDIT_HELPER.includes('ThreadId(hwnd) != expectedThreadId'));
   assert.ok(NATIVE_EDIT_HELPER.includes('info.hwndFocus == hwnd'));
+  assert.ok(NATIVE_EDIT_HELPER.includes('selection.Start = start') && NATIVE_EDIT_HELPER.includes('selection.End = end'));
 });
 
 t('production probe has bounded timeout and errors fail closed', () => {

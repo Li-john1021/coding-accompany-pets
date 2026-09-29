@@ -10,6 +10,10 @@ public static class V2PNativeEdit {
     public int cbSize; public int flags; public IntPtr hwndActive; public IntPtr hwndFocus; public IntPtr hwndCapture;
     public IntPtr hwndMenuOwner; public IntPtr hwndMoveSize; public IntPtr hwndCaret; public RECT rcCaret;
   }
+  [StructLayout(LayoutKind.Sequential)] public struct Selection { public int Start, End; public string Text; }
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hwnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr hwnd);
+  [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hwnd);
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassNameW(IntPtr hwnd, StringBuilder name, int max);
   [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr hwnd);
@@ -29,10 +33,18 @@ public static class V2PNativeEdit {
   public static uint ProcessId(IntPtr hwnd) {
     uint pid; GetWindowThreadProcessId(hwnd, out pid); return pid;
   }
-  public static bool IsFocusedTarget(IntPtr hwnd, uint expectedPid) {
-    IntPtr foreground = GetForegroundWindow();
-    if (foreground == IntPtr.Zero || ProcessId(foreground) != expectedPid || !IsWindowEnabled(hwnd) ||
+  public static uint ThreadId(IntPtr hwnd) { uint pid; return GetWindowThreadProcessId(hwnd, out pid); }
+  public static bool IsTarget(IntPtr hwnd, uint expectedPid, uint expectedThreadId, IntPtr expectedParent, int expectedControlId) {
+    if (hwnd == IntPtr.Zero || !IsWindow(hwnd) || ProcessId(hwnd) != expectedPid ||
+        ThreadId(hwnd) != expectedThreadId || GetParent(hwnd) != expectedParent ||
+        GetDlgCtrlID(hwnd) != expectedControlId || !IsWindowEnabled(hwnd) ||
         !String.Equals(ClassName(hwnd), "Edit", StringComparison.OrdinalIgnoreCase) || (Style(hwnd) & 0x0800) != 0) return false;
+    return true;
+  }
+  public static bool IsFocusedTarget(IntPtr hwnd, uint expectedPid, uint expectedThreadId, IntPtr expectedParent, int expectedControlId) {
+    if (!IsTarget(hwnd, expectedPid, expectedThreadId, expectedParent, expectedControlId)) return false;
+    IntPtr foreground = GetForegroundWindow();
+    if (foreground == IntPtr.Zero || !IsWindow(foreground) || ProcessId(foreground) != expectedPid) return false;
     uint foregroundPid; uint thread = GetWindowThreadProcessId(foreground, out foregroundPid);
     var info = new GUITHREADINFO(); info.cbSize = Marshal.SizeOf(typeof(GUITHREADINFO));
     return GetGUIThreadInfo(thread, ref info) && info.hwndFocus == hwnd;
@@ -55,8 +67,8 @@ public static class V2PNativeEdit {
       Marshal.FreeHGlobal(textBuffer);
     }
   }
-  public static string ReadSelectedText(IntPtr hwnd) {
-    if (hwnd == IntPtr.Zero || !IsWindowEnabled(hwnd) || !String.Equals(ClassName(hwnd), "Edit", StringComparison.OrdinalIgnoreCase) || (Style(hwnd) & 0x0800) != 0)
+  public static Selection ReadSelection(IntPtr hwnd) {
+    if (hwnd == IntPtr.Zero || !IsWindow(hwnd) || !IsWindowEnabled(hwnd) || !String.Equals(ClassName(hwnd), "Edit", StringComparison.OrdinalIgnoreCase) || (Style(hwnd) & 0x0800) != 0)
       throw new InvalidOperationException("not an enabled writable Edit");
     string text = ReadText(hwnd);
     IntPtr startPtr = Marshal.AllocHGlobal(4), endPtr = Marshal.AllocHGlobal(4);
@@ -67,9 +79,19 @@ public static class V2PNativeEdit {
         throw new TimeoutException("EM_GETSEL timed out");
       int start = Marshal.ReadInt32(startPtr), end = Marshal.ReadInt32(endPtr);
       if (start < 0 || end <= start || end > text.Length) throw new InvalidOperationException("Edit has no valid non-empty selection");
-      return text.Substring(start, end - start);
+      var selection = new Selection(); selection.Start = start; selection.End = end;
+      selection.Text = text.Substring(start, end - start);
+      IntPtr verifyStart = Marshal.AllocHGlobal(4), verifyEnd = Marshal.AllocHGlobal(4);
+      try {
+        Marshal.WriteInt32(verifyStart, 0); Marshal.WriteInt32(verifyEnd, 0);
+        if (SendMessageTimeout(hwnd, 0x00B0, verifyStart, verifyEnd, 0x0002, 200, out selResult) == IntPtr.Zero ||
+            Marshal.ReadInt32(verifyStart) != start || Marshal.ReadInt32(verifyEnd) != end)
+          throw new InvalidOperationException("Edit selection changed during read");
+      } finally { Marshal.FreeHGlobal(verifyStart); Marshal.FreeHGlobal(verifyEnd); }
+      return selection;
     } finally { Marshal.FreeHGlobal(startPtr); Marshal.FreeHGlobal(endPtr); }
   }
+  public static string ReadSelectedText(IntPtr hwnd) { return ReadSelection(hwnd).Text; }
 }
 `;
 

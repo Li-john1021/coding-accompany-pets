@@ -8,6 +8,7 @@
 // -Command 传参经过双层解析会把引号拆进按键流。
 const { clipboard } = require('electron');
 const { execFile } = require('child_process');
+const { runPowerShellFile } = require('./powershell-file');
 const {
   buildPasteTargetGuard,
   REQUIRE_TARGET,
@@ -87,16 +88,14 @@ ${requireTarget}
 Start-Sleep -Milliseconds 160
 if ($ime) { ${restoreShift} }
 `;
-    const b64 = Buffer.from(script, 'utf16le').toString('base64');
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-EncodedCommand', b64],
-      { timeout: 8000, windowsHide: true },
-      (err, stdout) => {
+    runPowerShellFile(script, {
+      timeout: 8000,
+      maxBuffer: 256 * 1024,
+      stdin: target ? Buffer.from(target.text, 'utf8').toString('base64') + '\n' : ''
+    }, (err, stdout) => {
         if (target && (err || String(stdout || '').includes('V2P_CANCEL'))) resolve('cancelled');
         else resolve(!err);
-      }
-    );
+      });
   });
 }
 

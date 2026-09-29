@@ -40,22 +40,28 @@ function gacAssembly(bucket, name) {
 }
 
 function parsePowerShell(script) {
-  const encodedScript = Buffer.from(script, 'utf16le').toString('base64');
-  const command = `$source = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedScript}')); ` +
-    '$tokens = $null; $errors = $null; ' +
-    '[System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokens, [ref]$errors) | Out-Null; ' +
+  const sourcePath = path.join(tempDir, 'probe-parse-input.ps1');
+  fs.writeFileSync(sourcePath, script, 'utf8');
+  const command = '$tokens = $null; $errors = $null; ' +
+    '[System.Management.Automation.Language.Parser]::ParseFile($args[0], [ref]$tokens, [ref]$errors) | Out-Null; ' +
     'if ($errors.Count -gt 0) { $errors | ForEach-Object { [Console]::Error.WriteLine($_.Message) }; exit 1 }';
-  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+  const parserPath = path.join(tempDir, 'parse-generated-probe.ps1');
+  fs.writeFileSync(parserPath, command, 'utf8');
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', parserPath, sourcePath], {
     encoding: 'utf8', timeout: 10000, windowsHide: true
   });
 }
 
 function runGeneratedProbe(start, end, options = {}) {
-  const encoded = Buffer.from(buildProbeScript(start, end, options), 'utf16le').toString('base64');
-  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
-    encoding: 'utf8', timeout: 10000, windowsHide: true
-  });
-  return { status: result.status, signal: result.signal, stdout: String(result.stdout || ''), stderr: String(result.stderr || '') };
+  const scriptPath = path.join(tempDir, `generated-probe-${Date.now()}-${Math.random().toString(16).slice(2)}.ps1`);
+  fs.writeFileSync(scriptPath, '\uFEFF' + buildProbeScript(start, end, options), 'utf16le');
+  let result;
+  try {
+    result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', scriptPath], {
+      encoding: 'utf8', timeout: 10000, windowsHide: true
+    });
+  } finally { try { fs.unlinkSync(scriptPath); } catch {} }
+  return { status: result.status, signal: result.signal, stdout: String(result.stdout || ''), stderr: String(result.stderr || ''), error: result.error && result.error.message };
 }
 
 function checkPointRuntimeDependency() {
@@ -312,12 +318,52 @@ ${buildNativeEditPowerShell()}
 $hwnd = [V2PNativeEdit]::WindowFromPoint([V2PNativeEdit+POINT]::new(${point.x}, ${point.y}))
 $text = [V2PNativeEdit]::ReadSelectedText($hwnd)
 $owner = [V2PNativeEdit]::ProcessId($hwnd)
+$threadId = [V2PNativeEdit]::ThreadId($hwnd)
+$parentHandle = [V2PNativeEdit]::GetParent($hwnd).ToInt64()
+$controlId = [V2PNativeEdit]::GetDlgCtrlID($hwnd)
+$selection = [V2PNativeEdit]::ReadSelection($hwnd)
 $className = [V2PNativeEdit]::ClassName($hwnd)
 $style = [V2PNativeEdit]::Style($hwnd)
 $foreground = [V2PNativeEdit]::GetForegroundWindow()
-$isFocused = [V2PNativeEdit]::IsFocusedTarget($hwnd, [uint32]${expectedPid})
+$foregroundPid = [uint32]0
+$foregroundThreadId = [V2PNativeEdit]::GetWindowThreadProcessId($foreground, [ref]$foregroundPid)
+$guiInfo = New-Object V2PNativeEdit+GUITHREADINFO
+$guiInfo.cbSize = [Runtime.InteropServices.Marshal]::SizeOf([type][V2PNativeEdit+GUITHREADINFO])
+$guiInfoOk = [V2PNativeEdit]::GetGUIThreadInfo($foregroundThreadId, [ref]$guiInfo)
+$isTarget = [V2PNativeEdit]::IsTarget($hwnd, [uint32]${expectedPid}, [uint32]$threadId, [IntPtr]$parentHandle, [int]$controlId)
+$isFocused = [V2PNativeEdit]::IsFocusedTarget($hwnd, [uint32]${expectedPid}, [uint32]$threadId, [IntPtr]$parentHandle, [int]$controlId)
+$wrongOwnerDenied = -not [V2PNativeEdit]::IsTarget($hwnd, [uint32](${expectedPid} + 1), [uint32]$threadId, [IntPtr]$parentHandle, [int]$controlId)
 $hash = [Convert]::ToBase64String([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::Unicode.GetBytes($text)))
-@{ hwnd = $hwnd.ToInt64(); className = $className; ownerPid = $owner; expectedPid = ${expectedPid}; foreground = $foreground.ToInt64(); isFocused = $isFocused; style = $style; readOnly = (($style -band 0x800) -ne 0); selectedLength = $text.Length; selectedHash = $hash } | ConvertTo-Json -Compress
+@{ hwnd = $hwnd.ToInt64(); className = $className; ownerPid = $owner; expectedPid = ${expectedPid}; nativeThreadId = $threadId; nativeParentHandle = $parentHandle; nativeControlId = $controlId; foreground = $foreground.ToInt64(); foregroundPid = $foregroundPid; foregroundThreadId = $foregroundThreadId; focusedHwnd = $guiInfo.hwndFocus.ToInt64(); guiInfoOk = $guiInfoOk; isTarget = $isTarget; isFocused = $isFocused; wrongOwnerDenied = $wrongOwnerDenied; selectionStart = $selection.Start; selectionEnd = $selection.End; style = $style; readOnly = (($style -band 0x800) -ne 0); selectedLength = $text.Length; selectedHash = $hash } | ConvertTo-Json -Compress
+`;
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  const output = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
+    encoding: 'utf8', timeout: 10000, windowsHide: true
+  });
+  return JSON.parse(output.trim().split(/\r?\n/).pop());
+}
+
+function readNativeHitClass(point) {
+  const script = `
+${buildNativeEditPowerShell()}
+$hwnd = [V2PNativeEdit]::WindowFromPoint([V2PNativeEdit+POINT]::new(${point.x}, ${point.y}))
+@{ hwnd = $hwnd.ToInt64(); className = [V2PNativeEdit]::ClassName($hwnd); ownerPid = [V2PNativeEdit]::ProcessId($hwnd) } | ConvertTo-Json -Compress
+`;
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  const output = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
+    encoding: 'utf8', timeout: 10000, windowsHide: true
+  });
+  return JSON.parse(output.trim().split(/\r?\n/).pop());
+}
+
+function readUiaPointIdentity(point) {
+  const script = `
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, WindowsBase -ErrorAction Stop
+$hit = [System.Windows.Automation.AutomationElement]::FromPoint((New-Object System.Windows.Point(${point.x}, ${point.y})))
+$walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+$element = $hit
+for ($i = 0; $i -lt 12 -and $null -ne $element; $i++) { if ($element.Current.ControlType.Id -eq 50004) { break }; $element = $walker.GetParent($element) }
+@{ hitFramework = $hit.Current.FrameworkId; hitClass = $hit.Current.ClassName; editFramework = $element.Current.FrameworkId; editClass = $element.Current.ClassName; editPid = $element.Current.ProcessId } | ConvertTo-Json -Compress
 `;
   const encoded = Buffer.from(script, 'utf16le').toString('base64');
   const output = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
@@ -562,19 +608,23 @@ async function run() {
 
   const before = runtimeSnapshot();
   assert.ok(before.focusId.startsWith(`${points.pid}|`), 'fixture editable control owns keyboard focus');
+  console.log('WPF_NATIVE_HIT_DIAGNOSTIC ' + JSON.stringify({
+    a1: readNativeHitClass(points.a1), a2: readNativeHitClass(points.a2),
+    uia: readUiaPointIdentity(points.a1), fixturePid: points.pid
+  }));
   assert.equal(focusedValueReadOnly(), false, 'editable WPF TextBox exposes writable ValuePattern');
   const textPatternRead = readFocusedTextPattern();
   if (textPatternRead.status !== 0 || !String(textPatternRead.stdout || '').includes('TEXT_PATTERN_READ_OK:')) {
     console.log('WPF TextPatternRange.GetText unsupported/crashed (PowerShell exit ' + textPatternRead.status + ', signal ' + textPatternRead.signal + ')');
   }
-  const wpfProbe = runGeneratedProbe(points.a1, points.a2, { requireFocusedTarget: true });
+  const wpfProbe = runGeneratedProbe(points.a1, points.a1, { requireFocusedTarget: true });
   console.log('WPF_PRODUCTION_PROBE_DIAGNOSTIC ' + JSON.stringify({ status: wpfProbe.status, signal: wpfProbe.signal,
-    output: wpfProbe.stdout.trim().split(/\r?\n/).pop(), error: wpfProbe.stderr.slice(0, 500) }));
+    output: wpfProbe.stdout.trim().split(/\r?\n/).pop(), error: wpfProbe.error || wpfProbe.stderr.slice(0, 500) }));
   assert.equal(wpfProbe.status, 0, 'production probe denies WPF without crashing its PowerShell child');
   const wpfResult = JSON.parse(wpfProbe.stdout.trim().split(/\r?\n/).pop());
   assert.equal(wpfResult.ok, false, 'unsupported WPF provider denies selection');
   assert.equal(wpfResult.reason, 'unsupported-provider');
-  assert.equal(await probeSelection(points.a1, points.a2, { requireFocusedTarget: true }), null);
+  assert.equal(await probeSelection(points.a1, points.a1, { requireFocusedTarget: true }), null);
   console.log('PASS WPF TextPattern crash provider fails closed without probe child crash');
   assert.deepEqual(runtimeSnapshot(), before, 'probe preserves foreground, focus identity, and clipboard hash');
 
@@ -603,7 +653,10 @@ async function run() {
   const nativeRead = readProductionNativeEditSelection(nativePoints.a1, nativePoints.pid);
   console.log('NATIVE_EDIT_PRODUCTION_READ ' + JSON.stringify({
     hwnd: nativeRead.hwnd, className: nativeRead.className, ownerPid: nativeRead.ownerPid,
-    foregroundPid: nativeRead.expectedPid, isFocused: nativeRead.isFocused, readOnly: nativeRead.readOnly,
+    foregroundPid: nativeRead.expectedPid, isFocused: nativeRead.isFocused, wrongOwnerDenied: nativeRead.wrongOwnerDenied,
+    nativeThreadId: nativeRead.nativeThreadId, nativeParentHandle: nativeRead.nativeParentHandle,
+    nativeControlId: nativeRead.nativeControlId, selectionStart: nativeRead.selectionStart, selectionEnd: nativeRead.selectionEnd,
+    readOnly: nativeRead.readOnly,
     selectedLength: nativeRead.selectedLength, selectedHash: nativeRead.selectedHash
   }));
   await refocusNativeFixture();
@@ -628,6 +681,12 @@ async function run() {
   assert.equal(nativeRead.hwnd, nativePoints.hwnd, 'both native endpoint coordinates hit the fixture Edit HWND');
   assert.equal(nativeRead.className, 'Edit');
   assert.equal(nativeRead.ownerPid, nativePoints.pid);
+  assert.equal(nativeRead.wrongOwnerDenied, true, 'native identity denies an HWND when the encoded PID is wrong');
+  assert.equal(nativeEligible.nativeThreadId, nativeRead.nativeThreadId);
+  assert.equal(nativeEligible.nativeParentHandle, nativeRead.nativeParentHandle);
+  assert.equal(nativeEligible.nativeControlId, nativeRead.nativeControlId);
+  assert.equal(nativeEligible.selectionStart, 8);
+  assert.equal(nativeEligible.selectionEnd, 74);
   assert.equal(nativeRead.isFocused, true, 'fixture Edit is the focused foreground target');
   assert.equal(nativeRead.readOnly, false);
   assert.equal(nativeRead.selectedLength, 66);
@@ -691,6 +750,24 @@ async function run() {
   assert.equal(readNativeEditContents(nativePoints.hwndB), secondControlBefore, 'target-switch attempt sends no paste to the newly focused Edit');
   assert.equal(testClipboard.currentText, replacementText, 'cancel restores the clipboard value present before the attempt');
   console.log('PASS guarded insertText cancels a focused-target change and restores clipboard text');
+
+  await refocusNativeFixture('same-a');
+  const firstRepeatedRange = await probeSelection(nativePoints.a1, nativePoints.a2, { requireFocusedTarget: true });
+  assert.ok(firstRepeatedRange && firstRepeatedRange.text === 'identical selection text');
+  await refocusNativeFixture('same-b');
+  const secondRepeatedRange = await probeSelection(nativePoints.a1, nativePoints.a2, { requireFocusedTarget: true });
+  assert.ok(secondRepeatedRange && secondRepeatedRange.text === firstRepeatedRange.text,
+    'fixture moves between equal-text ranges in the same Edit');
+  assert.notEqual(secondRepeatedRange.selectionStart, firstRepeatedRange.selectionStart);
+  assert.notEqual(secondRepeatedRange.selectionEnd, firstRepeatedRange.selectionEnd);
+  const sameTextDocument = readNativeEditContents(nativePoints.hwnd);
+  const staleEqualText = await insertText('must not replace moved selection', 'paste', { target: firstRepeatedRange });
+  assert.equal(staleEqualText.cancelled, true, 'equal selected text at different offsets cancels guarded write-back');
+  assert.equal(readNativeEditContents(nativePoints.hwnd), sameTextDocument,
+    'stale equal-text selection sends no input and does not alter the second occurrence');
+  assert.equal(testClipboard.currentText, replacementText,
+    'stale equal-text cancellation restores the clipboard value before the attempt');
+  console.log('PASS guarded insertText rejects same text moved to a different native selection range');
 
   testClipboard.clipboard.writeText(originalClipboardText);
   assert.equal(testClipboard.currentHash, clipboardSnapshot.clipboardHash, 'runtime paste test restores the original clipboard text');

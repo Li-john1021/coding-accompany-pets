@@ -1,7 +1,7 @@
 // Passive UI Automation probe for the automatic selection palette.
 // It never sends input, changes focus/selection, or reads/writes the clipboard.
-const { execFile } = require('child_process');
 const { buildNativeEditPowerShell } = require('./win32-edit');
+const { runPowerShellFile } = require('./powershell-file');
 
 const PROBE_TIMEOUT_MS = 1800;
 
@@ -16,7 +16,7 @@ function buildProbeScript(start, end, options = {}) {
   const ex = numberArg(end.x), ey = numberArg(end.y);
   const focusCheck = options.requireFocusedTarget ? `
   if ($a.provider -eq 'win32-edit') {
-    if (-not [V2PNativeEdit]::IsFocusedTarget([IntPtr]$a.nativeHandle, [uint32]$a.processId)) { throw 'active native Edit changed' }
+    if (-not [V2PNativeEdit]::IsFocusedTarget([IntPtr]$a.nativeHandle, [uint32]$a.processId, [uint32]$a.nativeThreadId, [IntPtr]$a.nativeParentHandle, [int]$a.nativeControlId)) { throw 'active native Edit changed' }
   } else {
     $focus = [System.Windows.Automation.AutomationElement]::FocusedElement
     $focusWalker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
@@ -43,26 +43,34 @@ function Probe-NativeEdit([int]$x, [int]$y) {
   }
   $ownerPid = [V2PNativeEdit]::ProcessId($hwnd)
   if ($ownerPid -eq 0) { throw 'native Edit process identity unavailable' }
-  $text = [V2PNativeEdit]::ReadSelectedText($hwnd)
+  $threadId = [V2PNativeEdit]::ThreadId($hwnd)
+  $parentHandle = [V2PNativeEdit]::GetParent($hwnd).ToInt64()
+  $nativeControlId = [V2PNativeEdit]::GetDlgCtrlID($hwnd)
+  $selection = [V2PNativeEdit]::ReadSelection($hwnd)
+  $text = $selection.Text
   if ([string]::IsNullOrEmpty($text)) { throw 'native Edit selection is empty' }
   $handle = $hwnd.ToInt64()
+  if (-not [V2PNativeEdit]::IsTarget($hwnd, [uint32]$ownerPid, [uint32]$threadId, [IntPtr]$parentHandle, [int]$nativeControlId)) {
+    throw 'native Edit identity changed during read'
+  }
   $proc = (Get-Process -Id $ownerPid -ErrorAction Stop).ProcessName
-  return @{ isNative = $true; ok = $true; controlId = ([string]$ownerPid + '|' + [string]$handle + '|win32-edit'); nativeHandle = $handle; processId = $ownerPid; provider = 'win32-edit'; text = $text; processName = $proc }
+  return @{ isNative = $true; ok = $true; controlId = ([string]$ownerPid + '|' + [string]$handle + '|win32-edit'); nativeHandle = $handle; processId = $ownerPid; nativeThreadId = $threadId; nativeParentHandle = $parentHandle; nativeControlId = $nativeControlId; selectionStart = $selection.Start; selectionEnd = $selection.End; provider = 'win32-edit'; text = $text; processName = $proc }
 }
 try {
   $nativeA = Probe-NativeEdit ${sx} ${sy}
   $nativeB = Probe-NativeEdit ${ex} ${ey}
   if ($nativeA.isNative -or $nativeB.isNative) {
     if (-not $nativeA.isNative -or -not $nativeB.isNative -or
-        $nativeA.controlId -ne $nativeB.controlId -or $nativeA.text -cne $nativeB.text) {
+        $nativeA.controlId -ne $nativeB.controlId -or $nativeA.selectionStart -ne $nativeB.selectionStart -or
+        $nativeA.selectionEnd -ne $nativeB.selectionEnd -or $nativeA.text -cne $nativeB.text) {
       @{ ok = $false; reason = 'endpoint-mismatch' } | ConvertTo-Json -Compress
       exit 0
     }
-    if (${options.requireFocusedTarget ? '$true' : '$false'} -and -not [V2PNativeEdit]::IsFocusedTarget([IntPtr]$nativeA.nativeHandle, [uint32]$nativeA.processId)) {
+    if (${options.requireFocusedTarget ? '$true' : '$false'} -and -not [V2PNativeEdit]::IsFocusedTarget([IntPtr]$nativeA.nativeHandle, [uint32]$nativeA.processId, [uint32]$nativeA.nativeThreadId, [IntPtr]$nativeA.nativeParentHandle, [int]$nativeA.nativeControlId)) {
       @{ ok = $false; reason = 'focus-mismatch' } | ConvertTo-Json -Compress
       exit 0
     }
-    @{ ok = $true; controlId = $nativeA.controlId; nativeHandle = $nativeA.nativeHandle; processId = $nativeA.processId; provider = $nativeA.provider; text = $nativeA.text; processName = $nativeA.processName } | ConvertTo-Json -Compress
+    @{ ok = $true; controlId = $nativeA.controlId; nativeHandle = $nativeA.nativeHandle; processId = $nativeA.processId; nativeThreadId = $nativeA.nativeThreadId; nativeParentHandle = $nativeA.nativeParentHandle; nativeControlId = $nativeA.nativeControlId; selectionStart = $nativeA.selectionStart; selectionEnd = $nativeA.selectionEnd; provider = $nativeA.provider; text = $nativeA.text; processName = $nativeA.processName } | ConvertTo-Json -Compress
     exit 0
   }
 } catch {
@@ -120,10 +128,24 @@ function parseProbeOutput(stdout) {
         typeof parsed.text !== 'string' || parsed.text.length === 0 ||
         typeof parsed.processName !== 'string' || !parsed.processName ||
         !['win32-edit', 'uia-textpattern'].includes(parsed.provider)) return null;
+    let nativeIdentity = null;
     if (parsed.provider === 'win32-edit') {
       const nativeHandle = Number(parsed.nativeHandle), processId = Number(parsed.processId);
       if (!Number.isSafeInteger(nativeHandle) || nativeHandle <= 0 || !Number.isInteger(processId) || processId <= 0 ||
-          parsed.controlId !== `${processId}|${nativeHandle}|win32-edit`) return null;
+          parsed.controlId !== `${processId}|${nativeHandle}|win32-edit` ||
+          !Number.isInteger(parsed.nativeThreadId) || parsed.nativeThreadId <= 0 ||
+          !Number.isSafeInteger(parsed.nativeParentHandle) || parsed.nativeParentHandle <= 0 ||
+          !Number.isInteger(parsed.nativeControlId) || parsed.nativeControlId < 0 ||
+          !Number.isInteger(parsed.selectionStart) || parsed.selectionStart < 0 ||
+          !Number.isInteger(parsed.selectionEnd) || parsed.selectionEnd <= parsed.selectionStart ||
+          parsed.selectionEnd - parsed.selectionStart !== parsed.text.length) return null;
+      nativeIdentity = {
+        nativeThreadId: parsed.nativeThreadId,
+        nativeParentHandle: parsed.nativeParentHandle,
+        nativeControlId: parsed.nativeControlId,
+        selectionStart: parsed.selectionStart,
+        selectionEnd: parsed.selectionEnd
+      };
     }
     return {
       confirmed: true,
@@ -132,7 +154,8 @@ function parseProbeOutput(stdout) {
       processId: Number(parsed.processId) || 0,
       provider: parsed.provider,
       text: parsed.text,
-      processName: parsed.processName
+      processName: parsed.processName,
+      ...(nativeIdentity || {})
     };
   } catch {
     return null;
@@ -142,10 +165,8 @@ function parseProbeOutput(stdout) {
 function probeSelection(start, end, options = {}) {
   let script;
   try { script = buildProbeScript(start, end, options); } catch { return Promise.resolve(null); }
-  const encoded = Buffer.from(script, 'utf16le').toString('base64');
   return new Promise((resolve) => {
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
-      { timeout: PROBE_TIMEOUT_MS, windowsHide: true, maxBuffer: 256 * 1024 },
+    runPowerShellFile(script, { timeout: PROBE_TIMEOUT_MS, maxBuffer: 256 * 1024 },
       (err, stdout) => resolve(err ? null : parseProbeOutput(stdout)));
   });
 }

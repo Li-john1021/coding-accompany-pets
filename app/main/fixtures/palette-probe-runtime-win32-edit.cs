@@ -13,6 +13,7 @@ internal static class PaletteProbeWin32EditFixture
     private const uint ES_AUTOHSCROLL = 0x0080;
     private const uint ES_READONLY = 0x0800;
     private const uint EM_SETSEL = 0x00B1;
+    private const uint WM_SETTEXT = 0x000C;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect { public int Left, Top, Right, Bottom; }
@@ -38,6 +39,9 @@ internal static class PaletteProbeWin32EditFixture
 
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SendMessageW")]
+    private static extern IntPtr SendMessageText(IntPtr hwnd, uint message, IntPtr wParam, string text);
 
     private static string readyPath;
     private static string stopPath;
@@ -82,8 +86,18 @@ internal static class PaletteProbeWin32EditFixture
                 form.Activate();
                 SetForegroundWindow(form.Handle);
                 IntPtr target = requested == "b" ? editableB : (requested == "readonly" ? readOnly : editable);
+                if (requested == "same-a" || requested == "same-b") {
+                    string repeated = "identical selection text";
+                    SendMessageText(editable, WM_SETTEXT, IntPtr.Zero, repeated + "|" + repeated);
+                    target = editable;
+                }
                 SetFocus(target);
-                if (target == editable || target == editableB) SendMessage(target, EM_SETSEL, (IntPtr)8, (IntPtr)74);
+                if (requested == "same-a") SendMessage(editable, EM_SETSEL, IntPtr.Zero, (IntPtr)repeatedLength("identical selection text"));
+                else if (requested == "same-b") {
+                    int length = "identical selection text".Length;
+                    SendMessage(editable, EM_SETSEL, (IntPtr)(length + 1), (IntPtr)(length * 2 + 1));
+                }
+                else if (target == editable || target == editableB) SendMessage(target, EM_SETSEL, (IntPtr)8, (IntPtr)74);
                 File.WriteAllText(focusAckPath, requested, new UTF8Encoding(false));
             }
             if (File.Exists(keepFrontPath)) {
@@ -109,6 +123,8 @@ internal static class PaletteProbeWin32EditFixture
         form.FormClosed += (sender, eventArgs) => timer.Stop();
         Application.Run(form);
     }
+
+    private static int repeatedLength(string value) { return value.Length; }
 
     private static IntPtr CreateEdit(IntPtr parent, int x, int y, bool isReadOnly)
     {

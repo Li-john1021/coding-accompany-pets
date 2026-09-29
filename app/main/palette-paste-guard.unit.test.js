@@ -16,7 +16,6 @@ const script = buildPasteTargetGuard(sample);
 assert.ok(script.includes('$foregroundPid -eq 123'));
 assert.ok(script.includes("$focusedId -eq '123|456|7.8.9'"));
 assert.ok(script.includes('$selectedText -ceq $expectedText'));
-assert.ok(script.includes(Buffer.from(sample.text, 'utf8').toString('base64')));
 assert.ok(script.indexOf('Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes') <
   script.indexOf('function Test-V2PPasteTargetIdentity'), 'UIA types are loaded before guard definition');
 const identityStart = script.indexOf('function Test-V2PPasteTargetIdentity');
@@ -27,23 +26,30 @@ assert.ok(!identityBody.includes('GetSelection') && !identityBody.includes('$exp
 const strictBody = script.slice(strictStart);
 assert.ok(strictBody.includes('Test-V2PPasteTargetIdentity') && strictBody.includes('GetSelection') &&
   strictBody.includes('$selectedText -ceq $expectedText'), 'pre-paste predicate remains selection-strict');
-assert.ok(!script.includes(sample.text), 'selection is base64 encoded before script construction');
+assert.ok(!script.includes(sample.text) && !script.includes(Buffer.from(sample.text, 'utf8').toString('base64')),
+  'selection data is passed over stdin and absent from temporary scripts');
+assert.ok(script.includes('[Console]::In.ReadLine()'), 'guard reads selection identity from stdin');
 assert.equal(buildPasteTargetGuard({ controlId: 'bad', text: 'text' }), null);
 assert.equal(buildPasteTargetGuard({ controlId: '1|2|3', text: ' ' }), null);
 assert.ok(REQUIRE_TARGET.includes('exit 20'));
 assert.ok(RESTORE_SHIFT_IF_TARGET.includes('if (Test-V2PPasteTargetIdentity)'));
 const nativeSample = {
   provider: 'win32-edit', controlId: '123|456|win32-edit', nativeHandle: 456, processId: 123,
+  nativeThreadId: 789, nativeParentHandle: 321, nativeControlId: 9, selectionStart: 5, selectionEnd: 21,
   text: 'selected text 漢字'
 };
 const nativeScript = buildPasteTargetGuard(nativeSample);
 assert.ok(nativeScript.includes('function Test-V2PNativePasteTargetIdentity'));
 assert.ok(nativeScript.includes('function Test-V2PNativePasteTarget'));
-assert.ok(nativeScript.includes('[V2PNativeEdit]::ReadSelectedText'));
+assert.ok(nativeScript.includes('[V2PNativeEdit]::ReadSelection'));
+assert.ok(nativeScript.includes('[V2PNativeEdit]::IsFocusedTarget([IntPtr]456, [uint32]123, [uint32]789, [IntPtr]321, [int]9)'));
+assert.ok(nativeScript.includes('$selection.Start -eq 5 -and $selection.End -eq 21'),
+  'strict native paste guard binds selected UTF-16 offsets as well as text');
 assert.ok(REQUIRE_NATIVE_TARGET.includes('Test-V2PNativePasteTarget') && REQUIRE_NATIVE_TARGET.includes('exit 20'));
 assert.ok(RESTORE_SHIFT_IF_NATIVE_TARGET.includes('if (Test-V2PNativePasteTargetIdentity)'));
 assert.ok(!RESTORE_SHIFT_IF_NATIVE_TARGET.includes('Test-V2PNativePasteTarget)'));
 assert.equal(buildPasteTargetGuard({ ...nativeSample, nativeHandle: 457 }), null, 'native identity fields must agree');
+assert.equal(buildPasteTargetGuard({ ...nativeSample, selectionStart: 6 }), null, 'native range length must match selected text');
 
 const insert = fs.readFileSync(path.join(__dirname, 'insert.js'), 'utf8');
 const bodyStart = insert.indexOf('const script = `');
@@ -83,7 +89,8 @@ public static class V2PPaste {
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
 }
 "@
-${buildPasteTargetGuard({ controlId: '4294967295|0|1.2.3', text: 'runtime-smoke-selection' })}
+${buildPasteTargetGuard({ provider: 'win32-edit', controlId: '4294967295|1|win32-edit', nativeHandle: 1, processId: 4294967295,
+  nativeThreadId: 1, nativeParentHandle: 2, nativeControlId: 3, selectionStart: 0, selectionEnd: 23, text: 'runtime-smoke-selection' })}
 if (Test-V2PPasteTargetIdentity) { throw 'identity guard unexpectedly accepted impossible process id' }
 if (Test-V2PPasteTarget) { throw 'strict guard unexpectedly accepted impossible process id' }
 Write-Output 'PASS_RUNTIME_UIA_TYPES'
@@ -91,7 +98,7 @@ Write-Output 'PASS_RUNTIME_GUARD_FAIL_CLOSED'
 `;
   const runtimeEncoded = Buffer.from(runtimeSmoke, 'utf16le').toString('base64');
   const runtimeOutput = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', runtimeEncoded],
-    { encoding: 'utf8', stdio: 'pipe' });
+    { encoding: 'utf8', stdio: 'pipe', input: Buffer.from(Buffer.from(sample.text, 'utf8').toString('base64') + '\n', 'utf8') });
   assert.ok(runtimeOutput.includes('PASS_RUNTIME_UIA_TYPES'));
   assert.ok(runtimeOutput.includes('PASS_RUNTIME_GUARD_FAIL_CLOSED'));
   console.log('PASS new PowerShell process resolves UIA types and executes guard');
@@ -104,7 +111,7 @@ Write-Output 'PASS_RUNTIME_NATIVE_GUARD_FAIL_CLOSED'
 `;
   const nativeEncoded = Buffer.from(nativeRuntime, 'utf16le').toString('base64');
   const nativeRuntimeOutput = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', nativeEncoded],
-    { encoding: 'utf8', stdio: 'pipe' });
+    { encoding: 'utf8', stdio: 'pipe', input: Buffer.from(Buffer.from(nativeSample.text, 'utf8').toString('base64') + '\n', 'utf8') });
   assert.ok(nativeRuntimeOutput.includes('PASS_RUNTIME_NATIVE_GUARD_FAIL_CLOSED'));
   console.log('PASS native paste target guard runtime smoke');
 } else {

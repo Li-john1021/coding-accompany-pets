@@ -31,7 +31,15 @@ assert.ok(insert.includes("resolve('cancelled')"), 'invalid target cancels injec
 assert.ok(pasteGuard.includes('$foregroundPid -eq ${match[1]}') && pasteGuard.includes('$focusedId -eq'),
   'native paste checks foreground process and focused control identity');
 assert.ok(pasteGuard.includes('$textPattern.GetSelection()') && pasteGuard.includes('$selectedText -ceq $expectedText'),
-  'native paste checks the original selection text immediately before injection');
+  'UIA paste checks the original selection text immediately before injection');
+assert.ok(pasteGuard.includes('[V2PNativeEdit]::ReadSelection') &&
+  pasteGuard.includes('$selection.Start -eq ${selectionStart}') && pasteGuard.includes('$selection.End -eq ${selectionEnd}'),
+  'native paste checks the original selection range immediately before injection');
+assert.ok(main.includes('current.selectionStart === selection.selectionStart') &&
+  main.includes('current.selectionEnd === selection.selectionEnd'),
+  'palette action revalidation rejects a changed native range even when selected text is equal');
+assert.ok(main.includes('nativeParentHandle: selection.nativeParentHandle') &&
+  main.includes('nativeThreadId: selection.nativeThreadId'), 'captured native target keeps stable window/thread identity');
 assert.ok(insert.indexOf('${targetGuard}') < insert.indexOf('[V2PPaste]::Paste()'),
   'native target guard runs before simulated paste');
 assert.ok(insert.includes("clipboard.readText() === text"), 'cancel only restores clipboard if this attempt still owns it');
