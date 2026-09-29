@@ -97,6 +97,7 @@ internal static class PaletteProbeWin32EditFixture
                     int length = "identical selection text".Length;
                     SendMessage(editable, EM_SETSEL, (IntPtr)(length + 1), (IntPtr)(length * 2 + 1));
                 }
+                else if (requested == "empty") SendMessage(target, EM_SETSEL, (IntPtr)8, (IntPtr)8);
                 else if (target == editable || target == editableB) SendMessage(target, EM_SETSEL, (IntPtr)8, (IntPtr)74);
                 File.WriteAllText(focusAckPath, requested, new UTF8Encoding(false));
             }

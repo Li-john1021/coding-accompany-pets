@@ -692,6 +692,14 @@ async function run() {
   assert.equal(nativeRead.selectedLength, 66);
   assert.equal(nativeRead.selectedHash, expectedNativeHash);
   console.log('PASS native Edit EM_GETSEL + WM_GETTEXT selected-text read');
+  await refocusNativeFixture('empty');
+  const emptyRead = readNativeEditSelection(nativePoints.a1, nativePoints.pid);
+  assert.equal(emptyRead.selectionStart, emptyRead.selectionEnd, 'fixture has focus but no selected range');
+  assert.equal(emptyRead.selectedLength, 0);
+  assert.equal(await probeSelection(nativePoints.a1, nativePoints.a2, { requireFocusedTarget: true }), null,
+    'a focused Edit with a collapsed selection is denied');
+  await refocusNativeFixture();
+  console.log('PASS focused native Edit with empty selection is denied');
   const nativeState = inspectAndFocusFixture(nativePoints.pid, nativePoints.hwnd);
   console.log('NATIVE_EDIT_UIA_DIAGNOSTIC ' + JSON.stringify(nativeState));
   if (!nativeState.focusedEdit) console.log('NATIVE_EDIT_UIA_NOTE: Edit HWND is real; UIA tree does not expose ControlType.Edit');
