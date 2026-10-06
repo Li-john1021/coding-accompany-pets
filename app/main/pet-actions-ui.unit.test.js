@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const migrateLegacyPalette = require('./legacy-palette-migration');
 
 const root = path.join(__dirname, '..', 'renderer');
@@ -9,6 +10,9 @@ const js = fs.readFileSync(path.join(root, 'pet.js'), 'utf8');
 const settings = fs.readFileSync(path.join(root, 'settings.html'), 'utf8');
 const settingsJs = fs.readFileSync(path.join(root, 'settings.js'), 'utf8');
 const main = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
+const gestureContext = { window: {} };
+vm.runInNewContext(fs.readFileSync(path.join(root, 'pet-gesture.js'), 'utf8'), gestureContext);
+const resolveMouseUp = gestureContext.window.resolvePetMouseUp;
 
 const legacy = { paletteEnabled: true, mouseRecord: true, hotkey: 'Control+Space' };
 assert.strictEqual(migrateLegacyPalette(legacy), true);
@@ -24,7 +28,10 @@ assert.match(html, /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/,
 assert.match(buttons[2], /disabled/, 'image recognition is disabled');
 assert.match(js, /eventName of \['pointerdown', 'mousedown', 'click', 'dblclick', 'contextmenu', 'wheel'\]/, 'button presses do not reach pet gestures');
 assert.match(js, /actionRow\.addEventListener\('wheel'/, 'scrolling in the action row does not scale the pet');
-assert.match(js, /e\.target\.closest\('#action-row'\)/, 'releasing a body drag over an action clears the body gesture');
+assert.match(js, /releaseAction === 'stop-recording'[\s\S]*?stopRecording\(\)/, 'release disposition stops recording');
+assert.match(js, /releaseAction === 'open-settings'[\s\S]*?openSettings\(\)/, 'body click still opens settings');
+assert.match(html, /pet-gesture\.js[\s\S]*?pet\.js/, 'release decision helper loads before pet handlers');
+assert.match(js, /targetInActionRow:\s*!!\(e\.target\.closest && e\.target\.closest\('#action-row'\)\)/, 'row gap and button releases reach the same decision path');
 assert.match(js, /\['listening', 'transcribing'\]\.includes\(curStage\)/, 'voice stages block action clicks');
 assert.match(js, /activePetAction = mode/, 'processing action enters a visible active state');
 assert.match(settings, /mouse-record/);
@@ -33,5 +40,12 @@ assert.doesNotMatch(settingsJs, /palette-enabled|paletteEnabled:/, 'settings can
 assert.match(main, /const want = cfg\.mouseRecord === true;/, 'hook is not retained by legacy palette configuration');
 assert.match(main, /Object\.assign\(cfg, patch\);\s*cfg\.paletteEnabled = false;/, 'saving settings cannot re-enable the legacy palette');
 assert.match(main, /v2p:pet-action'[\s\S]*?return \{ ok: false, error: '文本操作暂不可用' \}/, 'current action stub fails closed without model routing');
+
+assert.strictEqual(resolveMouseUp({ button: 0, bodyGestureActive: true, targetInActionRow: true, triggerMode: 'hold', recording: true, dragging: false, elapsedMs: 400 }), 'stop-recording', 'hold gesture release over row gap stops recording');
+assert.strictEqual(resolveMouseUp({ button: 0, bodyGestureActive: false, targetInActionRow: true, triggerMode: 'hold', recording: false, dragging: false, elapsedMs: 20 }), 'ignore', 'action button mouseup without body mousedown has no recording effect');
+assert.strictEqual(resolveMouseUp({ button: 0, bodyGestureActive: true, targetInActionRow: true, triggerMode: 'click', recording: true, dragging: false, elapsedMs: 300 }), 'discard', 'row release does not toggle click mode');
+assert.strictEqual(resolveMouseUp({ button: 0, bodyGestureActive: true, targetInActionRow: false, triggerMode: 'click', recording: false, dragging: false, elapsedMs: 300 }), 'toggle-recording', 'ordinary click-mode stage click remains intact');
+assert.strictEqual(resolveMouseUp({ button: 0, bodyGestureActive: true, targetInActionRow: false, triggerMode: 'hold', recording: false, dragging: false, elapsedMs: 20 }), 'open-settings', 'ordinary hold-mode pet click still opens settings');
+assert.strictEqual(resolveMouseUp({ button: 0, bodyGestureActive: true, targetInActionRow: false, triggerMode: 'hold', recording: true, dragging: true, elapsedMs: 400 }), 'stop-recording', 'hold release preserves recording cleanup after drag cancellation');
 
 console.log('PASS pet action layout, pointer isolation, busy state, settings migration, and side-button preservation');

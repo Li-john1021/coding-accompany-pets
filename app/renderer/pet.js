@@ -291,17 +291,30 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mouseup', (e) => {
-  if (e.button !== 0 || !down) return;
+  const releaseAction = window.resolvePetMouseUp({
+    button: e.button,
+    bodyGestureActive: down,
+    targetInActionRow: !!(e.target.closest && e.target.closest('#action-row')),
+    triggerMode,
+    recording: isRecording,
+    dragging,
+    elapsedMs: performance.now() - downTime
+  });
+  if (releaseAction === 'ignore') return;
   down = false;
   cancelHold();
-  if (e.target.closest && e.target.closest('#action-row')) {
+  if (releaseAction === 'stop-recording') {
+    stopRecording();
     dragging = false;
     return;
   }
-  if (triggerMode === 'hold') {
-    if (isRecording) stopRecording();
-    else if (!dragging) window.v2p.openSettings(); // 单击打开设置
-  } else if (!dragging && performance.now() - downTime < 500) {
+  if (releaseAction === 'discard') {
+    dragging = false;
+    return;
+  }
+  if (releaseAction === 'open-settings') {
+    window.v2p.openSettings();
+  } else if (releaseAction === 'toggle-recording') {
     // 防误触：按住超过 500ms 才松手（明显不是干脆的单击）不触发
     clickToggle();
   }
