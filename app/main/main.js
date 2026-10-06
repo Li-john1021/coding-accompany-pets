@@ -9,8 +9,10 @@ const config = require('./config');
 const models = require('./models');
 const pipeline = require('./pipeline');
 const paint = require('./paint');
-const { createPetActionCapture, createWindowsAdapters, getWindowsSnapshot } = require('./pet-action-capture');
+const { createPetActionCapture, createWindowsAdapters } = require('./pet-action-capture');
 const { createPetActionWorkflow } = require('./pet-action-workflow');
+const { createWindowsConditionalClipboardWriter } = require('./pet-action-clipboard');
+const petActionClipboardWriter = createWindowsConditionalClipboardWriter();
 const petActionCapture = createPetActionCapture(createWindowsAdapters(), {
   onCancel: (reason) => petBroadcast('v2p:pet-capture-cancelled', { reason }),
   onManualCopyRequired: (host) => petBroadcast('v2p:pet-capture-prompt', { host })
@@ -19,8 +21,8 @@ const petActionWorkflow = createPetActionWorkflow({
   capture: petActionCapture,
   isVoiceBusy: () => recordingActive || voiceSubmissionActive,
   processText: (text, mode) => pipeline.processText(text, mode, setState),
-  getClipboardSnapshot: getWindowsSnapshot,
-  writeClipboardText: (text) => require('electron').clipboard.writeText(text),
+  writeClipboardIfSequence: (sequence, text) => petActionClipboardWriter.writeClipboardIfSequence(sequence, text),
+  cancelPendingClipboardWrites: () => petActionClipboardWriter.cancelPendingWrites(),
   showResult: (text, mode) => showPetActionResult(text, mode),
   onCaptureResult: (result) => {
     if (result.kind === 'preview') return { ok: true, capture: result };
@@ -71,6 +73,11 @@ let petWin = null;
 let paintWin = null;
 let recordingActive = false; // 全局热键触发录音时的状态标记
 let voiceSubmissionActive = false;
+
+function noteVoiceStart() {
+  petActionWorkflow.voiceStarted();
+  petActionCapture.cancel('voice-busy');
+}
 
 const petBroadcast = (channel, payload) => {
   if (petWin && !petWin.isDestroyed()) petWin.webContents.send(channel, payload);
@@ -188,7 +195,7 @@ function registerHotkey() {
       petBroadcast('v2p:hotkey-stop');
     } else {
       recordingActive = true;
-      petActionCapture.cancel('voice-busy');
+      noteVoiceStart();
       petBroadcast('v2p:hotkey-start');
     }
   });
@@ -293,7 +300,7 @@ function registerIpc() {
   // 宠物窗提交录音结果，跑完整管线
   ipcMain.handle('v2p:submit', async (_e, { audio, mime, options }) => {
     voiceSubmissionActive = true;
-    petActionCapture.cancel('voice-busy');
+    noteVoiceStart();
     try {
       const buf = Buffer.from(audio);
       const opts = options || {};
@@ -337,8 +344,10 @@ function registerIpc() {
   });
 
   ipcMain.handle('v2p:recording-flag', (_e, active) => {
+    const wasActive = recordingActive;
     recordingActive = !!active;
-    if (recordingActive) petActionCapture.cancel('voice-busy');
+    if (recordingActive && !wasActive) noteVoiceStart();
+    else if (recordingActive) petActionCapture.cancel('voice-busy');
     return { ok: true };
   });
 
@@ -967,7 +976,7 @@ function setMouseRecordHook() {
               petBroadcast('v2p:hotkey-stop');
             } else {
               recordingActive = true;
-              petActionCapture.cancel('voice-busy');
+              noteVoiceStart();
               petBroadcast('v2p:hotkey-start');
             }
           }

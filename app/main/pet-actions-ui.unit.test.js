@@ -34,6 +34,8 @@ assert.match(html, /pet-gesture\.js[\s\S]*?pet\.js/, 'release decision helper lo
 assert.match(js, /targetInActionRow:\s*!!\(e\.target\.closest && e\.target\.closest\('#action-row'\)\)/, 'row gap and button releases reach the same decision path');
 assert.match(js, /\['listening', 'transcribing'\]\.includes\(curStage\)/, 'voice stages block action clicks');
 assert.match(js, /activePetAction = mode/, 'processing action enters a visible active state');
+assert.match(js, /const result = await window\.v2p\.petAction\(mode\);\s*if \(voiceUiBusy\(\) \|\| \(result && result\.voiceSuperseded\)\) return;/, 'late text-action completion cannot overwrite active or just-failed voice state');
+assert.match(js, /function voiceUiBusy\(\)[\s\S]*?starting \|\| isRecording/, 'voice transitions during microphone startup also guard text completion');
 assert.match(settings, /mouse-record/);
 assert.doesNotMatch(settings, /启用选中浮条|palette-enabled/, 'obsolete palette setting is removed');
 assert.doesNotMatch(settingsJs, /palette-enabled|paletteEnabled:/, 'settings cannot re-enable the old palette');

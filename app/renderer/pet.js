@@ -60,7 +60,7 @@ function setState(s) {
 
 let activePetAction = null;
 function updateActionButtons() {
-  const voiceBusy = ['listening', 'transcribing'].includes(curStage) || starting || isRecording;
+  const voiceBusy = voiceUiBusy();
   for (const button of actionButtons) {
     const mode = button.dataset.mode;
     button.classList.toggle('active', mode === activePetAction);
@@ -69,6 +69,10 @@ function updateActionButtons() {
     if (mode === activePetAction) button.setAttribute('aria-busy', 'true');
     else button.removeAttribute('aria-busy');
   }
+}
+
+function voiceUiBusy() {
+  return ['listening', 'transcribing'].includes(curStage) || starting || isRecording;
 }
 
 for (const button of actionButtons) {
@@ -83,6 +87,7 @@ for (const button of actionButtons) {
     setState(mode === 'structure' ? 'structuring' : 'optimizing');
     try {
       const result = await window.v2p.petAction(mode);
+      if (voiceUiBusy() || (result && result.voiceSuperseded)) return;
       if (result && result.capture && result.capture.kind === 'preview') {
         const previewText = String(result.capture.text || '').replace(/\s+/g, ' ').trim();
         const shortText = previewText.length > 46 ? previewText.slice(0, 46) + '…' : previewText;
@@ -196,7 +201,9 @@ function encodeWav(samples, sampleRate) {
 async function startRecording() {
   if (isRecording || starting) return;
   starting = true;
+  setState('listening');
   updateActionButtons();
+  window.v2p.setRecordingFlag(true);
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
@@ -224,7 +231,6 @@ async function startRecording() {
   isRecording = true;
   setState('listening');
   updateActionButtons();
-  window.v2p.setRecordingFlag(true);
 }
 
 async function stopRecording() {

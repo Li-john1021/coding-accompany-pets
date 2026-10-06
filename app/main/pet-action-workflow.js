@@ -1,5 +1,11 @@
 function createPetActionWorkflow(deps) {
   let busy = false;
+  let voiceEpoch = 0;
+
+  function voiceStarted() {
+    voiceEpoch++;
+    if (deps.cancelPendingClipboardWrites) deps.cancelPendingClipboardWrites();
+  }
 
   async function run(mode) {
     if (busy) return { ok: false, error: '已有文本操作正在进行' };
@@ -10,10 +16,14 @@ function createPetActionWorkflow(deps) {
     }
 
     busy = true;
+    const operationVoiceEpoch = voiceEpoch;
+    const voiceSuperseded = () => operationVoiceEpoch !== voiceEpoch || deps.isVoiceBusy();
+    const voiceCancelled = () => ({ ok: false, capture: { kind: 'cancelled', reason: 'voice-busy' }, voiceSuperseded: true });
     try {
       const captured = await deps.capture.click(mode, deps.isVoiceBusy);
       if (captured.kind !== 'authorized') return deps.onCaptureResult(captured);
-      if (deps.isVoiceBusy() || captured.mode !== mode || typeof captured.token !== 'string' ||
+      if (voiceSuperseded()) return voiceCancelled();
+      if (captured.mode !== mode || typeof captured.token !== 'string' ||
           !captured.token || typeof captured.text !== 'string' || !captured.text.trim()) {
         return deps.onCaptureResult({ kind: 'cancelled', reason: 'authorization-invalid' });
       }
@@ -23,8 +33,10 @@ function createPetActionWorkflow(deps) {
       try {
         result = await deps.processText(source, mode);
       } catch {
+        if (voiceSuperseded()) return voiceCancelled();
         return { ok: false, capture: { kind: 'authorized' }, error: '文本处理失败，源文本仍保留在剪贴板' };
       }
+      if (voiceSuperseded()) return voiceCancelled();
 
       const output = result && typeof result.text === 'string' ? result.text : '';
       if (!output.trim() || result.degraded || result.mode !== mode) {
@@ -37,13 +49,10 @@ function createPetActionWorkflow(deps) {
 
       let copied = false;
       try {
-        const current = await deps.getClipboardSnapshot();
-        if (current && current.sequence === captured.clipboardSequence) {
-          deps.writeClipboardText(output);
-          copied = true;
-        }
+        copied = await deps.writeClipboardIfSequence(captured.clipboardSequence, output, voiceSuperseded);
       } catch { /* Keep the result available through the explicit copy preview. */ }
 
+      if (voiceSuperseded()) return voiceCancelled();
       if (copied) return { ok: true, capture: { kind: 'authorized' }, copied: true };
       deps.showResult(output, mode);
       return { ok: true, capture: { kind: 'authorized' }, copied: false, preview: true,
@@ -53,7 +62,7 @@ function createPetActionWorkflow(deps) {
     }
   }
 
-  return { run, get busy() { return busy; } };
+  return { run, voiceStarted, get busy() { return busy; } };
 }
 
 module.exports = { createPetActionWorkflow };
