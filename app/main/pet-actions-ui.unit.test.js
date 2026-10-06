@@ -39,7 +39,7 @@ assert.doesNotMatch(settings, /启用选中浮条|palette-enabled/, 'obsolete pa
 assert.doesNotMatch(settingsJs, /palette-enabled|paletteEnabled:/, 'settings cannot re-enable the old palette');
 assert.match(main, /const want = cfg\.mouseRecord === true;/, 'hook is not retained by legacy palette configuration');
 assert.match(main, /Object\.assign\(cfg, patch\);\s*cfg\.paletteEnabled = false;/, 'saving settings cannot re-enable the legacy palette');
-assert.match(main, /v2p:pet-action'[\s\S]*?return \{ ok: false, error: '文本操作暂不可用' \}/, 'current action stub fails closed without model routing');
+assert.match(main, /v2p:pet-action'[\s\S]*?petActionCapture\.click\(mode, \(\) => recordingActive \|\| voiceSubmissionActive\)/, 'pet action IPC delegates to the capture gate without model routing');
 
 assert.strictEqual(resolveMouseUp({ button: 0, bodyGestureActive: true, targetInActionRow: true, triggerMode: 'hold', recording: true, dragging: false, elapsedMs: 400 }), 'stop-recording', 'hold gesture release over row gap stops recording');
 assert.strictEqual(resolveMouseUp({ button: 0, bodyGestureActive: false, targetInActionRow: true, triggerMode: 'hold', recording: false, dragging: false, elapsedMs: 20 }), 'ignore', 'action button mouseup without body mousedown has no recording effect');

@@ -12,8 +12,8 @@ if (blk.includes('hidePalette')) {
   console.log('FAIL hidePalette inside palette-run');
   process.exit(1);
 }
-if (!/Math\.hypot\([^)]+\) > 12/.test(s)) {
-  console.log('FAIL drag threshold not 12');
+if (/uIOhook\.on\('mousemove'|captureAndShowPalette\(gesture\.start/.test(s)) {
+  console.log('FAIL legacy automatic drag palette trigger is active');
   process.exit(1);
 }
-console.log('PASS palette interaction guards');
+console.log('PASS legacy automatic drag palette trigger remains retired');

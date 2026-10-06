@@ -83,6 +83,21 @@ for (const button of actionButtons) {
     setState(mode === 'structure' ? 'structuring' : 'optimizing');
     try {
       const result = await window.v2p.petAction(mode);
+      if (result && result.capture && result.capture.kind === 'preview') {
+        const previewText = String(result.capture.text || '').replace(/\s+/g, ' ').trim();
+        const shortText = previewText.length > 46 ? previewText.slice(0, 46) + '…' : previewText;
+        say(`选区未验证 · 再点同一按钮确认\n${shortText}`, 10000);
+        setState('idle');
+      } else if (result && result.capture && result.capture.kind === 'authorized') {
+        say('捕获已授权，文本处理尚未接入', 3500);
+        setState('idle');
+      } else if (result && result.capture && result.capture.kind === 'cancelled') {
+        say('捕获已取消，请重新操作', 3500);
+        setState('idle');
+      } else if (result && result.capture && result.capture.kind === 'rejected') {
+        say((result && result.error) || '文本捕获未完成', 3500);
+        setState('idle');
+      } else
       if (!result || !result.ok) {
         say((result && result.error) || '文本操作暂不可用', 3500);
         setState('idle');
@@ -354,6 +369,12 @@ window.v2p.onResult((r) => {
   setTimeout(() => setState('idle'), 3000);
 });
 window.v2p.onToast((text) => { say(text, 5000); setState('error'); setTimeout(() => setState('idle'), 3500); });
+if (window.v2p.onPetCaptureCancelled) {
+  window.v2p.onPetCaptureCancelled(() => say('捕获已取消，请重新操作', 3500));
+}
+if (window.v2p.onPetCapturePrompt) {
+  window.v2p.onPetCapturePrompt(() => say('此窗口只接受手动复制。复制后会显示未验证预览', 10000));
+}
 window.v2p.onHotkeyStart(startRecording);
 window.v2p.onHotkeyStop(stopRecording);
 window.v2p.onPetImageChanged((dataUrl) => { if (dataUrl) petImg.src = dataUrl; });

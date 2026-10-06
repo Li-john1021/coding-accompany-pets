@@ -9,6 +9,11 @@ const config = require('./config');
 const models = require('./models');
 const pipeline = require('./pipeline');
 const paint = require('./paint');
+const { createPetActionCapture, createWindowsAdapters } = require('./pet-action-capture');
+const petActionCapture = createPetActionCapture(createWindowsAdapters(), {
+  onCancel: (reason) => petBroadcast('v2p:pet-capture-cancelled', { reason }),
+  onManualCopyRequired: (host) => petBroadcast('v2p:pet-capture-prompt', { host })
+});
 
 app.setAppUserModelId('voice2prompt.app');
 
@@ -43,6 +48,7 @@ let settingsWin = null;
 let petWin = null;
 let paintWin = null;
 let recordingActive = false; // 全局热键触发录音时的状态标记
+let voiceSubmissionActive = false;
 
 const petBroadcast = (channel, payload) => {
   if (petWin && !petWin.isDestroyed()) petWin.webContents.send(channel, payload);
@@ -160,6 +166,7 @@ function registerHotkey() {
       petBroadcast('v2p:hotkey-stop');
     } else {
       recordingActive = true;
+      petActionCapture.cancel('voice-busy');
       petBroadcast('v2p:hotkey-start');
     }
   });
@@ -263,6 +270,8 @@ function registerIpc() {
 
   // 宠物窗提交录音结果，跑完整管线
   ipcMain.handle('v2p:submit', async (_e, { audio, mime, options }) => {
+    voiceSubmissionActive = true;
+    petActionCapture.cancel('voice-busy');
     try {
       const buf = Buffer.from(audio);
       const opts = options || {};
@@ -293,6 +302,8 @@ function registerIpc() {
       const msg = String(err.message || err);
       petBroadcast('v2p:toast', { text: msg.slice(0, 120) });
       return { ok: false, error: msg };
+    } finally {
+      voiceSubmissionActive = false;
     }
   });
 
@@ -305,13 +316,24 @@ function registerIpc() {
 
   ipcMain.handle('v2p:recording-flag', (_e, active) => {
     recordingActive = !!active;
+    if (recordingActive) petActionCapture.cancel('voice-busy');
     return { ok: true };
   });
 
-  ipcMain.handle('v2p:pet-action', (_e, mode) => {
-    if (recordingActive) return { ok: false, error: '录音或转写期间不可操作' };
-    if (mode !== 'structure' && mode !== 'optimize') return { ok: false, error: '不支持的操作' };
-    return { ok: false, error: '文本操作暂不可用' };
+  ipcMain.handle('v2p:pet-action', async (_e, mode) => {
+    const result = await petActionCapture.click(mode, () => recordingActive || voiceSubmissionActive);
+    if (result.kind === 'preview') return { ok: true, capture: result };
+    if (result.kind === 'authorized') return { ok: true, capture: result };
+    const messages = {
+      'voice-busy': '录音或转写期间不可操作',
+      'no-fresh-clipboard': '没有检测到新的剪贴板文本，请选择文本后重试',
+      'empty-or-non-text-clipboard': '复制内容为空或不是文本',
+      'target-changed': '目标窗口已变化，请重试',
+      'clipboard-changed': '剪贴板已变化，请重新捕获',
+      'expired': '确认已超时，请重新捕获',
+      'unsupported-platform': '当前平台暂不支持文本捕获'
+    };
+    return { ok: false, capture: result, error: messages[result.reason] || '文本捕获未完成' };
   });
 
   // 宠物窗移动（拖拽）
@@ -929,6 +951,7 @@ function setMouseRecordHook() {
               petBroadcast('v2p:hotkey-stop');
             } else {
               recordingActive = true;
+              petActionCapture.cancel('voice-busy');
               petBroadcast('v2p:hotkey-start');
             }
           }
