@@ -1,0 +1,295 @@
+spec_id: pet-actions-v3
+title: Explicit desktop pet text actions
+version: 3
+status: pending_blocking_decisions
+approval:
+  approved: false
+  implementation_authorized: false
+  blocking_decisions:
+    - id: DEC-001
+      question: How must capture prove that non-empty text is a real current selection?
+      options:
+        - strict host/control selection evidence; unsupported when unavailable
+        - preview captured text as unverified and require a second user confirmation
+      constraint: Clipboard contents, non-empty clipboard, changed clipboard, and copy success are not selection proof.
+    - id: DEC-002
+      question: What clipboard replacement and restoration policy protects prior and concurrently changed user data?
+      constraint: Do not restore over clipboard contents that changed after this operation took ownership.
+    - id: DEC-003
+      question: Which named Windows hosts and controls are the initial supported capture adapters, and what evidence does each provide?
+      constraint: The documented host matrix is a validation target, not an approved compatibility claim.
+
+source:
+  plan: docs/PLAN-pet-actions-v3.md
+  baseline:
+    branch: codex/palette-input-sources
+    commit: 9d0f062
+  related_context:
+    - docs/PLAN-palette-input-sources-v2.md
+    - docs/SPEC-anti-answer-and-on-demand.md
+  references:
+    - title: Windows Terminal actions
+      url: https://learn.microsoft.com/en-us/windows/terminal/customize-settings/actions
+      fact: Copy action documents Ctrl+C, Ctrl+Shift+C, Ctrl+Insert defaults and forwards the chord to terminal when selection is absent.
+    - title: Windows Console changes
+      url: https://learn.microsoft.com/en-us/windows-server/administration/windows-console-changes
+      fact: Classic console Ctrl+C without selection sends BREAK; Ctrl+Insert copies selected text.
+    - title: VS Code terminal basics
+      url: https://code.visualstudio.com/docs/terminal/basics
+      fact: Terminal copy keys follow platform standards; no selected editor text for Run Selected Text executes the current line.
+    - title: VS Code default keybindings
+      url: https://code.visualstudio.com/docs/reference/default-keybindings
+      fact: Default bindings are configurable and host behavior must not be inferred from shell name.
+    - title: GNOME Terminal copy and paste
+      url: https://help.gnome.org/gnome-terminal/txt-copy-paste.html
+      fact: Copy uses Shift+Ctrl+C; Ctrl+C is not the copy shortcut.
+    - title: Apple Terminal keyboard shortcuts
+      url: https://support.apple.com/en-ng/guide/terminal/trmlshtcts
+      fact: Copy uses Command+C; Command-period sends Control-C to command line.
+
+product_scope:
+  goal: Explicitly transform selected text from a deliberate desktop-pet action and place successful output on clipboard for user-directed paste.
+  platforms:
+    first_implementation_target: Windows
+    architectural_targets_without_test_environment: [macOS, Linux]
+    compatibility_claims: none_until_named_host_tests_pass
+  in_scope:
+    - Structured text processing
+    - Prompt optimization
+    - Three-button pet control row
+    - Host-aware explicit copy/capture request after a button click
+    - Result copied to system clipboard only
+    - Migration disabling old automatic selection palette for existing and new users
+    - Preserve mouse side-button recording hook
+  deferred:
+    - Image recognition implementation; button is disabled placeholder only
+    - Browser and IDE integrations
+    - macOS and Linux implementation or compatibility claim
+    - Arbitrary or unclassified terminal support
+
+ui:
+  button_row:
+    placement: directly_below_pet_status_area
+    layout: three_equal_width_buttons
+    order:
+      - id: structure
+        label: 结构化
+        enabled: true
+      - id: optimize
+        label: 优化
+        enabled: true
+      - id: image_recognition
+        label: 识图
+        enabled: false
+        behavior: no_op_reserved_for_future_part
+  running:
+    highlight_active_action_button: true
+    disable_other_processing_action: true
+    image_recognition_remains_disabled: true
+    clear_active_state_on_success_or_failure: true
+  feedback:
+    capture_uncertain: concise_non_error_hint
+    capture_model_or_clipboard_failure: visible_failure
+    success: output_ready_for_user_to_paste
+    show_full_result_preview: false
+
+requirements:
+  - id: REQ-001
+    priority: must
+    statement: Only a click on Structure or Optimize may initiate the new text capture workflow.
+  - id: REQ-002
+    priority: must
+    statement: After an enabled action click, identify the foreground host and choose a documented host-specific copy chord; never classify by shell executable name.
+  - id: REQ-003
+    priority: must
+    statement: Invoke a model only after the app has established a fresh, non-empty current selection using the product decision chosen in DEC-001.
+  - id: REQ-004
+    priority: must
+    statement: Clipboard contents or copy success alone must never authorize model invocation.
+  - id: REQ-005
+    priority: must
+    statement: On successful non-empty model output, copy output to clipboard and leave paste timing and target to the user.
+  - id: REQ-006
+    priority: must
+    statement: Never synthesize paste, replace source selection, insert at a cursor, or mutate the source control.
+  - id: REQ-007
+    priority: must
+    statement: On capture failure, ambiguity, unsupported host, stale target, empty selection, or missing permission, fail closed without model invocation.
+  - id: REQ-008
+    priority: must
+    statement: Keep Structure, Optimize, and Image Recognition buttons equal width and in a row directly below the pet status area; image recognition remains disabled and has no effects.
+  - id: REQ-009
+    priority: must
+    statement: Highlight the running processing button, prevent concurrent Structure/Optimize runs, and clear state on completion or failure.
+  - id: REQ-010
+    priority: must
+    statement: Disable old global drag/double-click palette behavior for existing configurations even when config.paletteEnabled is true.
+  - id: REQ-011
+    priority: must
+    statement: Preserve the mouse side-button recording hook and its current configuration behavior during migration.
+  - id: REQ-012
+    priority: must
+    statement: Isolate action-button pointer events from pet body recording, dragging, click-to-settings, right-click, and scroll behaviors.
+  - id: REQ-013
+    priority: must
+    statement: During recording or transcription, text-action clicks have no capture, model, or clipboard effects and do not alter voice workflow state.
+  - id: REQ-014
+    priority: must
+    statement: Do not continuously watch selection or clipboard and do not log raw captured text, clipboard content, or model request body.
+  - id: REQ-015
+    priority: must
+    statement: A failed, canceled, timed-out, empty, or stale model result must not overwrite clipboard or mutate source.
+  - id: REQ-016
+    priority: must
+    statement: Do not claim host or platform compatibility without named runtime evidence for that host/control and version.
+
+acceptance_criteria:
+  - id: AC-001
+    verifies: [REQ-001, REQ-003, REQ-005, REQ-006, REQ-009]
+    given: A supported host provides an authorized, positively confirmed non-empty current selection.
+    when: The user clicks Structure.
+    then: Exactly one structure operation runs; successful output reaches clipboard; source and focus target are not pasted into or replaced; Structure is highlighted while running.
+  - id: AC-002
+    verifies: [REQ-001, REQ-003, REQ-005, REQ-006, REQ-009]
+    given: A supported host provides an authorized, positively confirmed non-empty current selection.
+    when: The user clicks Optimize.
+    then: Exactly one optimization runs; successful output reaches clipboard; source and focus target are not pasted into or replaced; Optimize is highlighted while running.
+  - id: AC-003
+    verifies: [REQ-001, REQ-004, REQ-007, REQ-014]
+    given: No action button was clicked.
+    when: Selection, clipboard, hover, pet movement, voice state, or app launch changes.
+    then: No copy chord, capture, or model call occurs.
+  - id: AC-004
+    verifies: [REQ-003, REQ-004, REQ-007]
+    given: Selection is empty, stale, inaccessible, unverified, or host is unknown.
+    when: Structure or Optimize is clicked.
+    then: No model call occurs, no success is reported, and a concise uncertainty/unsupported hint is shown.
+  - id: AC-005
+    verifies: [REQ-002, REQ-004, REQ-007]
+    given: Windows Terminal has no positively established selection.
+    when: A processing button is clicked.
+    then: Do not send Ctrl+Shift+C into terminal input and do not call the model from clipboard state alone.
+  - id: AC-006
+    verifies: [REQ-002, REQ-004, REQ-007]
+    given: Classic conhost has no positively established selection.
+    when: A processing button is clicked.
+    then: Do not send Ctrl+C, which can send BREAK; only use Ctrl+Insert under an approved host capture policy.
+  - id: AC-007
+    verifies: [REQ-004, REQ-007, REQ-015]
+    given: Model returns an error, timeout, cancellation, empty result, or stale response.
+    when: The operation ends.
+    then: Clipboard is not overwritten, source is untouched, and running highlight clears.
+  - id: AC-008
+    verifies: [REQ-008]
+    given: Pet action controls are rendered.
+    when: User interacts with the row.
+    then: Three equal-width buttons appear in the specified order; Image Recognition stays disabled and causes no effects.
+  - id: AC-009
+    verifies: [REQ-010, REQ-011]
+    given: Existing config has paletteEnabled=true.
+    when: New pet-action mode is active after migration.
+    then: Legacy global drag/double-click palette does not appear and mouse side-button recording remains available according to its config.
+  - id: AC-010
+    verifies: [REQ-012, REQ-013]
+    given: User clicks an action button or performs a pet body gesture while voice is idle or active.
+    when: Gesture handlers run.
+    then: Each gesture affects only its intended action; active voice prevents text action effects.
+  - id: AC-011
+    verifies: [REQ-016]
+    given: A host/platform has only documentation or a different host's test evidence.
+    when: Compatibility is documented.
+    then: It is marked unverified/unsupported rather than claimed compatible.
+
+host_matrix:
+  policy: host_identity_and_documented_behavior; never shell_name_heuristics
+  entries:
+    - host: ordinary_non_terminal_application
+      candidate_chord: {windows: Ctrl+C, linux: Ctrl+C, macOS: Cmd+C}
+      support: pending_host_evidence
+    - host: Windows Terminal
+      candidate_chord: Ctrl+Shift+C
+      no_selection: chord_is_forwarded_to_terminal
+      support: pending_host_evidence
+    - host: classic_Windows_Console_conhost
+      candidate_chord: Ctrl+Insert
+      no_selection: Ctrl+C_sends_BREAK
+      support: pending_host_evidence
+    - host: VS_Code_integrated_terminal
+      candidate_chord: {windows: Ctrl+C, linux: Ctrl+Shift+C, macOS: Cmd+C}
+      no_selection: keybindings_and_terminal_focus_are_host_configurable; editor_run_selected_text_can_fall_back_to_current_line
+      support: pending_host_evidence
+    - host: GNOME_Terminal
+      candidate_chord: Ctrl+Shift+C
+      support: architecture_target_unverified
+    - host: Konsole
+      candidate_chord: Ctrl+Shift+C
+      support: official_source_and_runtime_test_required
+    - host: macOS_Terminal
+      candidate_chord: Cmd+C
+      support: architecture_target_unverified
+    - host: unknown_or_custom_terminal
+      candidate_chord: none
+      support: unsupported
+
+forbidden_effects:
+  - Call a text model before a user clicks Structure or Optimize.
+  - Treat clipboard text, a changed clipboard, or copy success as proof of a real selection.
+  - Call a model with stale, empty, fallback-line, ambiguous, or unsupported-host text.
+  - Send a guessed copy chord to an unknown terminal or classify terminal by shell process name.
+  - Paste transformed output, replace the source selection, insert into a cursor, or mutate original source.
+  - Automatically display the legacy selection palette for config.paletteEnabled=true.
+  - Unregister or repurpose the mouse side-button recording hook.
+  - Allow pet recording/dragging gestures to activate buttons or button clicks to start/stop recording.
+  - Allow text actions during voice recording/transcription to affect capture, model, clipboard, or voice state.
+  - Poll clipboard/selection continuously or write captured text into logs/telemetry.
+  - Claim macOS/Linux, browser, IDE, or arbitrary terminal support without direct named environment evidence.
+
+implementation_units:
+  - id: UNIT-0
+    name: Resolve blocking decisions
+    status: blocked
+    deliverable: User decision on selection proof/preview policy, clipboard preservation policy, and initial named Windows adapters.
+  - id: UNIT-1
+    name: Pet action UI and config migration
+    dependencies: [UNIT-0]
+    scope: Equal-width three-button row, busy/error states, disabled image placeholder, legacy palette disabled across config migration, side-button recording preserved, pointer isolation.
+  - id: UNIT-2
+    name: Host-aware capture contract and adapters
+    dependencies: [UNIT-0]
+    scope: Foreground host identity, documented chord selection, current selection evidence, freshness/cancel state, fail-closed unsupported cases.
+  - id: UNIT-3
+    name: Model operation and clipboard result
+    dependencies: [UNIT-1, UNIT-2]
+    scope: Structure/Optimize model routing after authorized capture, clipboard success/error states, no paste or source mutation.
+  - id: UNIT-4
+    name: Windows host validation and independent review
+    dependencies: [UNIT-1, UNIT-2, UNIT-3]
+    scope: Named host/control runtime matrix, migration evidence, independent review, clean-context install/run.
+  - id: UNIT-5
+    name: macOS/Linux feasibility
+    dependencies: [UNIT-4]
+    scope: Separate real-platform adapter and permission validation; no inferred support.
+
+verification_boundaries:
+  documentation_phase:
+    allowed: [review_existing_docs_and_code, validate_yaml_syntax, git_diff_check]
+    production_code_changes: forbidden
+    historical_spec_or_report_edits: forbidden
+  implementation_phase_after_approval:
+    unit_tests: required_for_capture_gate_migration_button_states_and_effect_guards
+    runtime_tests: required_for_each_claimed_host_control_pair
+    clean_context_run: required_before_release_claim
+    platform_claims: require_real_platform_execution
+  acceptance_limits:
+    - Clipboard state alone cannot prove selection existence.
+    - Windows Terminal no-selection chord forwarding can alter terminal input.
+    - Classic console Ctrl+C can send BREAK without selection.
+    - VS Code editor no-selection copy may copy the current line.
+    - Browser, IDE chat, arbitrary document, remote-control, macOS, and Linux behavior is unverified unless tested separately.
+
+commit_stages:
+  - documentation_plan_and_spec_separate_commits
+  - decision_record_before_implementation
+  - one_commit_per_implementation_unit
+  - independent_review_between_units
+  - clean_context_validation_before_release
