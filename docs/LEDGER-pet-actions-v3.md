@@ -37,3 +37,12 @@ The three equal-width controls are Structure, Optimize, and disabled Image Recog
 | Initial v3 Spec draft | `f0fcda68f20f7c17e215157a04285d9834f66f14` | Initial pending Spec; retained as history |
 | Approved Plan | `84ff4187149314bde2899e1fc6de637809b79280` | Resolved policy and Windows implementation boundary |
 | Approved frozen Spec | `6da4a95b85992dca3c342f3f674c7bfb134e553f` | Approved requirements and acceptance criteria |
+| UNIT-1: Pet action UI and config migration | `b578ef282ceb54b67763df0fc3e27d5d4fce8335` | Three-button row and fail-closed action states; `paletteEnabled` migration and retired automatic trigger; mouse side-button route retained |
+
+## UNIT-1 Evidence
+
+- Focused checks passed: `pet-actions-ui.unit.test.js`, `palette-trigger-contract.unit.test.js`, `pet-status.unit.test.js`, and `palette-action-guards.unit.test.js`.
+- `node --check` passed for changed JavaScript files; `git diff --check` passed.
+- The Electron runtime is not installed in this checkout, so desktop visual review and overlap confirmation were not performed.
+- Structure and Optimize currently return a visible fail-closed placeholder response. No capture adapter, model call, clipboard operation, host compatibility, or end-to-end action is claimed by UNIT-1.
+- The frozen Spec remains unchanged at SHA-256 `21eabf0e8c2f896aaf78531926d57ea146dc22f4dbd4705353e83c027a1665ef`.
