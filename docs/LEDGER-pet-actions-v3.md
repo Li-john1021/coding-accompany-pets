@@ -40,6 +40,7 @@ The three equal-width controls are Structure, Optimize, and disabled Image Recog
 | UNIT-1: Pet action UI and config migration | `b578ef282ceb54b67763df0fc3e27d5d4fce8335` | Three-button row and fail-closed action states; `paletteEnabled` migration and retired automatic trigger; mouse side-button route retained |
 | F-001 repair | `3f6acb088fd58c5446442e65a9913fc41d60fa38` | Hold recording now stops when the body gesture releases over the action row; unpaired button release remains inert |
 | UNIT-2: Host-aware capture contract and adapters | `9f30bcfe0985611dcf49dd07e458d68586cd5bc8` | Typed capture authorization/preview gate, Windows foreground and clipboard sequence snapshot, conservative host policy, and bounded cancellation |
+| Pet scale runtime repair | `ef846098e3348087b01982d13a29c4e04711c942` | Initial webContents zoom applies after `did-finish-load`; shared rounded dimensions match the 300x306 CSS body |
 
 ## UNIT-1 Evidence
 
@@ -82,3 +83,12 @@ The three equal-width controls are Structure, Optimize, and disabled Image Recog
 - All `app/main/*.unit.test.js` passed, including the new renderer rejection test. Every `app/**/*.js` passed `node --check`; `git diff --check` passed. The frozen Spec SHA-256 remains `21eabf0e8c2f896aaf78531926d57ea146dc22f4dbd4705353e83c027a1665ef`.
 - Clipboard write remains conditional but is not a lossless transaction: if `EmptyClipboard` succeeds and `SetClipboardData` fails, the previous clipboard content may already be gone. The helper closes the clipboard and frees memory not transferred to Windows; the successful model output remains in the result-only preview for explicit copy. No guarantee is made that the source clipboard value survives this native failure path or that arbitrary previous formats can be restored.
 - Electron remains unavailable, so live renderer/IPC interaction was not exercised. Browser/IDE/terminal host policy and claims are unchanged. The Plan, Spec, and prior audit reports remain untouched.
+
+## Pet Scale Runtime Repair Evidence
+
+- The initialization zoom listener now runs on `did-finish-load` and reads the latest configured scale, so a scale change during page loading is not overwritten. Initial and runtime window bounds share one rounded `300x306` base-size function; runtime center anchoring remains unchanged.
+- Real Electron 31 launches used explicit isolated `--user-data-dir` profiles with synthetic providers, empty credentials, and scales `0.8`, `1.0`, and `2.5`. Captured bitmap dimensions matched the window dimensions at all three scales. The pet, status text, and all three equal-width buttons were visible without clipping; the 2.5 view scaled proportionally. No model/API action was invoked.
+- [pet-scale-0.8.png](evidence/pet-actions-scale-fix/pet-scale-0.8.png): `240x245`, SHA-256 `8d3cc4a9ae1fa976eb0d2b8957746e2ccbbf9fc1949f6eb4e5f85fdd9e5f073e`.
+- [pet-scale-1.png](evidence/pet-actions-scale-fix/pet-scale-1.png): `300x306`, SHA-256 `701edd71d1b89b8895606e75615609d074da8fb2fd44f95a752c16d59f089dc2c`.
+- [pet-scale-2.5.png](evidence/pet-actions-scale-fix/pet-scale-2.5.png): `750x765`, SHA-256 `18d2c52e8e5592ba2174258522e522aae33665ee082c4f17b5da81eacf05d892`.
+- All 16 `app/main/*.unit.test.js` files passed; all 44 JavaScript files passed `node --check`; `git diff --check` passed. The frozen Spec SHA-256 remains `21eabf0e8c2f896aaf78531926d57ea146dc22f4dbd4705353e83c027a1665ef`.
