@@ -3,6 +3,8 @@ const stage = document.getElementById('stage');
 const petImg = document.getElementById('pet');
 const statusEl = document.getElementById('status');
 const bubble = document.getElementById('bubble');
+const actionRow = document.getElementById('action-row');
+const actionButtons = [...document.querySelectorAll('#action-row .pet-action')];
 
 // 进入监听时随机弹一句「在听」的表演反馈
 const LISTEN_LINES = [
@@ -50,10 +52,55 @@ function setState(s) {
     statusEl.textContent = text;
   }
   if (window.petLive2d) window.petLive2d.setState(s);
+  updateActionButtons();
   if (s === 'listening' && prev !== 'listening') {
     say(LISTEN_LINES[(Math.random() * LISTEN_LINES.length) | 0], 2600);
   }
 }
+
+let activePetAction = null;
+function updateActionButtons() {
+  const voiceBusy = ['listening', 'transcribing'].includes(curStage) || starting || isRecording;
+  for (const button of actionButtons) {
+    const mode = button.dataset.mode;
+    button.classList.toggle('active', mode === activePetAction);
+    button.disabled = mode === 'image_recognition' || mode === 'image' ||
+      voiceBusy || (!!activePetAction && mode !== activePetAction);
+    if (mode === activePetAction) button.setAttribute('aria-busy', 'true');
+    else button.removeAttribute('aria-busy');
+  }
+}
+
+for (const button of actionButtons) {
+  for (const eventName of ['pointerdown', 'mousedown', 'click', 'dblclick', 'contextmenu', 'wheel']) {
+    button.addEventListener(eventName, (event) => event.stopPropagation());
+  }
+  button.addEventListener('click', async () => {
+    if (activePetAction || ['listening', 'transcribing'].includes(curStage) || isRecording || starting) return;
+    const mode = button.dataset.mode;
+    if (mode !== 'structure' && mode !== 'optimize') return;
+    activePetAction = mode;
+    setState(mode === 'structure' ? 'structuring' : 'optimizing');
+    try {
+      const result = await window.v2p.petAction(mode);
+      if (!result || !result.ok) {
+        say((result && result.error) || '文本操作暂不可用', 3500);
+        setState('idle');
+      } else {
+        say('已完成', 3000);
+        setState('done');
+        setTimeout(() => { if (!activePetAction) setState('idle'); }, 3000);
+      }
+    } catch {
+      say('文本操作暂不可用', 3500);
+      setState('idle');
+    } finally {
+      activePetAction = null;
+      updateActionButtons();
+    }
+  });
+}
+actionRow.addEventListener('wheel', (event) => event.stopPropagation());
 
 // ---------------- 录音（PCM 采集 + 前端编 WAV） ----------------
 // 说明：部分 ASR（如小米 MiMo）只收 wav/mp3，不收 webm，
@@ -123,10 +170,12 @@ function encodeWav(samples, sampleRate) {
 async function startRecording() {
   if (isRecording || starting) return;
   starting = true;
+  updateActionButtons();
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
     starting = false;
+    updateActionButtons();
     window.v2p.setRecordingFlag(false); // 失败回传，避免主进程热键状态失同步
     setState('error');
     say('无法访问麦克风：' + (e.message || e));
@@ -148,6 +197,7 @@ async function startRecording() {
   procNode.connect(audioCtx.destination);
   isRecording = true;
   setState('listening');
+  updateActionButtons();
   window.v2p.setRecordingFlag(true);
 }
 
@@ -192,6 +242,7 @@ async function stopRecording() {
     setTimeout(() => setState('idle'), 4000);
   } finally {
     window.v2p.setRecordingFlag(false);
+    updateActionButtons();
   }
 }
 
@@ -243,6 +294,10 @@ window.addEventListener('mouseup', (e) => {
   if (e.button !== 0 || !down) return;
   down = false;
   cancelHold();
+  if (e.target.closest && e.target.closest('#action-row')) {
+    dragging = false;
+    return;
+  }
   if (triggerMode === 'hold') {
     if (isRecording) stopRecording();
     else if (!dragging) window.v2p.openSettings(); // 单击打开设置

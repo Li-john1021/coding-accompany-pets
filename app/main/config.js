@@ -4,6 +4,7 @@ const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const migrateLegacyPalette = require('./legacy-palette-migration');
 
 const DEFAULT_PROMPT = `你是「文本重写器」，不是助手、不是专家、不是聊天对象。你的唯一任务是把输入草稿改写为结构化、要素完整、可直接使用的提示词或整洁文本。
 
@@ -62,7 +63,7 @@ function defaultConfig() {
     optimizeDisableThinking: true,   // 提示词优化强制关思考（默认勾）
     writeBackCopyOnly: false,      // 选区回写：false=替换选区
     clipboardRestore: false,       // 处理后是否恢复原剪贴板
-    paletteEnabled: true,          // 选中浮条总开关
+    paletteEnabled: false,         // 旧版选中浮条已停用
     paletteMinChars: 20,
     paletteLongHint: 8000,
     previewSkipChars: 20,
@@ -102,6 +103,9 @@ function load() {
     cache = { ...defaultConfig(), ...JSON.parse(raw) };
   } catch {
     cache = defaultConfig();
+  }
+  if (migrateLegacyPalette(cache)) {
+    try { save(); } catch { /* Runtime gating also keeps legacy triggers disabled. */ }
   }
   return cache;
 }

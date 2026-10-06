@@ -6,7 +6,7 @@
     * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
     html, body { background: transparent; overflow: hidden; }
     body {
-      width: 300px; height: 230px;
+      width: 300px; height: 306px;
       display: flex; flex-direction: column; align-items: center;
       font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
     }
@@ -22,7 +22,9 @@
       opacity: 0;
       transition: opacity .2s;
       word-break: break-all;
-      max-height: 74px;
+      height: 48px;
+      max-height: 48px;
+      flex: 0 0 48px;
       overflow: hidden;
       pointer-events: none;
     }
@@ -78,6 +80,35 @@
     #status.mode-done-structure { background: rgba(41,128,185,.95); }
     #status.mode-done-optimize { background: rgba(142,68,173,.95); }
     #status.mode-error { background: rgba(192,57,43,.95); }
+    #action-row {
+      width: 284px;
+      height: 34px;
+      margin-top: 6px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      flex: 0 0 34px;
+    }
+    .pet-action {
+      min-width: 0;
+      height: 34px;
+      border: 1px solid rgba(255,255,255,.7);
+      border-radius: 8px;
+      background: rgba(255,255,255,.94);
+      color: #263238;
+      box-shadow: 0 2px 7px rgba(0,0,0,.18);
+      font: 600 12px 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+    .pet-action .icon { font-size: 15px; line-height: 1; }
+    .pet-action:hover:not(:disabled) { background: #fff; }
+    .pet-action:disabled { opacity: .48; cursor: default; }
+    .pet-action[data-mode="structure"].active { background: #d8efff; border-color: #3498db; color: #17638a; }
+    .pet-action[data-mode="optimize"].active { background: #f0e2f5; border-color: #9b59b6; color: #71388a; }
     #status .pulse {
       display: inline-block;
       animation: pulse 1s ease-in-out infinite;
@@ -108,6 +139,11 @@
     <div id="rec-dot"></div>
   </div>
   <div id="status">按住我说话</div>
+  <div id="action-row" aria-label="文本操作">
+    <button class="pet-action" type="button" data-mode="structure" title="结构化" aria-label="结构化"><span class="icon" aria-hidden="true">≡</span><span>结构化</span></button>
+    <button class="pet-action" type="button" data-mode="optimize" title="优化" aria-label="优化"><span class="icon" aria-hidden="true">✦</span><span>优化</span></button>
+    <button class="pet-action" type="button" data-mode="image_recognition" disabled title="识图（暂未开放）" aria-label="识图"><span class="icon" aria-hidden="true">▧</span><span>识图</span></button>
+  </div>
   <script src="lib/live2dcubismcore.min.js"></script>
   <script>window.live2dcubismcore = window.live2dcubismcore || window.Live2DCubismCore;</script>
   <script src="../node_modules/pixi.js/dist/pixi.min.js"></script>

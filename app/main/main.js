@@ -108,7 +108,7 @@ function createPetWindow() {
   }
   petWin = new BrowserWindow({
     width: Math.round(300 * s),
-    height: Math.round(230 * s),
+    height: Math.round(306 * s),
     frame: false,
     transparent: true,
     resizable: false,
@@ -140,7 +140,7 @@ function applyPetScale(delta) {
     x: Math.round(x - (w * (next / cur - 1)) / 2),
     y: Math.round(y - (h * (next / cur - 1)) / 2),
     width: Math.round(300 * next),
-    height: Math.round(230 * next)
+    height: Math.round(306 * next)
   });
   petWin.webContents.setZoomFactor(next);
   const cfg = config.load();
@@ -236,6 +236,7 @@ function registerIpc() {
     const modelChanged = 'petModel' in patch && patch.petModel !== cfg.petModel;
     const triggerChanged = 'triggerMode' in patch && patch.triggerMode !== cfg.triggerMode;
     Object.assign(cfg, patch);
+    cfg.paletteEnabled = false;
     config.save();
     registerHotkey();
     setMouseRecordHook();
@@ -305,6 +306,12 @@ function registerIpc() {
   ipcMain.handle('v2p:recording-flag', (_e, active) => {
     recordingActive = !!active;
     return { ok: true };
+  });
+
+  ipcMain.handle('v2p:pet-action', (_e, mode) => {
+    if (recordingActive) return { ok: false, error: '录音或转写期间不可操作' };
+    if (mode !== 'structure' && mode !== 'optimize') return { ok: false, error: '不支持的操作' };
+    return { ok: false, error: '文本操作暂不可用' };
   });
 
   // 宠物窗移动（拖拽）
@@ -704,6 +711,7 @@ async function captureAndShowPalette(start, end, screenX, screenY, gestureId) {
     userCopyAt: lastUserCopyAt,
     now: Date.now()
   });
+
   if (!gate.ok) {
     paletteDebugLog('SKIP ' + gate.reason);
     return;
@@ -906,7 +914,7 @@ let activeSelectionGesture = null;
 
 function setMouseRecordHook() {
   const cfg = config.load();
-  const want = cfg.mouseRecord === true || cfg.paletteEnabled !== false;
+  const want = cfg.mouseRecord === true;
   if (want === mouseHookOn) return;
   if (want) {
     try {
@@ -925,59 +933,6 @@ function setMouseRecordHook() {
             }
           }
           return;
-        }
-        // uiohook 左键 = 1（0 兼容）
-        const isLeft = e.button === 1 || e.button === 0;
-        if (isLeft && config.load().paletteEnabled !== false) {
-          if (isPaletteVisible() && paletteWin && !paletteWin.isDestroyed()) {
-            const b = paletteWin.getBounds();
-            const inBar = e.x >= b.x && e.x <= b.x + b.width && e.y >= b.y && e.y <= b.y + b.height;
-            if (!inBar) {
-              dismissPaletteIfVisible();
-              return;
-            }
-            return;
-          }
-          const gestureId = ++selectionGestureId;
-          activeSelectionGesture = { id: gestureId, start: { x: e.x, y: e.y }, clicks: Number(e.clicks) || 1 };
-          selDown = true;
-          selDragging = false;
-          selStartX = e.x;
-          selStartY = e.y;
-        }
-      });
-      uIOhook.on('mousemove', (e) => {
-        if (!selDown || selDragging) return;
-        if (Math.hypot(e.x - selStartX, e.y - selStartY) > 12) selDragging = true;
-      });
-      uIOhook.on('mouseup', (e) => {
-        const isLeft = e.button === 1 || e.button === 0;
-        if (!isLeft || !selDown) return;
-        selDown = false;
-        const gesture = activeSelectionGesture;
-        activeSelectionGesture = null;
-        const dragged = selDragging;
-        selDragging = false;
-        if (!gesture || (!dragged && gesture.clicks < 2)) return;
-        if (config.load().paletteEnabled === false) return;
-        if (isOverOwnWindow(e.x, e.y)) { selDown = false; return; }
-        const end = { x: e.x, y: e.y };
-        const delay = dragged ? 140 : 160;
-        setTimeout(() => {
-          captureAndShowPalette(gesture.start, end, e.x, e.y, gesture.id).catch((err) => {
-            console.log('[palette]', err && err.message ? err.message : err);
-          });
-        }, delay);
-      });
-      // Esc：无副作用关闭浮条（focusable:false 收不到 keydown，走全局钩子）
-      uIOhook.on('keydown', (e) => {
-        if (e.keycode === 1 || e.keycode === 27) {
-          if (dismissPaletteIfVisible()) console.log('[palette] Esc close');
-          return;
-        }
-        if (e.keycode === 46 && (e.ctrlKey || e.metaKey)) {
-          lastUserCopyAt = Date.now();
-          dismissPaletteIfVisible();
         }
       });
       uIOhook.start();

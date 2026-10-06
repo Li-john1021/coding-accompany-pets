@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('v2p', {
   validateModel: (kind, provider) => ipcRenderer.invoke('v2p:validate-model', { kind, provider }),
   submit: (audio, mime, options) => ipcRenderer.invoke('v2p:submit', { audio, mime, options: options || {} }),
   setRecordingFlag: (active) => ipcRenderer.invoke('v2p:recording-flag', active),
+  petAction: (mode) => ipcRenderer.invoke('v2p:pet-action', mode),
   // 选中浮条
   paletteRun: (mode, selectionId) => ipcRenderer.invoke('v2p:palette-run', { mode, selectionId }),
   paletteCopyRaw: (selectionId) => ipcRenderer.invoke('v2p:palette-copy-raw', { selectionId }),
