@@ -39,6 +39,7 @@ The three equal-width controls are Structure, Optimize, and disabled Image Recog
 | Approved frozen Spec | `6da4a95b85992dca3c342f3f674c7bfb134e553f` | Approved requirements and acceptance criteria |
 | UNIT-1: Pet action UI and config migration | `b578ef282ceb54b67763df0fc3e27d5d4fce8335` | Three-button row and fail-closed action states; `paletteEnabled` migration and retired automatic trigger; mouse side-button route retained |
 | F-001 repair | `3f6acb088fd58c5446442e65a9913fc41d60fa38` | Hold recording now stops when the body gesture releases over the action row; unpaired button release remains inert |
+| UNIT-2: Host-aware capture contract and adapters | `9f30bcfe0985611dcf49dd07e458d68586cd5bc8` | Typed capture authorization/preview gate, Windows foreground and clipboard sequence snapshot, conservative host policy, and bounded cancellation |
 
 ## UNIT-1 Evidence
 
@@ -48,3 +49,12 @@ The three equal-width controls are Structure, Optimize, and disabled Image Recog
 - Structure and Optimize currently return a visible fail-closed placeholder response. No capture adapter, model call, clipboard operation, host compatibility, or end-to-end action is claimed by UNIT-1.
 - F-001 regression checks exercise row release during hold recording, an action-row mouseup without a preceding pet-body mousedown, click-mode row and body releases, hold-mode settings click, and drag release cleanup.
 - The frozen Spec remains unchanged at SHA-256 `21eabf0e8c2f896aaf78531926d57ea146dc22f4dbd4705353e83c027a1665ef`.
+
+## UNIT-2 Evidence
+
+- The capture gate returns typed `authorized`, `preview`, `rejected`, or `cancelled` results. Only a focused, non-empty native Win32 Edit selection with stable target identity is directly authorized. Ordinary copy text requires a changed Win32 clipboard sequence and non-empty text; a changed sequence with equal text remains unverified and requires the same mode button a second time.
+- Automatic Ctrl+C is limited to process-name candidates `Notepad`, `Notepad++`, `WordPad`, `WINWORD`, `EXCEL`, and `POWERPNT`. These are implementation candidates only and have no named runtime compatibility claim. Browser processes, all VS Code windows, other IDEs, Windows Terminal, conhost, and unknown/custom hosts use a bounded manual-copy window. In particular, browsers and IDEs are not guessed to be ordinary text controls because embedded terminals cannot be classified reliably here. No Windows Terminal or conhost chord is currently sent; the adapters have no terminal selection proof to establish safe injection.
+- Manual-copy capture prompts while its 10-second action window is open. A fresh non-empty text change opens an unverified short preview; same-button confirmation is accepted only while the target and clipboard sequence are unchanged and voice is idle. A bounded 10-second monitor cancels pending state on target, clipboard, voice, or expiry changes. Capture does not call a model, write output clipboard text, or paste.
+- Passed focused checks: `pet-action-capture.unit.test.js`, `pet-actions-ui.unit.test.js`, `palette-trigger-contract.unit.test.js`, `palette-probe.unit.test.js`, `palette-action-guards.unit.test.js`, and `palette-run-guards.unit.test.js`; changed JavaScript passed `node --check`; `git diff --check` passed.
+- Windows foreground snapshot smoke passed for the current `Qoder CN` foreground window and returned an HWND/focus identity plus clipboard sequence without reading clipboard text. The positive/empty native Edit runtime fixture compiled and launched, but Windows denied the fixture foreground switch; both positive/negative selection assertions were therefore blocked. No copy chord or clipboard mutation was attempted. The active-copy runtime path remains unverified.
+- This unit does not establish compatibility for the allowlisted applications, browsers, VS Code, IDEs, or terminals. The separate Windows host validation unit remains outstanding. The frozen Spec remains unchanged at SHA-256 `21eabf0e8c2f896aaf78531926d57ea146dc22f4dbd4705353e83c027a1665ef`.
