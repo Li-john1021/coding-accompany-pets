@@ -1,6 +1,14 @@
 const assert = require('assert');
 const { runPowerShellFile } = require('./powershell-file');
-const { createWindowsConditionalClipboardWriter } = require('./pet-action-clipboard');
+const { buildConditionalWriteScript, createWindowsConditionalClipboardWriter } = require('./pet-action-clipboard');
+
+function runNativeZeroSequenceCheck() {
+  const payload = `0\n${Buffer.from('must not be written', 'utf16le').toString('base64')}\n`;
+  return new Promise((resolve) => runPowerShellFile(buildConditionalWriteScript(),
+    { timeout: 5000, maxBuffer: 1024, stdin: payload }, (error, stdout) => {
+      resolve(!error && String(stdout || '').trim().split(/\r?\n/).pop());
+    }));
+}
 
 function readSafeClipboardSnapshot() {
   const script = `
@@ -35,6 +43,7 @@ try {
     console.log('SKIP Win32 conditional clipboard smoke is Windows-only');
     return;
   }
+  assert.strictEqual(await runNativeZeroSequenceCheck(), 'unavailable', 'native helper fails closed for expected sequence zero before opening the clipboard');
   const initial = await readSafeClipboardSnapshot();
   if (!initial || !initial.safe || !Number.isInteger(initial.sequence)) {
     console.log('SKIP clipboard formats could not be safely backed up; no clipboard write attempted');

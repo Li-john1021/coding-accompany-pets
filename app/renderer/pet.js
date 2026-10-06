@@ -32,6 +32,8 @@ const STATUS_CLASS = {
 };
 
 let bubbleTimer = null;
+let voiceUiEpoch = 0;
+const VOICE_UI_STAGES = new Set(['listening', 'transcribing']);
 function say(text, ms = 3500) {
   bubble.textContent = text;
   bubble.classList.add('show');
@@ -41,6 +43,7 @@ function say(text, ms = 3500) {
 
 function setState(s) {
   const prev = curStage;
+  if (VOICE_UI_STAGES.has(s) && !VOICE_UI_STAGES.has(prev)) voiceUiEpoch++;
   curStage = s;
   stage.className = s + (window.petLive2d && window.petLive2d.active() ? ' live2d' : '');
   statusEl.className = STATUS_CLASS[s] || '';
@@ -85,9 +88,19 @@ for (const button of actionButtons) {
     if (mode !== 'structure' && mode !== 'optimize') return;
     activePetAction = mode;
     setState(mode === 'structure' ? 'structuring' : 'optimizing');
+    const actionVoiceEpoch = voiceUiEpoch;
     try {
-      const result = await window.v2p.petAction(mode);
-      if (voiceUiBusy() || (result && result.voiceSuperseded)) return;
+      const settlement = await window.petActionSettlement.invoke(
+        () => window.v2p.petAction(mode),
+        () => voiceUiBusy() || actionVoiceEpoch !== voiceUiEpoch,
+        () => {
+          say('文本操作暂不可用', 3500);
+          setState('idle');
+        }
+      );
+      if (settlement.status !== 'resolved') return;
+      const result = settlement.value;
+      if (voiceUiBusy() || actionVoiceEpoch !== voiceUiEpoch || (result && result.voiceSuperseded)) return;
       if (result && result.capture && result.capture.kind === 'preview') {
         const previewText = String(result.capture.text || '').replace(/\s+/g, ' ').trim();
         const shortText = previewText.length > 46 ? previewText.slice(0, 46) + '…' : previewText;
@@ -122,9 +135,6 @@ for (const button of actionButtons) {
         setState('done');
         setTimeout(() => { if (!activePetAction) setState('idle'); }, 3000);
       }
-    } catch {
-      say('文本操作暂不可用', 3500);
-      setState('idle');
     } finally {
       activePetAction = null;
       updateActionButtons();

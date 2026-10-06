@@ -150,6 +150,8 @@ function harness(options = {}) {
     const script = buildConditionalWriteScript();
     assert.match(script, /OpenClipboard\(owner\)/);
     assert.match(script, /OpenClipboard\(owner\)[\s\S]*GetClipboardSequenceNumber\(\)[\s\S]*EmptyClipboard\(\)[\s\S]*SetClipboardData\(13, memory\)/);
+    assert.match(script, /if \(expected == 0\) return "unavailable";/);
+    assert.match(script, /uint observed = GetClipboardSequenceNumber\(\);\s*if \(observed == 0\) return "unavailable";\s*if \(observed != expected\) return "changed";[\s\S]*EmptyClipboard\(\)/);
     assert.match(script, /GlobalAlloc\(0x0002/);
     assert.match(script, /CloseClipboard\(\)/);
     assert.doesNotMatch(script, /OpenClipboard\(IntPtr\.Zero\)|clipboard\.writeText/);
@@ -163,6 +165,11 @@ function harness(options = {}) {
     assert.doesNotMatch(scriptText, /private result/);
     callback(null, 'changed\n');
     assert.strictEqual(await pending, false);
+
+    let zeroInvoked = false;
+    const zeroWriter = createWindowsConditionalClipboardWriter({ platform: 'win32', runPowerShellFile: () => { zeroInvoked = true; } });
+    assert.strictEqual(await zeroWriter.writeClipboardIfSequence(0, 'private result'), false);
+    assert.strictEqual(zeroInvoked, false, 'expected sequence zero is rejected before starting native write');
 
     let canceledCallback, killed = false;
     const cancelable = createWindowsConditionalClipboardWriter({ platform: 'win32', runPowerShellFile: (_source, _opts, cb) => {

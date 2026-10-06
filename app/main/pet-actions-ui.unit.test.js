@@ -30,11 +30,11 @@ assert.match(js, /eventName of \['pointerdown', 'mousedown', 'click', 'dblclick'
 assert.match(js, /actionRow\.addEventListener\('wheel'/, 'scrolling in the action row does not scale the pet');
 assert.match(js, /releaseAction === 'stop-recording'[\s\S]*?stopRecording\(\)/, 'release disposition stops recording');
 assert.match(js, /releaseAction === 'open-settings'[\s\S]*?openSettings\(\)/, 'body click still opens settings');
-assert.match(html, /pet-gesture\.js[\s\S]*?pet\.js/, 'release decision helper loads before pet handlers');
+assert.match(html, /pet-gesture\.js[\s\S]*?pet-action-settlement\.js[\s\S]*?pet\.js/, 'gesture and completion guards load before pet handlers');
 assert.match(js, /targetInActionRow:\s*!!\(e\.target\.closest && e\.target\.closest\('#action-row'\)\)/, 'row gap and button releases reach the same decision path');
 assert.match(js, /\['listening', 'transcribing'\]\.includes\(curStage\)/, 'voice stages block action clicks');
 assert.match(js, /activePetAction = mode/, 'processing action enters a visible active state');
-assert.match(js, /const result = await window\.v2p\.petAction\(mode\);\s*if \(voiceUiBusy\(\) \|\| \(result && result\.voiceSuperseded\)\) return;/, 'late text-action completion cannot overwrite active or just-failed voice state');
+assert.match(js, /window\.petActionSettlement\.invoke\([\s\S]*?voiceUiBusy\(\) \|\| actionVoiceEpoch !== voiceUiEpoch[\s\S]*?setState\('idle'\)/, 'late text-action resolve or rejection cannot overwrite active or superseding voice state');
 assert.match(js, /function voiceUiBusy\(\)[\s\S]*?starting \|\| isRecording/, 'voice transitions during microphone startup also guard text completion');
 assert.match(settings, /mouse-record/);
 assert.doesNotMatch(settings, /启用选中浮条|palette-enabled/, 'obsolete palette setting is removed');

@@ -20,6 +20,7 @@ public static class V2PConditionalClipboard {
   [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr GlobalFree(IntPtr memory);
 
   public static string Write(uint expected, string text, IntPtr owner) {
+    if (expected == 0) return "unavailable";
     byte[] bytes = Encoding.Unicode.GetBytes(text + "\\0");
     IntPtr memory = GlobalAlloc(0x0002, (UIntPtr)bytes.Length); // GMEM_MOVEABLE
     if (memory == IntPtr.Zero) return "unavailable";
@@ -32,7 +33,9 @@ public static class V2PConditionalClipboard {
       finally { GlobalUnlock(memory); }
       if (!OpenClipboard(owner)) return "unavailable";
       opened = true;
-      if (GetClipboardSequenceNumber() != expected) return "changed";
+      uint observed = GetClipboardSequenceNumber();
+      if (observed == 0) return "unavailable";
+      if (observed != expected) return "changed";
       if (!EmptyClipboard()) return "unavailable";
       IntPtr result = SetClipboardData(13, memory); // CF_UNICODETEXT
       if (result == IntPtr.Zero) return "unavailable";
@@ -70,7 +73,7 @@ function createWindowsConditionalClipboardWriter(options = {}) {
   let cancelEpoch = 0;
   return {
     writeClipboardIfSequence(sequence, text) {
-      if (platform !== 'win32' || !Number.isInteger(sequence) || sequence < 0 || typeof text !== 'string') {
+      if (platform !== 'win32' || !Number.isInteger(sequence) || sequence <= 0 || typeof text !== 'string') {
         return Promise.resolve(false);
       }
       const startedAt = cancelEpoch;
