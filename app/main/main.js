@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { pathToFileURL, domainToUnicode } = require('url');
 const config = require('./config');
+const petWindowLayout = require('./pet-window-layout');
 const models = require('./models');
 const pipeline = require('./pipeline');
 const paint = require('./paint');
@@ -142,8 +143,7 @@ function createPetWindow() {
     config.save();
   }
   petWin = new BrowserWindow({
-    width: Math.round(300 * s),
-    height: Math.round(306 * s),
+    ...petWindowLayout.boundsForScale(s),
     frame: false,
     transparent: true,
     resizable: false,
@@ -154,8 +154,11 @@ function createPetWindow() {
     focusable: false,
     webPreferences: { preload: path.join(__dirname, '..', 'preload.js'), contextIsolation: true, nodeIntegration: false }
   });
+  petWindowLayout.applyInitialZoomAfterLoad(petWin, () => {
+    const current = Number(config.load().petScale);
+    return Math.max(0.3, Math.min(2.5, current || s));
+  });
   petWin.loadFile(path.join(__dirname, '..', 'renderer', 'pet.html'));
-  petWin.webContents.setZoomFactor(s);
   // 悬浮窗允许出现在所有虚拟桌面
   petWin.setAlwaysOnTop(true, 'screen-saver');
   petWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -174,8 +177,7 @@ function applyPetScale(delta) {
   petWin.setBounds({
     x: Math.round(x - (w * (next / cur - 1)) / 2),
     y: Math.round(y - (h * (next / cur - 1)) / 2),
-    width: Math.round(300 * next),
-    height: Math.round(306 * next)
+    ...petWindowLayout.boundsForScale(next)
   });
   petWin.webContents.setZoomFactor(next);
   const cfg = config.load();
