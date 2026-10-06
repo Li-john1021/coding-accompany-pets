@@ -89,8 +89,19 @@ for (const button of actionButtons) {
         say(`选区未验证 · 再点同一按钮确认\n${shortText}`, 10000);
         setState('idle');
       } else if (result && result.capture && result.capture.kind === 'authorized') {
-        say('捕获已授权，文本处理尚未接入', 3500);
-        setState('idle');
+        if (!result.ok) {
+          say(result.error || '文本处理失败，源文本仍保留在剪贴板', 5000);
+          setState('error');
+          setTimeout(() => { if (!activePetAction) setState('idle'); }, 5000);
+        } else if (result.preview) {
+          say(result.message || '结果已打开，可显式复制', 5000);
+          setState('done');
+          setTimeout(() => { if (!activePetAction) setState('idle'); }, 5000);
+        } else {
+          say('处理完成，结果已复制', 3500);
+          setState('done');
+          setTimeout(() => { if (!activePetAction) setState('idle'); }, 3500);
+        }
       } else if (result && result.capture && result.capture.kind === 'cancelled') {
         say('捕获已取消，请重新操作', 3500);
         setState('idle');
