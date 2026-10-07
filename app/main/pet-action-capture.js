@@ -1,42 +1,52 @@
 const { randomUUID } = require('crypto');
 const { runPowerShellFile } = require('./powershell-file');
-const { buildNativeEditPowerShell } = require('./win32-edit');
 
-const CAPTURE_WINDOW_MS = 1200;
-const MANUAL_COPY_WINDOW_MS = 10000;
-const PREVIEW_TTL_MS = 10000;
-const POLL_INTERVAL_MS = 180;
+const COPY_SETTLE_MS = 180;
 const HOSTS = Object.freeze({
-  ORDINARY: 'ordinary_non_terminal',
+  ORDINARY: 'ordinary',
   WINDOWS_TERMINAL: 'windows_terminal',
   CONHOST: 'conhost',
-  VSCODE: 'vscode',
-  UNKNOWN_TERMINAL: 'unknown_terminal',
-  UNKNOWN: 'unknown'
+  CONSOLE_FOCUS: 'console_focus',
+  TERMINAL: 'terminal'
 });
 
-function buildSnapshotScript() {
+function buildSnapshotScript(includeClipboardText = false) {
   return `
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-${buildNativeEditPowerShell()}
+${includeClipboardText ? "Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop" : ''}
 Add-Type -TypeDefinition @"
+using System;
 using System.Runtime.InteropServices;
-public static class V2PClipboardSequence {
+using System.Text;
+public static class V2PPetCaptureNative {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
   [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr hwnd, StringBuilder name, int count);
+  [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint thread, ref GUITHREADINFO info);
+  [StructLayout(LayoutKind.Sequential)] public struct GUITHREADINFO {
+    public int cbSize; public int flags; public IntPtr hwndActive; public IntPtr hwndFocus;
+    public IntPtr hwndCapture; public IntPtr hwndMenuOwner; public IntPtr hwndMoveSize; public IntPtr hwndCaret;
+    public RECT rcCaret;
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int left, top, right, bottom; }
+  public static string ClassName(IntPtr hwnd) { var b = new StringBuilder(256); GetClassName(hwnd, b, b.Capacity); return b.ToString(); }
 }
 "@ -ErrorAction Stop
-$hwnd = [V2PNativeEdit]::GetForegroundWindow()
+$hwnd = [V2PPetCaptureNative]::GetForegroundWindow()
 if ($hwnd -eq [IntPtr]::Zero) { throw 'foreground unavailable' }
-$ownerProcessId = [V2PNativeEdit]::ProcessId($hwnd)
-$thread = [V2PNativeEdit]::ThreadId($hwnd)
-$windowClassName = [V2PNativeEdit]::ClassName($hwnd)
-$info = [V2PNativeEdit+GUITHREADINFO]::new()
+$pidValue = [uint32]0
+$thread = [V2PPetCaptureNative]::GetWindowThreadProcessId($hwnd, [ref]$pidValue)
+$info = [V2PPetCaptureNative+GUITHREADINFO]::new()
 $info.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($info)
-if (-not [V2PNativeEdit]::GetGUIThreadInfo($thread, [ref]$info)) { throw 'focus unavailable' }
-$focusedWindow = $info.hwndFocus
-$focusClassName = if ($focusedWindow -eq [IntPtr]::Zero) { '' } else { [V2PNativeEdit]::ClassName($focusedWindow) }
-$process = (Get-Process -Id $ownerProcessId -ErrorAction Stop).ProcessName
-@{ ok = $true; hwnd = $hwnd.ToInt64(); pid = $ownerProcessId; threadId = $thread; windowClass = $windowClassName; focusHwnd = $focusedWindow.ToInt64(); focusClass = $focusClassName; processName = $process; sequence = [V2PClipboardSequence]::GetClipboardSequenceNumber() } | ConvertTo-Json -Compress
+if (-not [V2PPetCaptureNative]::GetGUIThreadInfo($thread, [ref]$info)) { throw 'focus unavailable' }
+$focus = $info.hwndFocus
+$process = (Get-Process -Id $pidValue -ErrorAction Stop).ProcessName
+${includeClipboardText ? `$sequenceBefore = [V2PPetCaptureNative]::GetClipboardSequenceNumber()
+$text = [Windows.Forms.Clipboard]::GetText()
+$sequenceAfter = [V2PPetCaptureNative]::GetClipboardSequenceNumber()
+$text64 = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($text))
+@{ ok = $true; hwnd = $hwnd.ToInt64(); pid = $pidValue; threadId = $thread; windowClass = [V2PPetCaptureNative]::ClassName($hwnd); focusHwnd = $focus.ToInt64(); focusClass = if ($focus -eq [IntPtr]::Zero) { '' } else { [V2PPetCaptureNative]::ClassName($focus) }; processName = $process; sequence = $sequenceAfter; stable = ($sequenceBefore -eq $sequenceAfter); text64 = $text64 } | ConvertTo-Json -Compress` : `@{ ok = $true; hwnd = $hwnd.ToInt64(); pid = $pidValue; threadId = $thread; windowClass = [V2PPetCaptureNative]::ClassName($hwnd); focusHwnd = $focus.ToInt64(); focusClass = if ($focus -eq [IntPtr]::Zero) { '' } else { [V2PPetCaptureNative]::ClassName($focus) }; processName = $process; sequence = [V2PPetCaptureNative]::GetClipboardSequenceNumber() } | ConvertTo-Json -Compress`}
 `;
 }
 
@@ -47,18 +57,18 @@ function parseSnapshot(stdout) {
         !Number.isInteger(value.pid) || value.pid <= 0 || !Number.isInteger(value.threadId) || value.threadId <= 0 ||
         !Number.isSafeInteger(value.sequence) || value.sequence < 0 || typeof value.processName !== 'string' || !value.processName ||
         typeof value.windowClass !== 'string' || typeof value.focusClass !== 'string') return null;
-    const target = {
-      hwnd: value.hwnd, pid: value.pid, threadId: value.threadId,
+    const snapshot = { target: { hwnd: value.hwnd, pid: value.pid, threadId: value.threadId,
       windowClass: value.windowClass, focusHwnd: Number(value.focusHwnd) || 0,
-      focusClass: value.focusClass, processName: value.processName
-    };
-    return { target, sequence: value.sequence };
+      focusClass: value.focusClass, processName: value.processName }, sequence: value.sequence };
+    if (typeof value.stable === 'boolean') snapshot.stable = value.stable;
+    if (typeof value.text64 === 'string') snapshot.text = Buffer.from(value.text64, 'base64').toString('utf16le');
+    return snapshot;
   } catch { return null; }
 }
 
-function getWindowsSnapshot() {
+function getWindowsSnapshot(includeClipboardText = false) {
   if (process.platform !== 'win32') return Promise.resolve(null);
-  return new Promise((resolve) => runPowerShellFile(buildSnapshotScript(), { timeout: 1600, maxBuffer: 64 * 1024 },
+  return new Promise((resolve) => runPowerShellFile(buildSnapshotScript(includeClipboardText), { timeout: 2500, maxBuffer: 64 * 1024 },
     (error, stdout) => resolve(error ? null : parseSnapshot(stdout))));
 }
 
@@ -69,203 +79,88 @@ function sameTarget(a, b) {
 }
 
 function classifyHost(target) {
-  if (!target) return HOSTS.UNKNOWN;
-  const proc = target.processName.toLowerCase();
-  const cls = target.windowClass.toLowerCase();
-  const focus = target.focusClass.toLowerCase();
-  if (cls === 'consolewindowclass' || proc === 'conhost') return HOSTS.CONHOST;
-  if (cls.includes('cascadia_hosting_window_class') || proc === 'windowsterminal') return HOSTS.WINDOWS_TERMINAL;
-  if (proc === 'code' || proc === 'code - insiders') return HOSTS.VSCODE;
-  if (/(terminal|termcontrol|xterm|pty|console)/i.test(focus) || /(terminal|termcontrol|xterm|pty)/i.test(cls)) return HOSTS.UNKNOWN_TERMINAL;
-  if (/^(notepad|notepad\+\+|wordpad|winword|excel|powerpnt)$/i.test(target.processName)) return HOSTS.ORDINARY;
-  return HOSTS.UNKNOWN;
+  if (!target) return HOSTS.ORDINARY;
+  const process = target.processName.toLowerCase();
+  const windowClass = target.windowClass.toLowerCase();
+  const focusClass = target.focusClass.toLowerCase();
+  if (windowClass === 'consolewindowclass' || process === 'conhost') return HOSTS.CONHOST;
+  if (windowClass.includes('cascadia_hosting_window_class') || process === 'windowsterminal') return HOSTS.WINDOWS_TERMINAL;
+  if (/^(mintty|wezterm-gui|alacritty|terminus|hyper|tabby)$/i.test(target.processName)) return HOSTS.TERMINAL;
+  if (/(terminal|termcontrol|xterm|pty|console)/i.test(focusClass) || /(terminal|termcontrol|xterm|pty)/i.test(windowClass)) return HOSTS.CONSOLE_FOCUS;
+  return HOSTS.ORDINARY;
 }
 
-function buildNativeSelectionScript(target) {
-  return `
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-${buildNativeEditPowerShell()}
-$hwnd = [IntPtr]${target.focusHwnd}
-$ownerProcessId = [uint32]${target.pid}
-$thread = [uint32]${target.threadId}
-$parent = [V2PNativeEdit]::GetParent($hwnd)
-$id = [V2PNativeEdit]::GetDlgCtrlID($hwnd)
-try {
-  if ([V2PNativeEdit]::ClassName($hwnd) -cne 'Edit' -or
-      -not [V2PNativeEdit]::IsFocusedTarget($hwnd, $ownerProcessId, $thread, $parent, $id)) { throw 'not focused Edit' }
-  $selection = [V2PNativeEdit]::ReadSelection($hwnd)
-  if (-not [V2PNativeEdit]::IsFocusedTarget($hwnd, $ownerProcessId, $thread, $parent, $id)) { throw 'target changed' }
-  @{ ok = $true; text = $selection.Text; start = $selection.Start; end = $selection.End; hwnd = $hwnd.ToInt64(); parent = $parent.ToInt64(); controlId = $id } | ConvertTo-Json -Compress
-} catch { @{ ok = $false } | ConvertTo-Json -Compress }
-`;
+function copyStrategy(target) {
+  const host = classifyHost(target);
+  return { host, key: host === HOSTS.WINDOWS_TERMINAL || host === HOSTS.CONHOST || host === HOSTS.CONSOLE_FOCUS ? 'insert' :
+    host === HOSTS.TERMINAL ? 'terminal-copy' : 'copy' };
 }
 
-function probeNativeSelection(target) {
-  if (!target || !target.focusHwnd) return Promise.resolve(null);
-  return new Promise((resolve) => runPowerShellFile(buildNativeSelectionScript(target), { timeout: 1200, maxBuffer: 128 * 1024 },
-    (error, stdout) => {
-      try {
-        const result = JSON.parse(String(stdout || '').trim().split(/\r?\n/).pop());
-        resolve(!error && result && result.ok === true && typeof result.text === 'string' && result.text.trim().length > 0 &&
-          Number.isInteger(result.start) && result.end > result.start && result.end - result.start === result.text.length
-          ? { text: result.text, control: { hwnd: result.hwnd, parent: result.parent, id: result.controlId, start: result.start, end: result.end } }
-          : null);
-      } catch { resolve(null); }
-    }));
+function sendWindowsCopy(strategy, keyTap, keys) {
+  if (strategy.key === 'insert') keyTap(keys.Insert, [keys.Ctrl]);
+  else if (strategy.key === 'terminal-copy') keyTap(keys.C, [keys.Ctrl, keys.Shift]);
+  else keyTap(keys.C, [keys.Ctrl]);
 }
 
 function createWindowsAdapters() {
   return {
     platform: process.platform,
     snapshot: getWindowsSnapshot,
-    probeSelection: probeNativeSelection,
     readClipboard: () => {
       const { clipboard } = require('electron');
-      return { text: clipboard.readText(), formats: clipboard.availableFormats() };
+      return clipboard.readText();
     },
-    sendOrdinaryCopy: () => {
+    sendCopy: (strategy) => {
       const { uIOhook, UiohookKey } = require('uiohook-napi');
-      uIOhook.keyTap(UiohookKey.C, [UiohookKey.Ctrl]);
+      sendWindowsCopy(strategy, (key, modifiers) => uIOhook.keyTap(key, modifiers), UiohookKey);
     },
     now: () => Date.now(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
   };
 }
 
-function makeResult(kind, reason, extra = {}) {
-  return { kind, reason: reason || null, ...extra };
-}
+function makeResult(kind, reason, extra = {}) { return { kind, reason: reason || null, ...extra }; }
 
-function createPetActionCapture(adapters, options = {}) {
-  const ttlMs = options.previewTtlMs || PREVIEW_TTL_MS;
-  const captureWindowMs = options.captureWindowMs || CAPTURE_WINDOW_MS;
-  const manualWindowMs = options.manualWindowMs || MANUAL_COPY_WINDOW_MS;
-  const pollMs = options.pollMs || POLL_INTERVAL_MS;
-  const monitorPending = options.monitorPending !== false;
-  let pending = null;
+function createPetActionCapture(adapters) {
   let busy = false;
   let generation = 0;
 
-  function cancel(reason) {
-    const hadPending = !!pending;
-    pending = null;
-    generation++;
-    if (hadPending && typeof options.onCancel === 'function') options.onCancel(reason || 'cancelled');
-    return hadPending;
-  }
-
-  function monitor(token, isVoiceBusy) {
-    if (!monitorPending) return;
-    const run = async () => {
-      while (pending && pending.token === token) {
-        const remaining = pending.expiresAt - adapters.now();
-        if (remaining <= 0) { cancel('expired'); return; }
-        await adapters.sleep(Math.min(pollMs, remaining));
-        if (!pending || pending.token !== token) return;
-        if (isVoiceBusy()) { cancel('voice-busy'); return; }
-        try {
-          const current = await adapters.snapshot();
-          if (!current || !sameTarget(current.target, pending.target)) { cancel('target-changed'); return; }
-          if (current.sequence !== pending.sequence) { cancel('clipboard-changed'); return; }
-        } catch { cancel('target-unavailable'); return; }
-      }
-    };
-    run().catch(() => cancel('capture-monitor-failed'));
-  }
+  function cancel() { generation++; }
 
   async function click(mode, voiceBusy) {
     const isVoiceBusy = () => typeof voiceBusy === 'function' ? !!voiceBusy() : !!voiceBusy;
-    if (isVoiceBusy()) { cancel('voice-busy'); return makeResult('rejected', 'voice-busy'); }
+    if (isVoiceBusy()) return makeResult('rejected', 'voice-busy');
     if (mode !== 'structure' && mode !== 'optimize') return makeResult('rejected', 'unsupported-mode');
     if (busy) return makeResult('rejected', 'capture-in-progress');
-    if (pending) {
-      if (pending.mode !== mode) {
-        cancel('mode-changed');
-        return makeResult('cancelled', 'mode-changed');
-      }
-      if (adapters.now() >= pending.expiresAt) { cancel('expired'); return makeResult('cancelled', 'expired'); }
-      const candidate = pending;
-      busy = true;
-      try {
-        const current = await adapters.snapshot();
-        if (pending !== candidate) return makeResult('cancelled', 'cancelled');
-        if (adapters.now() >= candidate.expiresAt) { cancel('expired'); return makeResult('cancelled', 'expired'); }
-        if (!current || !sameTarget(current.target, candidate.target)) { cancel('target-changed'); return makeResult('cancelled', 'target-changed'); }
-        if (current.sequence !== candidate.sequence) { cancel('clipboard-changed'); return makeResult('cancelled', 'clipboard-changed'); }
-        if (isVoiceBusy()) { cancel('voice-busy'); return makeResult('cancelled', 'voice-busy'); }
-        const authorized = { mode: candidate.mode, text: candidate.text, token: candidate.token, target: candidate.target,
-          clipboardSequence: candidate.sequence, evidence: candidate.evidence };
-        pending = null;
-        generation++;
-        return makeResult('authorized', null, authorized);
-      } finally { busy = false; }
-    }
+    if (adapters.platform !== 'win32') return makeResult('rejected', 'unsupported-platform');
+
     busy = true;
     const operationGeneration = generation;
-    const wasCancelled = () => generation !== operationGeneration;
+    const cancelled = () => generation !== operationGeneration || isVoiceBusy();
     try {
-      if (adapters.platform !== 'win32') return makeResult('rejected', 'unsupported-platform');
       const before = await adapters.snapshot();
-      if (wasCancelled()) return makeResult('cancelled', 'voice-busy');
+      if (cancelled()) return makeResult('cancelled', 'voice-busy');
       if (!before) return makeResult('rejected', 'target-unavailable');
-      const proof = await adapters.probeSelection(before.target);
-      if (wasCancelled()) return makeResult('cancelled', 'voice-busy');
-      const afterProbe = await adapters.snapshot();
-      if (wasCancelled()) return makeResult('cancelled', 'voice-busy');
-      if (!afterProbe || !sameTarget(before.target, afterProbe.target) || before.sequence !== afterProbe.sequence) {
-        return makeResult('rejected', 'target-or-clipboard-changed');
-      }
-      if (proof && typeof proof.text === 'string' && proof.text.trim().length > 0) {
-        return makeResult('authorized', null, { mode, text: proof.text, token: randomUUID(),
-          target: afterProbe.target, clipboardSequence: afterProbe.sequence,
-          evidence: { type: 'proven-win32-edit-selection', control: proof.control } });
-      }
+      const strategy = copyStrategy(before.target);
+      try { adapters.sendCopy(strategy); }
+      catch { return makeResult('rejected', 'copy-request-failed', { host: strategy.host }); }
 
-      const host = classifyHost(before.target);
-      const manual = host !== HOSTS.ORDINARY;
-      const waitMs = manual ? manualWindowMs : captureWindowMs;
-      if (manual && typeof options.onManualCopyRequired === 'function') options.onManualCopyRequired(host);
-      if (!manual) {
-        try { adapters.sendOrdinaryCopy(); }
-        catch { return makeResult('rejected', 'copy-request-failed', { host }); }
-      }
-      const deadline = adapters.now() + waitMs;
-      let observed = null;
-      while (adapters.now() < deadline) {
-        if (wasCancelled()) return makeResult('cancelled', 'voice-busy', { host });
-        if (isVoiceBusy()) return makeResult('cancelled', 'voice-busy', { host });
-        await adapters.sleep(Math.min(pollMs, Math.max(1, deadline - adapters.now())));
-        const current = await adapters.snapshot();
-        if (!current || !sameTarget(before.target, current.target)) return makeResult('cancelled', 'target-changed', { host });
-        if (current.sequence !== before.sequence) {
-          const value = adapters.readClipboard();
-          if (current.sequence !== before.sequence && value && typeof value.text === 'string' && value.text.trim().length > 0) {
-            observed = { text: value.text, sequence: current.sequence };
-            break;
-          }
-          return makeResult('rejected', value && value.text ? 'empty-or-invalid-text' : 'empty-or-non-text-clipboard', { host });
-        }
-      }
-      if (!observed) return makeResult('rejected', 'no-fresh-clipboard', { host });
-      const finalSnapshot = await adapters.snapshot();
-      if (wasCancelled()) return makeResult('cancelled', 'voice-busy', { host });
-      if (!finalSnapshot || !sameTarget(before.target, finalSnapshot.target) || finalSnapshot.sequence !== observed.sequence) {
-        return makeResult('cancelled', 'target-or-clipboard-changed', { host });
-      }
+      await adapters.sleep(COPY_SETTLE_MS);
+      if (cancelled()) return makeResult('cancelled', 'voice-busy', { host: strategy.host });
+      const after = await adapters.snapshot(true);
+      if (!after || !sameTarget(before.target, after.target)) return makeResult('rejected', 'target-changed', { host: strategy.host });
+      if (!after || after.sequence === before.sequence) return makeResult('rejected', 'no-fresh-clipboard', { host: strategy.host });
+      if (after.stable === false) return makeResult('rejected', 'clipboard-changed', { host: strategy.host });
+      const text = typeof after.text === 'string' ? after.text : adapters.readClipboard();
+      if (typeof text !== 'string' || !text.trim()) return makeResult('rejected', 'empty-or-invalid-text', { host: strategy.host });
       const token = randomUUID();
-      pending = { mode, text: observed.text, token, target: finalSnapshot.target, sequence: finalSnapshot.sequence,
-        expiresAt: adapters.now() + ttlMs, evidence: { type: 'fresh-clipboard-unverified', host } };
-      generation++;
-      monitor(token, isVoiceBusy);
-      return makeResult('preview', 'selection-unverified', { mode, text: observed.text, token, target: finalSnapshot.target,
-        clipboardSequence: finalSnapshot.sequence, expiresAt: pending.expiresAt, evidence: pending.evidence,
-        hint: manual ? '请手动复制后，再点同一按钮确认' : '选区未验证，再点同一按钮确认' });
+      return makeResult('authorized', null, { mode, text, token, target: after.target,
+        clipboardSequence: after.sequence, evidence: { type: 'fresh-clipboard', host: strategy.host } });
     } finally { busy = false; }
   }
 
-  return { click, cancel, get pending() { return pending ? { ...pending } : null; }, get busy() { return busy; } };
+  return { click, cancel, get busy() { return busy; } };
 }
 
-module.exports = { CAPTURE_WINDOW_MS, MANUAL_COPY_WINDOW_MS, PREVIEW_TTL_MS, HOSTS, buildSnapshotScript,
-  parseSnapshot, sameTarget, classifyHost, buildNativeSelectionScript, getWindowsSnapshot, probeNativeSelection,
-  createWindowsAdapters, createPetActionCapture };
+module.exports = { COPY_SETTLE_MS, HOSTS, buildSnapshotScript, parseSnapshot,
+  sameTarget, classifyHost, copyStrategy, sendWindowsCopy, getWindowsSnapshot, createWindowsAdapters, createPetActionCapture };
