@@ -1,0 +1,114 @@
+spec_version: "1"
+goal: "Implement one-click selected-text Structure/Optimize actions that actively copy source text and publish every non-empty return to system clipboard."
+source:
+  plan_ref: "docs/PLAN-pet-actions-v4.md"
+  plan_version: "v4, based on ed53cf25e67f817494c36653d8420f784539c6e6"
+  approval_evidence: "Current task-thread user authorization: confirmed the interaction recap and asked to correct the documents; approval is for Windows implementation."
+requirements:
+  - id: REQ-001
+    statement: "Only a single explicit Structure or Optimize click after user selection starts capture; selection alone causes no copy, prompt, preview, or model call."
+    source_refs: ["Product goal", "Interaction and capture contract"]
+  - id: REQ-002
+    statement: "The app actively requests copy using actual host/platform behavior and uses only non-empty source text acquired for the active request; missing, empty, or stale capture fails before any model call and never falls back to old clipboard text."
+    source_refs: ["Interaction and capture contract", "Host copy behavior"]
+  - id: REQ-003
+    statement: "No second confirmation, preview approval, manual Ctrl+C, extension, host allowlist, or editability/read-only/history-origin test gates ordinary selected-text actions."
+    source_refs: ["Approval evidence", "Interaction and capture contract"]
+  - id: REQ-004
+    statement: "A native selection read may resolve an equal-value clipboard case but is not a universal host admission requirement."
+    source_refs: ["Interaction and capture contract"]
+  - id: REQ-005
+    statement: "Every non-empty model return, including raw or degraded text, is written directly to system clipboard and shown with an appropriate note; actual OS write failure is reported."
+    source_refs: ["Product goal", "Interaction and capture contract"]
+  - id: REQ-006
+    statement: "A true operation exception or empty return fails visibly without fabricated output; a user clipboard change during processing does not block or redirect publication of a non-empty result."
+    source_refs: ["Product goal", "Interaction and capture contract"]
+  - id: REQ-007
+    statement: "Windows Terminal and classic conhost use Ctrl+Insert; terminal Ctrl+C is never sent. Ordinary Windows interfaces use Ctrl+C. Linux Ctrl+Shift+C and macOS Cmd+C remain unverified design context."
+    source_refs: ["Host copy behavior"]
+  - id: REQ-008
+    statement: "Preserve the three-button layout, disabled image placeholder, busy and concurrency guards, voice exclusion, and manual paste with no auto-paste/source replacement."
+    source_refs: ["Pet controls and preserved behavior", "Privacy and failure behavior"]
+acceptance:
+  - id: AC-001
+    proves: [REQ-001, REQ-003]
+    check: "Focused interaction tests and review demonstrate selection-only inactivity and exactly one action click from selected text to capture/model workflow, with no confirmation, preview gate, or manual-copy prompt."
+    evidence: "Implementation test report and interaction evidence"
+  - id: AC-002
+    proves: [REQ-002, REQ-004]
+    check: "Capture tests prove active-request binding, non-empty requirement, zero model calls for missing/empty/stale text, no stale clipboard fallback, and optional native equal-value resolution without universal admission gating."
+    evidence: "Capture unit/runtime evidence"
+  - id: AC-003
+    proves: [REQ-005, REQ-006]
+    check: "Workflow tests exercise normal, raw/degraded, empty, exception, OS-write-failure, and clipboard-changed-during-processing results; every non-empty return attempts direct write and failures are visible."
+    evidence: "Result publication unit/runtime evidence"
+  - id: AC-004
+    proves: [REQ-007]
+    check: "Windows host routing tests and named runtime runs verify ordinary Windows Ctrl+C, Windows Terminal Ctrl+Insert, conhost Ctrl+Insert, and absence of terminal Ctrl+C injection."
+    evidence: "Windows host matrix in implementation ledger"
+  - id: AC-005
+    proves: [REQ-008]
+    check: "UI/workflow checks verify the three-button row, disabled image action, busy/concurrent isolation, voice-busy exclusion, and absence of paste or source mutation."
+    evidence: "UI and workflow implementation test report"
+dependencies:
+  - id: DEP-001
+    statement: "Existing Structure/Optimize transformation pipeline and pet action UI."
+    status: verified
+  - id: DEP-002
+    statement: "Platform clipboard and foreground-host copy adapters capable of requesting the host copy action and reading/writing system text clipboard."
+    status: assumed
+assumptions:
+  - id: ASM-001
+    statement: "Windows host identity can distinguish Windows Terminal and classic conhost sufficiently to select their documented copy chord."
+    validation: "Validate routing and capture on named Windows runtime hosts in WU-1 and WU-4; do not infer identity from shell process name."
+invariants:
+  - id: INV-001
+    statement: "Selection alone never triggers capture or processing; an explicit button click is required."
+  - id: INV-002
+    statement: "Voice busy state and concurrent text operations remain isolated."
+  - id: INV-003
+    statement: "The user manually pastes; the app never auto-pastes or mutates source text."
+forbidden_effects:
+  - id: FORB-001
+    statement: "No second confirmation, result preview approval gate, manual-copy requirement, extension requirement, or new browser/IDE/unknown-host allowlist gate."
+  - id: FORB-002
+    statement: "No stale clipboard fallback, fabricated result for empty/error outcomes, or clipboard ownership-change rejection of a non-empty result."
+  - id: FORB-003
+    statement: "No terminal Ctrl+C injection, auto-paste, source replacement, continuous selection/clipboard polling, or raw text logging."
+implementation_units:
+  - id: WU-1
+    objective: "Implement explicit one-click capture, active-request freshness checks, stale/empty failure, and actual host/platform copy routing."
+    depends_on: [DEP-001, DEP-002]
+    checks: ["AC-001", "AC-002", "AC-004"]
+  - id: WU-2
+    objective: "Publish every non-empty return directly to clipboard and report empty, exception, or OS write failure accurately."
+    depends_on: [DEP-001, DEP-002]
+    checks: ["AC-003"]
+  - id: WU-3
+    objective: "Preserve UI states, concurrency and voice isolation, and no-auto-paste behavior."
+    depends_on: [DEP-001]
+    checks: ["AC-005"]
+  - id: WU-4
+    objective: "Validate named Windows host/control behavior and record implementation evidence."
+    depends_on: [DEP-002]
+    checks: ["AC-002", "AC-003", "AC-004", "AC-005"]
+validation_boundaries:
+  - id: VB-001
+    trigger: "Incorrect or stale capture can send unintended text to a model."
+    scope: [WU-1]
+    evidence: "Request-bound capture tests, zero-call failure assertions, and named Windows host runtime results."
+  - id: VB-002
+    trigger: "Clipboard publication affects user-visible system state and may lose the intended output."
+    scope: [WU-2]
+    evidence: "Result-class matrix proving direct write attempt for every non-empty return and visible reporting for true write failure."
+  - id: VB-003
+    trigger: "Shared pet and voice state can cause concurrent or cross-workflow effects."
+    scope: [WU-3]
+    evidence: "Busy, concurrency, voice-transition, layout, and no-paste checks."
+  - id: VB-004
+    trigger: "Host chord behavior differs and terminal Ctrl+C can interrupt commands."
+    scope: [WU-1, WU-4]
+    evidence: "Named Windows Terminal and conhost runs with Ctrl+Insert plus ordinary Windows Ctrl+C run; no compatibility claims beyond passing pairs."
+final_acceptance:
+  proves: [REQ-001, REQ-002, REQ-003, REQ-004, REQ-005, REQ-006, REQ-007, REQ-008]
+  release_boundary: "Windows implementation only after required acceptance evidence; Linux/macOS remain unverified design context and no untested host/control compatibility is claimed."
