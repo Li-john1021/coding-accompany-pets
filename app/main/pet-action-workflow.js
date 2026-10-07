@@ -40,12 +40,16 @@ function createPetActionWorkflow(deps) {
       if (voiceSuperseded()) return voiceCancelled();
       if (!output.trim()) return { ok: false, capture: { kind: 'authorized' }, error: '文本处理未生成有效结果' };
 
-      try { await deps.writeClipboard(output); }
+      let delivery = {};
+      try {
+        if (deps.deliver) delivery = await deps.deliver({ original: source, text: output, target: captured.target });
+        else await deps.writeClipboard(output);
+      }
       catch {
         return { ok: false, capture: { kind: 'authorized' }, error: '结果未能写入剪贴板' };
       }
       if (voiceSuperseded()) return voiceCancelled();
-      return { ok: true, capture: { kind: 'authorized' }, copied: true, note: result.note || '' };
+      return { ok: true, capture: { kind: 'authorized' }, copied: true, ...delivery, note: [result.note, delivery.note].filter(Boolean).join('；') };
     } finally {
       busy = false;
     }

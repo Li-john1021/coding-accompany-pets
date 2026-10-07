@@ -197,7 +197,7 @@ async function run(audioBuffer, mime, onState, options = {}) {
     const result = await processText(raw, mode, onState);
 
     onState('inserting');
-    const { inserted, copiedOnly } = await insertText(result.text, cfg.insertMode);
+    const { inserted, copiedOnly } = options.deferDelivery ? { inserted: false, copiedOnly: true } : await insertText(result.text, cfg.insertMode);
     onState('done');
     return {
       raw,
