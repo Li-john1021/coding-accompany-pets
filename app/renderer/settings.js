@@ -247,7 +247,8 @@ async function loadConfig() {
   renderList('llm', cfg.llmProviders, cfg.activeLlmId);
   $('#hotkey').value = cfg.hotkey || '';
   $('#trigger-mode').value = cfg.triggerMode || 'hold';
-  $('#insert-mode').value = cfg.insertMode || 'paste';
+  $('#insert-mode').checked = cfg.insertMode === 'paste';
+  $('#undo-toast-seconds').value = cfg.undoToastSeconds ?? 10;
   $('#enable-structure').checked = !!cfg.enableStructure;
   $('#mouse-record').checked = cfg.mouseRecord === true;
   $('#enable-optimize').checked = !!cfg.enableOptimize;
@@ -325,7 +326,8 @@ function wireEvents() {
       activeLlmId: llm.activeId,
       hotkey: $('#hotkey').value.trim(),
       triggerMode: $('#trigger-mode').value,
-      insertMode: $('#insert-mode').value,
+      insertMode: $('#insert-mode').checked ? 'paste' : 'clipboard',
+      undoToastSeconds: Number($('#undo-toast-seconds').value),
       enableStructure: $('#enable-structure').checked,
       enableOptimize: $('#enable-optimize').checked,
       previewEnabled: $('#preview-enabled').checked,

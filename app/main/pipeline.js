@@ -6,6 +6,7 @@ const config = require('./config');
 const { chatCompletion, transcribeSmart } = require('./models');
 const { insertText } = require('./insert');
 const { STRUCTURE_ONLY_PROMPT, DEFAULT_PROMPT, ensureRedline } = config;
+const { sourceMessage } = require('./text-prompts');
 
 function findProvider(kind, id) {
   const cfg = config.load();
@@ -104,7 +105,7 @@ function looksLikeDirectAnswer(input, output) {
 
 async function chatOnce(llm, sys, userText, mode) {
   const cfg = config.load();
-  return chatCompletion(llm, ensureRedline(sys), userText, { mode, cfg });
+  return chatCompletion(llm, ensureRedline(sys), sourceMessage(userText), { mode, cfg });
 }
 
 // 对文本按模式整理（语音 / 选区 / 预览共用）
@@ -144,9 +145,6 @@ async function processText(raw, mode = 'default', onState = () => {}) {
 
   // optimize
   let sys = cfg.promptText || DEFAULT_PROMPT;
-  if (!cfg.enableStructure) {
-    sys += '\n\n# 本次附加约束\n- 不强制分节与编号结构，可保持自然连贯；需要给 AI 用时仍可按需分节。';
-  }
   try {
     let text = await chatOnce(llm, sys, raw, 'optimize');
     if (looksLikeDirectAnswer(raw, text)) {

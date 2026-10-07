@@ -62,11 +62,8 @@
         <span class="hint">单击模式下左键点宠物切换录音，右键打开设置；长按模式单击打开设置。滚轮缩放宠物（最小 0.3）</span>
       </div>
       <div class="form-row">
-        <label>结果插入方式</label>
-        <select id="insert-mode">
-          <option value="paste">自动粘贴到光标（剪贴板 + 模拟 Ctrl+V）</option>
-          <option value="clipboard">仅复制到剪贴板，手动粘贴</option>
-        </select>
+        <label class="chk"><input type="checkbox" id="insert-mode" /> 处理后自动粘贴（语音和文字）</label>
+        <label>回退提示显示时长（秒） <input type="number" id="undo-toast-seconds" min="1" max="120" step="1" value="10" /></label>
       </div>
       <div class="form-row">
         <label>桌宠形象</label>
