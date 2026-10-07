@@ -2,36 +2,35 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { createPetActionWorkflow } = require('./pet-action-workflow');
-const { buildConditionalWriteScript, createWindowsConditionalClipboardWriter } = require('./pet-action-clipboard');
 
 function harness(options = {}) {
-  const state = { voice: false, calls: [], writes: [], previews: [], clipboardSequence: 7, captureCalls: 0 };
-  const deps = {
+  const state = { voice: false, calls: [], writes: [], captureCalls: 0 };
+  const workflow = createPetActionWorkflow({
     capture: {
       cancel: (reason) => state.calls.push(['cancel', reason]),
       click: async (mode) => {
         state.captureCalls++;
         state.calls.push(['capture', mode]);
         return options.capture ? options.capture(mode, state) : {
-          kind: 'authorized', mode, token: 'one-time-token', text: 'captured input', clipboardSequence: 7
+          kind: 'authorized', mode, token: 'token', text: 'captured input', clipboardSequence: 7
         };
       }
     },
     isVoiceBusy: () => state.voice,
     processText: async (text, mode) => {
       state.calls.push(['process', text, mode]);
+      if (options.processText) return options.processText(text, mode, state);
       return options.result || { text: 'transformed output', mode, degraded: false };
     },
-    writeClipboardIfSequence: async (sequence, text) => {
-      if (options.beforeConditionalCheck) options.beforeConditionalCheck(state);
-      if (options.writeError || state.clipboardSequence !== sequence) return false;
+    writeClipboard: async (text) => {
+      state.calls.push(['write', text]);
+      if (options.beforeWrite) options.beforeWrite(state);
+      if (options.writeError) throw new Error('clipboard denied');
       state.writes.push(text);
-      return true;
     },
-    showResult: (text, mode) => state.previews.push([text, mode]),
-    onCaptureResult: (result) => result.kind === 'preview' ? { ok: true, capture: result } : { ok: false, capture: result }
-  };
-  return { state, workflow: createPetActionWorkflow(deps) };
+    onCaptureResult: (result) => ({ ok: false, capture: result })
+  });
+  return { state, workflow };
 }
 
 (async () => {
@@ -41,14 +40,12 @@ function harness(options = {}) {
     assert.strictEqual(result.ok, true);
     assert.deepStrictEqual(h.state.calls[1], ['process', 'captured input', mode]);
     assert.deepStrictEqual(h.state.writes, ['transformed output']);
-    assert.deepStrictEqual(h.state.previews, []);
   }
-
   {
-    const h = harness({ capture: async () => ({ kind: 'preview', text: 'unverified' }) });
+    const h = harness({ capture: async () => ({ kind: 'rejected', reason: 'no-fresh-clipboard' }) });
     const result = await h.workflow.run('structure');
-    assert.strictEqual(result.capture.kind, 'preview');
-    assert.strictEqual(h.state.calls.some((call) => call[0] === 'process'), false);
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(h.state.calls.some((call) => call[0] === 'process'), false, 'capture failure makes zero model calls');
   }
   {
     const h = harness();
@@ -62,133 +59,55 @@ function harness(options = {}) {
     assert.strictEqual(h.state.captureCalls, 0);
   }
   {
-    const h = harness({ capture: async (mode) => ({ kind: 'authorized', mode, token: '', text: 'stale', clipboardSequence: 7 }) });
-    assert.strictEqual((await h.workflow.run('structure')).capture.reason, 'authorization-invalid');
-    assert.strictEqual(h.state.calls.some((call) => call[0] === 'process'), false);
+    const h = harness({ result: { text: 'raw/degraded text', mode: 'fallback', degraded: true, note: '降级原文' } });
+    const result = await h.workflow.run('optimize');
+    assert.strictEqual(result.ok, true);
+    assert.deepStrictEqual(h.state.writes, ['raw/degraded text']);
+    assert.strictEqual(result.note, '降级原文');
   }
   {
-    const h = harness({ capture: async (mode, state) => {
-      state.voice = true;
-      return { kind: 'authorized', mode, token: 'one-time-token', text: 'captured input', clipboardSequence: 7 };
-    } });
-    assert.strictEqual((await h.workflow.run('structure')).capture.reason, 'voice-busy');
-    assert.strictEqual(h.state.calls.some((call) => call[0] === 'process'), false);
+    const h = harness({ result: { text: 'fallback text', mode: 'different-fallback-mode', degraded: false } });
+    assert.strictEqual((await h.workflow.run('structure')).ok, true);
+    assert.deepStrictEqual(h.state.writes, ['fallback text']);
   }
   {
-    const h = harness({ result: { text: 'source', mode: 'none', degraded: true, note: '降级为原文' } });
-    assert.strictEqual((await h.workflow.run('optimize')).ok, false);
-    assert.deepStrictEqual(h.state.writes, []);
-    assert.deepStrictEqual(h.state.previews, []);
-  }
-  {
-    const h = harness({ result: { text: '  ', mode: 'structure', degraded: false } });
+    const h = harness({ result: { text: '  ', mode: 'structure' } });
     assert.strictEqual((await h.workflow.run('structure')).ok, false);
     assert.deepStrictEqual(h.state.writes, []);
   }
   {
-    const h = harness({ beforeConditionalCheck: (state) => { state.clipboardSequence++; } });
-    const result = await h.workflow.run('structure');
-    assert.strictEqual(result.preview, true);
-    assert.deepStrictEqual(h.state.writes, []);
-    assert.deepStrictEqual(h.state.previews, [['transformed output', 'structure']], 'a clipboard interleaving at the conditional write boundary is rejected');
-  }
-  {
-    const h = harness();
-    assert.strictEqual((await h.workflow.run('structure')).copied, true);
-  }
-  {
     const h = harness({ writeError: true });
     const result = await h.workflow.run('optimize');
-    assert.strictEqual(result.preview, true);
-    assert.deepStrictEqual(h.state.writes, []);
-    assert.deepStrictEqual(h.state.previews, [['transformed output', 'optimize']]);
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.error, '结果未能写入剪贴板');
   }
   {
-    let finish;
-    const h = harness();
-    h.workflow = createPetActionWorkflow({
-      ...{
-        capture: { click: () => new Promise((resolve) => { finish = resolve; }), cancel() {} },
-        isVoiceBusy: () => false,
-        processText: async (_text, mode) => ({ text: 'ok', mode, degraded: false }),
-        writeClipboardIfSequence: async () => true, showResult() {}, cancelPendingClipboardWrites() {},
-        onCaptureResult: () => ({ ok: false })
-      }
-    });
-    const first = h.workflow.run('structure');
-    const second = await h.workflow.run('optimize');
-    assert.strictEqual(second.ok, false);
-    finish({ kind: 'rejected', reason: 'test' });
-    await first;
-    assert.strictEqual(h.workflow.busy, false);
+    const h = harness({ beforeWrite: (state) => { state.calls.push(['user-copied-during-model']); } });
+    assert.strictEqual((await h.workflow.run('structure')).ok, true);
+    assert.deepStrictEqual(h.state.writes, ['transformed output'], 'a later user copy does not veto result publication');
   }
-
   {
     let resolveModel;
-    const h = harness();
-    h.workflow = createPetActionWorkflow({
-      capture: { click: async (mode) => ({ kind: 'authorized', mode, token: 't', text: 'source', clipboardSequence: 7 }), cancel() {} },
-      isVoiceBusy: () => h.state.voice,
-      processText: () => new Promise((resolve) => { resolveModel = resolve; }),
-      writeClipboardIfSequence: async (_sequence, text) => { h.state.writes.push(text); return true; },
-      cancelPendingClipboardWrites: () => h.state.calls.push(['cancel-writer']),
-      showResult: (text, mode) => h.state.previews.push([text, mode]),
-      onCaptureResult: (result) => ({ ok: false, capture: result })
-    });
+    const h = harness({ processText: () => new Promise((resolve) => { resolveModel = resolve; }) });
     const run = h.workflow.run('optimize');
     while (!resolveModel) await new Promise((resolve) => setImmediate(resolve));
     h.state.voice = true;
     h.workflow.voiceStarted();
-    resolveModel({ text: 'late output', mode: 'optimize', degraded: false });
+    resolveModel({ text: 'late output', mode: 'optimize' });
     const result = await run;
     assert.strictEqual(result.voiceSuperseded, true);
-    assert.deepStrictEqual(h.state.writes, []);
-    assert.deepStrictEqual(h.state.previews, []);
+    assert.deepStrictEqual(h.state.writes, [], 'voice transition cancels a pending text result before clipboard write');
   }
-
   {
-    const script = buildConditionalWriteScript();
-    assert.match(script, /OpenClipboard\(owner\)/);
-    assert.match(script, /OpenClipboard\(owner\)[\s\S]*GetClipboardSequenceNumber\(\)[\s\S]*EmptyClipboard\(\)[\s\S]*SetClipboardData\(13, memory\)/);
-    assert.match(script, /if \(expected == 0\) return "unavailable";/);
-    assert.match(script, /uint observed = GetClipboardSequenceNumber\(\);\s*if \(observed == 0\) return "unavailable";\s*if \(observed != expected\) return "changed";[\s\S]*EmptyClipboard\(\)/);
-    assert.match(script, /GlobalAlloc\(0x0002/);
-    assert.match(script, /CloseClipboard\(\)/);
-    assert.doesNotMatch(script, /OpenClipboard\(IntPtr\.Zero\)|clipboard\.writeText/);
-
-    let scriptText, options, callback;
-    const writer = createWindowsConditionalClipboardWriter({ platform: 'win32', runPowerShellFile: (source, opts, cb) => {
-      scriptText = source; options = opts; callback = cb; return { kill() {} };
-    } });
-    const pending = writer.writeClipboardIfSequence(4, 'private result');
-    assert.ok(Buffer.from(options.stdin.split('\n')[1], 'base64').toString('utf16le').includes('private result'));
-    assert.doesNotMatch(scriptText, /private result/);
-    callback(null, 'changed\n');
-    assert.strictEqual(await pending, false);
-
-    let zeroInvoked = false;
-    const zeroWriter = createWindowsConditionalClipboardWriter({ platform: 'win32', runPowerShellFile: () => { zeroInvoked = true; } });
-    assert.strictEqual(await zeroWriter.writeClipboardIfSequence(0, 'private result'), false);
-    assert.strictEqual(zeroInvoked, false, 'expected sequence zero is rejected before starting native write');
-
-    let canceledCallback, killed = false;
-    const cancelable = createWindowsConditionalClipboardWriter({ platform: 'win32', runPowerShellFile: (_source, _opts, cb) => {
-      canceledCallback = cb; return { kill() { killed = true; } };
-    } });
-    const canceledWrite = cancelable.writeClipboardIfSequence(4, 'private result');
-    cancelable.cancelPendingWrites();
-    assert.strictEqual(killed, true);
-    canceledCallback(null, 'written\n');
-    assert.strictEqual(await canceledWrite, false, 'voice cancellation invalidates an in-flight conditional writer');
+    const h = harness();
+    const renderer = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf8');
+    const main = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
+    assert.match(renderer, /result\.note/);
+    assert.doesNotMatch(renderer, /再点同一按钮确认|显式复制/);
+    assert.match(main, /clipboard\.writeText\(text\)/);
+    assert.doesNotMatch(main.slice(main.indexOf("ipcMain.handle('v2p:pet-action'"), main.indexOf('// 宠物窗移动')), /writeClipboardIfSequence|showPetActionResult/);
+    assert.strictEqual(h.workflow.busy, false);
   }
 
-  const preview = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'preview.js'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
-  assert.match(preview, /p\.resultOnly[\s\S]*?\$\('#btn-insert'\)\.hidden = true/);
-  assert.match(preview, /\$\('#btn-copy'\)\.addEventListener\('click', \(\) => finish\(true\)\)/);
-  assert.match(main, /showPreviewWindow\(text, \{ resultOnly: true, mode \}\)/);
-  assert.match(main, /const mode = copyOnly \? 'clipboard'/);
-  assert.doesNotMatch(main.slice(main.indexOf('function showPetActionResult'), main.indexOf("ipcMain.handle('v2p:preview-insert'")), /insertText|processText|keyTap/);
-
-  console.log('PASS pet action model authorization, mode routing, clipboard ownership, and explicit result-copy path');
+  console.log('PASS pet action workflow: one click, direct publication, degraded/raw results, interleaving, errors and voice isolation');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

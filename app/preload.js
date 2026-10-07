@@ -8,8 +8,6 @@ contextBridge.exposeInMainWorld('v2p', {
   submit: (audio, mime, options) => ipcRenderer.invoke('v2p:submit', { audio, mime, options: options || {} }),
   setRecordingFlag: (active) => ipcRenderer.invoke('v2p:recording-flag', active),
   petAction: (mode) => ipcRenderer.invoke('v2p:pet-action', mode),
-  onPetCaptureCancelled: (cb) => ipcRenderer.on('v2p:pet-capture-cancelled', (_e, p) => cb(p && p.reason)),
-  onPetCapturePrompt: (cb) => ipcRenderer.on('v2p:pet-capture-prompt', (_e, p) => cb(p && p.host)),
   // 选中浮条
   paletteRun: (mode, selectionId) => ipcRenderer.invoke('v2p:palette-run', { mode, selectionId }),
   paletteCopyRaw: (selectionId) => ipcRenderer.invoke('v2p:palette-copy-raw', { selectionId }),

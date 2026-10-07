@@ -12,28 +12,20 @@ const pipeline = require('./pipeline');
 const paint = require('./paint');
 const { createPetActionCapture, createWindowsAdapters } = require('./pet-action-capture');
 const { createPetActionWorkflow } = require('./pet-action-workflow');
-const { createWindowsConditionalClipboardWriter } = require('./pet-action-clipboard');
-const petActionClipboardWriter = createWindowsConditionalClipboardWriter();
-const petActionCapture = createPetActionCapture(createWindowsAdapters(), {
-  onCancel: (reason) => petBroadcast('v2p:pet-capture-cancelled', { reason }),
-  onManualCopyRequired: (host) => petBroadcast('v2p:pet-capture-prompt', { host })
-});
+const petActionCapture = createPetActionCapture(createWindowsAdapters());
 const petActionWorkflow = createPetActionWorkflow({
   capture: petActionCapture,
   isVoiceBusy: () => recordingActive || voiceSubmissionActive,
   processText: (text, mode) => pipeline.processText(text, mode, setState),
-  writeClipboardIfSequence: (sequence, text) => petActionClipboardWriter.writeClipboardIfSequence(sequence, text),
-  cancelPendingClipboardWrites: () => petActionClipboardWriter.cancelPendingWrites(),
-  showResult: (text, mode) => showPetActionResult(text, mode),
+  writeClipboard: (text) => require('electron').clipboard.writeText(text),
   onCaptureResult: (result) => {
-    if (result.kind === 'preview') return { ok: true, capture: result };
     const messages = {
       'voice-busy': '录音或转写期间不可操作',
       'no-fresh-clipboard': '没有检测到新的剪贴板文本，请选择文本后重试',
-      'empty-or-non-text-clipboard': '复制内容为空或不是文本',
+      'empty-or-invalid-text': '复制内容为空或不是文本',
+      'copy-request-failed': '无法请求目标窗口复制所选文本',
       'target-changed': '目标窗口已变化，请重试',
-      'clipboard-changed': '剪贴板已变化，请重新捕获',
-      'expired': '确认已超时，请重新捕获',
+      'target-unavailable': '无法读取当前目标窗口',
       'unsupported-platform': '当前平台暂不支持文本捕获'
     };
     return { ok: false, capture: result, error: messages[result.reason] || '文本捕获未完成' };
@@ -922,11 +914,6 @@ function showPreviewWindow(raw, options = {}) {
   win.focus();
   win.webContents.send('v2p:preview-show', { raw: String(raw || ''), resultOnly: !!options.resultOnly,
     mode: options.mode || 'none' });
-}
-
-function showPetActionResult(text, mode) {
-  showPreviewWindow(text, { resultOnly: true, mode });
-  petBroadcast('v2p:toast', { text: '剪贴板未更新，结果已打开，可显式复制' });
 }
 
 ipcMain.handle('v2p:preview-insert', async (_e, { text, copyOnly }) => {

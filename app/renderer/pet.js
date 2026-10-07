@@ -101,24 +101,15 @@ for (const button of actionButtons) {
       if (settlement.status !== 'resolved') return;
       const result = settlement.value;
       if (voiceUiBusy() || actionVoiceEpoch !== voiceUiEpoch || (result && result.voiceSuperseded)) return;
-      if (result && result.capture && result.capture.kind === 'preview') {
-        const previewText = String(result.capture.text || '').replace(/\s+/g, ' ').trim();
-        const shortText = previewText.length > 46 ? previewText.slice(0, 46) + '…' : previewText;
-        say(`选区未验证 · 再点同一按钮确认\n${shortText}`, 10000);
-        setState('idle');
-      } else if (result && result.capture && result.capture.kind === 'authorized') {
+      if (result && result.capture && result.capture.kind === 'authorized') {
         if (!result.ok) {
-          say(result.error || '文本处理失败，源文本仍保留在剪贴板', 5000);
+          say(result.error || '文本处理失败', 5000);
           setState('error');
           setTimeout(() => { if (!activePetAction) setState('idle'); }, 5000);
-        } else if (result.preview) {
-          say(result.message || '结果已打开，可显式复制', 5000);
+        } else {
+          say(result.note ? `处理完成，结果已复制 · ${result.note}` : '处理完成，结果已复制', 5000);
           setState('done');
           setTimeout(() => { if (!activePetAction) setState('idle'); }, 5000);
-        } else {
-          say('处理完成，结果已复制', 3500);
-          setState('done');
-          setTimeout(() => { if (!activePetAction) setState('idle'); }, 3500);
         }
       } else if (result && result.capture && result.capture.kind === 'cancelled') {
         say('捕获已取消，请重新操作', 3500);
@@ -396,12 +387,6 @@ window.v2p.onResult((r) => {
   setTimeout(() => setState('idle'), 3000);
 });
 window.v2p.onToast((text) => { say(text, 5000); setState('error'); setTimeout(() => setState('idle'), 3500); });
-if (window.v2p.onPetCaptureCancelled) {
-  window.v2p.onPetCaptureCancelled(() => say('捕获已取消，请重新操作', 3500));
-}
-if (window.v2p.onPetCapturePrompt) {
-  window.v2p.onPetCapturePrompt(() => say('此窗口只接受手动复制。复制后会显示未验证预览', 10000));
-}
 window.v2p.onHotkeyStart(startRecording);
 window.v2p.onHotkeyStop(stopRecording);
 window.v2p.onPetImageChanged((dataUrl) => { if (dataUrl) petImg.src = dataUrl; });

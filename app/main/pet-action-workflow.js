@@ -4,7 +4,6 @@ function createPetActionWorkflow(deps) {
 
   function voiceStarted() {
     voiceEpoch++;
-    if (deps.cancelPendingClipboardWrites) deps.cancelPendingClipboardWrites();
   }
 
   async function run(mode) {
@@ -23,8 +22,7 @@ function createPetActionWorkflow(deps) {
       const captured = await deps.capture.click(mode, deps.isVoiceBusy);
       if (captured.kind !== 'authorized') return deps.onCaptureResult(captured);
       if (voiceSuperseded()) return voiceCancelled();
-      if (captured.mode !== mode || typeof captured.token !== 'string' ||
-          !captured.token || typeof captured.text !== 'string' || !captured.text.trim()) {
+      if (typeof captured.text !== 'string' || !captured.text.trim()) {
         return deps.onCaptureResult({ kind: 'cancelled', reason: 'authorization-invalid' });
       }
 
@@ -39,24 +37,15 @@ function createPetActionWorkflow(deps) {
       if (voiceSuperseded()) return voiceCancelled();
 
       const output = result && typeof result.text === 'string' ? result.text : '';
-      if (!output.trim() || result.degraded || result.mode !== mode) {
-        return {
-          ok: false,
-          capture: { kind: 'authorized' },
-          error: (result && result.note) || '文本处理未生成有效结果，源文本仍保留在剪贴板'
-        };
-      }
-
-      let copied = false;
-      try {
-        copied = await deps.writeClipboardIfSequence(captured.clipboardSequence, output, voiceSuperseded);
-      } catch { /* Keep the result available through the explicit copy preview. */ }
-
       if (voiceSuperseded()) return voiceCancelled();
-      if (copied) return { ok: true, capture: { kind: 'authorized' }, copied: true };
-      deps.showResult(output, mode);
-      return { ok: true, capture: { kind: 'authorized' }, copied: false, preview: true,
-        message: '剪贴板已变化或不可写，结果已打开，可显式复制' };
+      if (!output.trim()) return { ok: false, capture: { kind: 'authorized' }, error: '文本处理未生成有效结果' };
+
+      try { await deps.writeClipboard(output); }
+      catch {
+        return { ok: false, capture: { kind: 'authorized' }, error: '结果未能写入剪贴板' };
+      }
+      if (voiceSuperseded()) return voiceCancelled();
+      return { ok: true, capture: { kind: 'authorized' }, copied: true, note: result.note || '' };
     } finally {
       busy = false;
     }
