@@ -36,7 +36,7 @@ function runFixture() {
   fs.writeFileSync(path.join(userData, 'config.json'), JSON.stringify({
     asrProviders: [], llmProviders: [], activeAsrId: '', activeLlmId: '',
     petModel: '', petScale: 1, hotkey: 'Control+Shift+F12', mouseRecord: false,
-    paletteEnabled: false
+    paletteEnabled: false, insertMode: 'clipboard'
   }), 'utf8');
 
   const originalFormats = clipboard.availableFormats();

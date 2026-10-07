@@ -10,7 +10,7 @@ const HOSTS = Object.freeze({
   TERMINAL: 'terminal'
 });
 
-function buildSnapshotScript(includeClipboardText = false) {
+function buildSnapshotScript(includeClipboardText = false, inspectWritable = false) {
   return `
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 ${includeClipboardText ? "Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop" : ''}
@@ -24,6 +24,7 @@ public static class V2PPetCaptureNative {
   [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
   [DllImport("user32.dll")] public static extern IntPtr GetClipboardOwner();
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr hwnd, StringBuilder name, int count);
+  [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr hwnd, int index);
   [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint thread, ref GUITHREADINFO info);
   [StructLayout(LayoutKind.Sequential)] public struct GUITHREADINFO {
     public int cbSize; public int flags; public IntPtr hwndActive; public IntPtr hwndFocus;
@@ -43,6 +44,22 @@ $info.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($info)
 if (-not [V2PPetCaptureNative]::GetGUIThreadInfo($thread, [ref]$info)) { throw 'focus unavailable' }
 $focus = $info.hwndFocus
 $process = (Get-Process -Id $pidValue -ErrorAction Stop).ProcessName
+$readOnly = $null
+${inspectWritable ? `
+$focusClass = [V2PPetCaptureNative]::ClassName($focus)
+if ($focusClass -match '^(Edit|RichEdit)') {
+  $readOnly = (([V2PPetCaptureNative]::GetWindowLong($focus, -16) -band 0x800) -ne 0)
+} else {
+  try {
+    Add-Type -AssemblyName UIAutomationClient -ErrorAction Stop
+    Add-Type -AssemblyName UIAutomationTypes -ErrorAction Stop
+    $element = [System.Windows.Automation.AutomationElement]::FocusedElement
+    $pattern = $null
+    if ($element -and $element.Current.ProcessId -eq $pidValue -and $element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) {
+      $readOnly = [bool]$pattern.Current.IsReadOnly
+    }
+  } catch { }
+}` : ''}
 ${includeClipboardText ? `$sequenceBefore = [V2PPetCaptureNative]::GetClipboardSequenceNumber()
 $ownerBefore = [V2PPetCaptureNative]::GetClipboardOwner()
 $ownerPidBefore = [uint32]0
@@ -53,7 +70,7 @@ $ownerPidAfter = [uint32]0
 if ($ownerAfter -ne [IntPtr]::Zero) { [void][V2PPetCaptureNative]::GetWindowThreadProcessId($ownerAfter, [ref]$ownerPidAfter) }
 $sequenceAfter = [V2PPetCaptureNative]::GetClipboardSequenceNumber()
 $text64 = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($text))
-@{ ok = $true; hwnd = $hwnd.ToInt64(); pid = $pidValue; threadId = $thread; windowClass = [V2PPetCaptureNative]::ClassName($hwnd); focusHwnd = $focus.ToInt64(); focusClass = if ($focus -eq [IntPtr]::Zero) { '' } else { [V2PPetCaptureNative]::ClassName($focus) }; processName = $process; sequence = $sequenceAfter; ownerHwnd = $ownerAfter.ToInt64(); ownerPid = $ownerPidAfter; stable = ($sequenceBefore -eq $sequenceAfter -and $ownerBefore -eq $ownerAfter -and $ownerPidBefore -eq $ownerPidAfter); text64 = $text64 } | ConvertTo-Json -Compress` : `@{ ok = $true; hwnd = $hwnd.ToInt64(); pid = $pidValue; threadId = $thread; windowClass = [V2PPetCaptureNative]::ClassName($hwnd); focusHwnd = $focus.ToInt64(); focusClass = if ($focus -eq [IntPtr]::Zero) { '' } else { [V2PPetCaptureNative]::ClassName($focus) }; processName = $process; sequence = [V2PPetCaptureNative]::GetClipboardSequenceNumber(); ownerHwnd = ([V2PPetCaptureNative]::GetClipboardOwner()).ToInt64() } | ConvertTo-Json -Compress`}
+@{ ok = $true; hwnd = $hwnd.ToInt64(); pid = $pidValue; threadId = $thread; windowClass = [V2PPetCaptureNative]::ClassName($hwnd); focusHwnd = $focus.ToInt64(); focusClass = if ($focus -eq [IntPtr]::Zero) { '' } else { [V2PPetCaptureNative]::ClassName($focus) }; processName = $process; readOnly = $readOnly; sequence = $sequenceAfter; ownerHwnd = $ownerAfter.ToInt64(); ownerPid = $ownerPidAfter; stable = ($sequenceBefore -eq $sequenceAfter -and $ownerBefore -eq $ownerAfter -and $ownerPidBefore -eq $ownerPidAfter); text64 = $text64 } | ConvertTo-Json -Compress` : `@{ ok = $true; hwnd = $hwnd.ToInt64(); pid = $pidValue; threadId = $thread; windowClass = [V2PPetCaptureNative]::ClassName($hwnd); focusHwnd = $focus.ToInt64(); focusClass = if ($focus -eq [IntPtr]::Zero) { '' } else { [V2PPetCaptureNative]::ClassName($focus) }; processName = $process; readOnly = $readOnly; sequence = [V2PPetCaptureNative]::GetClipboardSequenceNumber(); ownerHwnd = ([V2PPetCaptureNative]::GetClipboardOwner()).ToInt64() } | ConvertTo-Json -Compress`}
 `;
 }
 
@@ -67,6 +84,7 @@ function parseSnapshot(stdout) {
     const snapshot = { target: { hwnd: value.hwnd, pid: value.pid, threadId: value.threadId,
       windowClass: value.windowClass, focusHwnd: Number(value.focusHwnd) || 0,
       focusClass: value.focusClass, processName: value.processName }, sequence: value.sequence };
+    if (typeof value.readOnly === 'boolean') snapshot.target.readOnly = value.readOnly;
     if (typeof value.stable === 'boolean') snapshot.stable = value.stable;
     if (typeof value.text64 === 'string') snapshot.text = Buffer.from(value.text64, 'base64').toString('utf16le');
     if (Number.isSafeInteger(value.ownerHwnd) && value.ownerHwnd >= 0) snapshot.ownerHwnd = value.ownerHwnd;
@@ -75,9 +93,9 @@ function parseSnapshot(stdout) {
   } catch { return null; }
 }
 
-function getWindowsSnapshot(includeClipboardText = false) {
+function getWindowsSnapshot(includeClipboardText = false, inspectWritable = false) {
   if (process.platform !== 'win32') return Promise.resolve(null);
-  return new Promise((resolve) => runPowerShellFile(buildSnapshotScript(includeClipboardText), { timeout: 2500, maxBuffer: 64 * 1024 },
+  return new Promise((resolve) => runPowerShellFile(buildSnapshotScript(includeClipboardText, inspectWritable), { timeout: 2500, maxBuffer: 64 * 1024 },
     (error, stdout) => resolve(error ? null : parseSnapshot(stdout))));
 }
 

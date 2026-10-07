@@ -33,8 +33,9 @@ $('#btn-optimize').addEventListener('click', async () => {
 });
 
 async function finish(copyOnly) {
-  const text = lastResult || rawEl.value;
+  const text = rawEl.value;
   const res = await window.v2p.previewInsert({ text, copyOnly });
+  if (!res.ok) { statusEl.textContent = res.error || '写入失败'; return; }
   window.v2p.previewClose({ ok: true, text, ...res });
 }
 

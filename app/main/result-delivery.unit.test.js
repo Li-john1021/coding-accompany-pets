@@ -1,7 +1,7 @@
 const assert = require('assert');
 const { createResultDelivery, pasteChord } = require('./result-delivery');
 const { buildTargetKeysScript } = require('./target-keys');
-const target = { hwnd: 1, pid: 2, threadId: 3, focusHwnd: 4, windowClass: 'Chrome_WidgetWin_1', focusClass: 'Edit', processName: 'chrome' };
+const target = { hwnd: 1, pid: 2, threadId: 3, focusHwnd: 4, windowClass: 'Chrome_WidgetWin_1', focusClass: 'Edit', processName: 'chrome', readOnly: false };
 function fixture() {
   const state = { now: 0, target, writes: [], chords: [], shows: [], timers: [], guard: true };
   const delivery = createResultDelivery({ platform: 'win32', now: () => state.now, snapshot: async () => ({ target: state.target }),
@@ -31,6 +31,16 @@ function fixture() {
     const result = await f.delivery.undo(f.token());
     assert.equal(result.restored, false); assert.match(result.note, /目标未修改/);
     assert.deepEqual(f.state.chords, ['ctrl-v']);
+  }
+  {
+    const f = fixture(); f.state.target = { ...target, readOnly: undefined };
+    await f.run(); await f.delivery.undo(f.token());
+    assert.deepEqual(f.state.chords, ['ctrl-v'], 'unknown editability permits opt-in paste but never generic undo');
+  }
+  {
+    const f = fixture(); let current = true;
+    const result = await f.run({ isCurrent: () => { const value = current; current = false; return value; } });
+    assert.equal(result.cancelled, true); assert.deepEqual(f.state.chords, []); assert.equal(f.state.shows.length, 0);
   }
   {
     const f = fixture(); f.state.target = { ...target, hwnd: 8 };

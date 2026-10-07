@@ -39,7 +39,7 @@ assert.match(js, /function voiceUiBusy\(\)[\s\S]*?starting \|\| isRecording/, 'v
 assert.match(settings, /mouse-record/);
 assert.doesNotMatch(settings, /启用选中浮条|palette-enabled/, 'obsolete palette setting is removed');
 assert.doesNotMatch(settingsJs, /palette-enabled|paletteEnabled:/, 'settings cannot re-enable the old palette');
-assert.match(main, /const want = cfg\.mouseRecord === true;/, 'hook is not retained by legacy palette configuration');
+assert.match(main, /if \(!inputDirtyGuard\) inputDirtyGuard = createInputDirtyGuard/, 'v5 registers one shared dirty/side-key guard');
 assert.match(main, /Object\.assign\(cfg, patch\);\s*cfg\.paletteEnabled = false;/, 'saving settings cannot re-enable the legacy palette');
 assert.match(main, /v2p:pet-action'[\s\S]*?petActionWorkflow\.run\(mode\)/, 'pet action IPC delegates capture authorization and model processing to the workflow');
 

@@ -13,12 +13,15 @@ function pasteChord(target, platform = process.platform) {
 function createResultDelivery(deps) {
   let latest = null;
   let timer = null;
+  let watchTimer = null;
   let delivering = false;
   let undoing = null;
   const now = deps.now || Date.now;
   function clear() {
     if (timer) (deps.clearTimer || clearTimeout)(timer);
     timer = null;
+    if (watchTimer) (deps.clearTimer || clearTimeout)(watchTimer);
+    watchTimer = null;
     latest = null;
     if (deps.onHide) deps.onHide();
   }
@@ -26,9 +29,20 @@ function createResultDelivery(deps) {
     if (latest && latest.armed) latest.dirty = true;
     if (undoing) undoing.dirty = true;
   }
-  async function deliver({ original, text, target, insertMode, undoToastSeconds }) {
+  function watchTarget(token, target) {
+    if (!deps.watchTarget) return;
+    watchTimer = (deps.setTimer || setTimeout)(async () => {
+      const current = await deps.snapshot();
+      if (!latest || latest.token !== token) return;
+      if (!sameTarget(target, current && current.target)) latest.dirty = true;
+      else if (!latest.dirty) watchTarget(token, target);
+    }, 500);
+    if (watchTimer && watchTimer.unref) watchTimer.unref();
+  }
+  async function deliver({ original, text, target, insertMode, undoToastSeconds, isCurrent = () => true }) {
     if (delivering || undoing) throw new Error('结果正在写入，请稍后重试');
     if (typeof text !== 'string' || !text.trim()) return { inserted: false, copiedOnly: true, empty: true };
+    if (!isCurrent()) return { inserted: false, copiedOnly: true, cancelled: true };
     delivering = true;
     clear();
     try {
@@ -39,19 +53,22 @@ function createResultDelivery(deps) {
       let note = '';
       if (insertMode === 'paste') {
         const current = await deps.snapshot();
-        if (sameTarget(target, current && current.target) && target.readOnly !== true) {
+        if (!isCurrent()) return { inserted: false, copiedOnly: true, cancelled: true };
+        if (sameTarget(target, current && current.target) && current.target.readOnly !== true) {
           try { op.inserted = (await deps.sendChord(pasteChord(target, deps.platform), target)) === true; }
           catch { op.inserted = false; }
           // Own injected paste has finished; subsequent input alone dirties this operation.
-          op.armed = op.inserted && deps.guardAvailable() === true;
+          op.armed = op.inserted && current.target.readOnly === false && deps.guardAvailable() === true;
           if (!op.inserted) note = '未自动粘贴，结果已复制';
         } else note = '目标已变化或不可写，结果已复制';
       }
+      if (!isCurrent()) return { inserted: op.inserted, copiedOnly: !op.inserted, cancelled: true };
       latest = op;
       const seconds = clampUndoSeconds(undoToastSeconds ?? 10);
       op.expiresAt = now() + seconds * 1000;
       timer = (deps.setTimer || setTimeout)(() => { if (latest === op) clear(); }, seconds * 1000);
       if (timer && timer.unref) timer.unref();
+      if (op.armed) watchTarget(op.token, target);
       if (deps.onShow) deps.onShow({ token: op.token, seconds, inserted: op.inserted, note });
       return { inserted: op.inserted, copiedOnly: !op.inserted, note };
     } finally { delivering = false; }
@@ -70,7 +87,7 @@ function createResultDelivery(deps) {
     let restored = false;
     if (op.inserted && !op.terminal && op.armed && !op.dirty) {
       const current = await deps.snapshot();
-      if (!op.dirty && sameTarget(op.target, current && current.target) && op.target.readOnly !== true) {
+      if (!op.dirty && sameTarget(op.target, current && current.target) && current.target.readOnly === false) {
         try { restored = (await deps.sendChord(deps.platform === 'darwin' ? 'cmd-z' : 'ctrl-z', op.target)) === true; }
         catch { /* Clipboard fallback. */ }
       }

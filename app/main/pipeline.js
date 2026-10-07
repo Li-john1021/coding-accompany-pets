@@ -39,11 +39,8 @@ function resolveMode(mode, cfg = config.load()) {
 const FILLER_RE = /^(嗯+|啊+|哦+|噢+|呃+|额+|哎+|唉+|哈+|呵+|呐+|嘛+|吧+|啦+|[，,。.、\s])+$/;
 
 function stripFillers(raw) {
-  return String(raw || '')
-    .split(/[\n。.！!？?；;]/)
-    .map((x) => x.replace(/(嗯+|啊+|哦+|噢+|呃+|额+|哎+|唉+|那个|就是说|然后的话)/g, '').trim())
-    .filter(Boolean)
-    .join('。');
+  const text = String(raw || '').trim();
+  return FILLER_RE.test(text) ? '' : text;
 }
 
 function looksLikeMetaReasoning(output) {

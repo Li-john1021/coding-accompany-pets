@@ -10,14 +10,32 @@ const petWindowLayout = require('./pet-window-layout');
 const models = require('./models');
 const pipeline = require('./pipeline');
 const paint = require('./paint');
-const { createPetActionCapture, createWindowsAdapters } = require('./pet-action-capture');
+const { createPetActionCapture, createWindowsAdapters, getWindowsSnapshot } = require('./pet-action-capture');
 const { createPetActionWorkflow } = require('./pet-action-workflow');
+const { createResultDelivery } = require('./result-delivery');
+const { sendTargetChord } = require('./target-keys');
+const { createInputDirtyGuard } = require('./input-dirty-guard');
+const resultDelivery = createResultDelivery({
+  platform: process.platform,
+  snapshot: () => getWindowsSnapshot(false, true),
+  watchTarget: true,
+  writeClipboard: (text) => require('electron').clipboard.writeText(text),
+  sendChord: sendTargetChord,
+  guardAvailable: () => !!inputDirtyGuard && inputDirtyGuard.running,
+  onShow: (payload) => showUndoToast(payload),
+  onHide: () => { undoToastPayload = null; if (undoWin && !undoWin.isDestroyed()) undoWin.hide(); }
+});
+function deliverResult(payload) {
+  const cfg = config.load();
+  return resultDelivery.deliver({ ...payload, insertMode: payload.insertMode || cfg.insertMode, undoToastSeconds: cfg.undoToastSeconds });
+}
 const petActionCapture = createPetActionCapture(createWindowsAdapters());
 const petActionWorkflow = createPetActionWorkflow({
   capture: petActionCapture,
-  isVoiceBusy: () => recordingActive || voiceSubmissionActive,
+  isVoiceBusy: () => recordingActive || voiceSubmissionActive || !!pendingPreview,
   processText: (text, mode) => pipeline.processText(text, mode, setState),
   writeClipboard: (text) => require('electron').clipboard.writeText(text),
+  deliver: deliverResult,
   onCaptureResult: (result) => {
     const messages = {
       'voice-busy': '录音或转写期间不可操作',
@@ -66,10 +84,16 @@ let petWin = null;
 let paintWin = null;
 let recordingActive = false; // 全局热键触发录音时的状态标记
 let voiceSubmissionActive = false;
+let voiceTargetPromise = null;
+let voiceDeliveryEpoch = 0;
 
-function noteVoiceStart() {
+function noteVoiceStart(captureTarget = true) {
+  voiceDeliveryEpoch++;
   petActionWorkflow.voiceStarted();
   petActionCapture.cancel('voice-busy');
+  if (captureTarget || !voiceTargetPromise) voiceTargetPromise = getWindowsSnapshot();
+  pendingPreview = null;
+  if (previewWin && !previewWin.isDestroyed()) previewWin.hide();
 }
 
 const petBroadcast = (channel, payload) => {
@@ -293,33 +317,44 @@ function registerIpc() {
 
   // 宠物窗提交录音结果，跑完整管线
   ipcMain.handle('v2p:submit', async (_e, { audio, mime, options }) => {
+    if (voiceSubmissionActive || petActionWorkflow.busy || resultDelivery.busy) return { ok: false, error: '已有操作正在进行' };
     voiceSubmissionActive = true;
-    noteVoiceStart();
+    noteVoiceStart(false);
+    const operationVoiceEpoch = voiceDeliveryEpoch;
+    const isCurrent = () => voiceDeliveryEpoch === operationVoiceEpoch;
+    const targetPromise = voiceTargetPromise;
+    voiceTargetPromise = null;
     try {
       const buf = Buffer.from(audio);
-      const opts = options || {};
+      const opts = { ...(options || {}), deferDelivery: true };
+      const capturedTarget = await targetPromise;
+      const target = capturedTarget && capturedTarget.target;
       if (config.load().previewEnabled && !opts.mode && !opts.transcriptOnly) {
         // 预览卡：只转写，等用户选模式后再 process
         opts.transcriptOnly = true;
       }
-      const result = await pipeline.run(buf, mime, setState, opts);
+      const result = await pipeline.run(buf, mime, (stage) => { if (isCurrent()) setState(stage); }, opts);
+      if (!isCurrent()) return { ok: false, voiceSuperseded: true };
       if (result.preview && config.load().previewEnabled) {
         const skip = Number(config.load().previewSkipChars) || 12;
         if ((result.raw || '').trim().length < skip) {
           const r2 = await pipeline.processText(result.raw, 'default', setState);
-          const { insertText } = require('./insert');
-          const ins = await insertText(r2.text, config.load().insertMode || 'paste');
+          const ins = await deliverResult({ original: result.raw, text: r2.text, target, isCurrent });
+          if (!isCurrent()) return { ok: false, voiceSuperseded: true };
           const out = { raw: result.raw, polished: r2.text, mode: r2.mode, note: r2.note, ...ins };
           setState('done');
           petBroadcast('v2p:result', out);
           return { ok: true, ...out };
         }
-        showPreviewWindow(result.raw);
+        showPreviewWindow(result.raw, { target, initialRaw: result.raw });
         petBroadcast('v2p:toast', { text: '请在预览卡中选择处理方式' });
         return { ok: true, ...result, preview: true };
       }
-      petBroadcast('v2p:result', result);
-      return { ok: true, ...result };
+      const delivery = await deliverResult({ original: result.raw, text: result.polished, target, isCurrent });
+      if (!isCurrent()) return { ok: false, voiceSuperseded: true };
+      const out = { ...result, ...delivery, note: [result.note, delivery.note].filter(Boolean).join('；') };
+      petBroadcast('v2p:result', out);
+      return { ok: true, ...out };
     } catch (err) {
       setState('error');
       const msg = String(err.message || err);
@@ -332,9 +367,14 @@ function registerIpc() {
 
   // 纯文本整理（选区浮条 / 预览卡共用）
   ipcMain.handle('v2p:process-text', async (_e, { text, mode }) => {
-    const r = await pipeline.processText(String(text || ''), mode || 'default', setState);
-    pendingPreview = Object.assign({ raw: String(text || '') }, r);
-    return { ok: true, ...r };
+    if (voiceSubmissionActive || petActionWorkflow.busy) return { ok: false, error: '已有操作正在进行' };
+    const session = pendingPreview;
+    voiceSubmissionActive = true;
+    try {
+      const r = await pipeline.processText(String(text || ''), mode || 'default', setState);
+      if (session && pendingPreview === session) Object.assign(session, r);
+      return { ok: true, ...r };
+    } finally { voiceSubmissionActive = false; }
   });
 
   ipcMain.handle('v2p:recording-flag', (_e, active) => {
@@ -346,6 +386,7 @@ function registerIpc() {
   });
 
   ipcMain.handle('v2p:pet-action', async (_e, mode) => {
+    if (resultDelivery.busy) return { ok: false, error: '结果正在写入，请稍后重试' };
     return petActionWorkflow.run(mode);
   });
 
@@ -881,6 +922,40 @@ ipcMain.handle('v2p:palette-dismiss', (_e, { selectionId }) => {
 // ---------------- 语音预览卡（默认关，设置可开） ----------------
 let previewWin = null;
 let pendingPreview = null;
+let undoWin = null;
+let undoMessageTimer = null;
+let undoToastPayload = null;
+function showUndoToast(payload) {
+  undoToastPayload = payload;
+  if (undoMessageTimer) clearTimeout(undoMessageTimer);
+  if (!undoWin || undoWin.isDestroyed()) {
+    undoWin = new BrowserWindow({ width: 280, height: 76, show: false, frame: false,
+      resizable: false, focusable: false, alwaysOnTop: true, skipTaskbar: true,
+      webPreferences: { preload: path.join(__dirname, '..', 'preload.js'), contextIsolation: true, nodeIntegration: false } });
+    undoWin.loadFile(path.join(__dirname, '..', 'renderer', 'undo.html'));
+    undoWin.on('closed', () => { undoWin = null; });
+  }
+  const win = undoWin;
+  const display = require('electron').screen.getDisplayNearestPoint(require('electron').screen.getCursorScreenPoint());
+  const area = display.workArea;
+  win.setPosition(area.x + area.width - 296, area.y + area.height - 92);
+  const show = () => { if (!win.isDestroyed() && undoToastPayload) { win.webContents.send('v2p:undo-show', undoToastPayload); win.showInactive(); } };
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', show);
+  else show();
+}
+ipcMain.handle('v2p:undo', async (_e, token) => {
+  const result = await resultDelivery.undo(token);
+  if (result.ok) {
+    showUndoToast({ note: result.note });
+    undoMessageTimer = setTimeout(() => { if (undoWin && !undoWin.isDestroyed()) undoWin.hide(); }, 2400);
+  }
+  return result;
+});
+ipcMain.handle('v2p:undo-dismiss', (_e, token) => {
+  if (token) resultDelivery.dismiss(token);
+  else if (undoWin && !undoWin.isDestroyed()) undoWin.hide();
+  return { ok: true };
+});
 
 function createPreviewWindow() {
   if (previewWin && !previewWin.isDestroyed()) return previewWin;
@@ -906,28 +981,38 @@ function createPreviewWindow() {
 }
 
 function showPreviewWindow(raw, options = {}) {
-  pendingPreview = { raw };
+  pendingPreview = { raw, target: options.target };
+  Object.defineProperty(pendingPreview, 'initialRaw', { value: options.initialRaw ?? raw, enumerable: true });
   const win = createPreviewWindow();
   if (!win) return;
   win.center();
   win.show();
   win.focus();
-  win.webContents.send('v2p:preview-show', { raw: String(raw || ''), resultOnly: !!options.resultOnly,
-    mode: options.mode || 'none' });
+  const payload = { raw: String(raw || ''), resultOnly: !!options.resultOnly, mode: options.mode || 'none' };
+  const send = () => win.webContents.send('v2p:preview-show', payload);
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
+  else send();
 }
 
 ipcMain.handle('v2p:preview-insert', async (_e, { text, copyOnly }) => {
-  const { insertText } = require('./insert');
-  const cfg = config.load();
-  const mode = copyOnly ? 'clipboard' : (cfg.insertMode || 'paste');
-  return insertText(String(text || ''), mode);
+  if (!pendingPreview || pendingPreview.delivered || voiceSubmissionActive || petActionWorkflow.busy || resultDelivery.busy) return { ok: false, error: '预览已失效或正在处理' };
+  const session = pendingPreview;
+  if (previewWin && !previewWin.isDestroyed()) previewWin.hide();
+  voiceSubmissionActive = true;
+  try {
+    const result = await deliverResult({ original: session.initialRaw, text: String(text || ''), target: session.target,
+      insertMode: copyOnly ? 'clipboard' : config.load().insertMode });
+    session.delivered = true;
+    return { ok: true, ...result };
+  } finally { voiceSubmissionActive = false; }
 });
 
 ipcMain.handle('v2p:preview-close', (_e, payload) => {
+  if (!pendingPreview || voiceSubmissionActive || recordingActive) return { ok: false, error: '预览已失效或正在处理' };
   if (previewWin && !previewWin.isDestroyed()) previewWin.hide();
   if (payload && payload.ok) {
     petBroadcast('v2p:result', {
-      raw: (pendingPreview && pendingPreview.raw) || '',
+      raw: (pendingPreview && pendingPreview.initialRaw) || '',
       polished: (payload && payload.text) || (pendingPreview && pendingPreview.raw) || '',
       mode: payload.mode || (pendingPreview && pendingPreview.mode) || 'none',
       degraded: !!(payload && payload.degraded) || !!(pendingPreview && pendingPreview.degraded),
@@ -945,19 +1030,22 @@ ipcMain.handle('v2p:preview-close', (_e, payload) => {
 
 // ---------------- 鼠标侧键录音:全局鼠标钩子,侧键=热键的等价触发 ----------------
 let mouseHookOn = false;
+let inputDirtyGuard = null;
 let selDown = false, selDragging = false, selStartX = 0, selStartY = 0;
 let activeSelectionGesture = null;
 
 function setMouseRecordHook() {
-  const cfg = config.load();
-  const want = cfg.mouseRecord === true;
-  if (want === mouseHookOn) return;
-  if (want) {
     try {
       const { uIOhook } = require('uiohook-napi');
-      // 注意:uiohook-napi 1.x 的事件名是小写字符串('mousedown'),不是 EventType 数值常量
-      uIOhook.on('mousedown', (e) => {
-        if (e.button === 4) {
+      if (!inputDirtyGuard) inputDirtyGuard = createInputDirtyGuard({ hook: uIOhook,
+        markDirty: () => resultDelivery.markDirty(),
+        isToastPoint: (x, y) => {
+          if (!undoWin || undoWin.isDestroyed() || !undoWin.isVisible()) return false;
+          const point = process.platform === 'win32' ? require('electron').screen.screenToDipPoint({ x, y }) : { x, y };
+          const b = undoWin.getBounds();
+          return point.x >= b.x && point.x < b.x + b.width && point.y >= b.y && point.y < b.y + b.height;
+        },
+        onSideButton: () => {
           if (!petWin || petWin.isDestroyed()) return;
           if (config.load().mouseRecord === true) {
             if (recordingActive) {
@@ -969,24 +1057,20 @@ function setMouseRecordHook() {
               petBroadcast('v2p:hotkey-start');
             }
           }
-          return;
         }
       });
-      uIOhook.start();
+      inputDirtyGuard.start();
       mouseHookOn = true;
       console.log('[mouse] hook on');
     } catch (e) {
       console.log('[mouse] hook fail:' + (e.message || e));
     }
-  } else {
-    try { require('uiohook-napi').uIOhook.stop(); } catch { /* 未启动过 */ }
-    mouseHookOn = false;
-    console.log('[mouse] hook off');
-  }
 }
 
 function stopMouseRecordHook() {
-  if (mouseHookOn) { try { require('uiohook-napi').uIOhook.stop(); } catch { } mouseHookOn = false; }
+  if (inputDirtyGuard) { try { inputDirtyGuard.stop(); } catch { } }
+  mouseHookOn = false;
+  resultDelivery.clear();
 }
 
 app.on('will-quit', () => {

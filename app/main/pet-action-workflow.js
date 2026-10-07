@@ -42,7 +42,7 @@ function createPetActionWorkflow(deps) {
 
       let delivery = {};
       try {
-        if (deps.deliver) delivery = await deps.deliver({ original: source, text: output, target: captured.target });
+        if (deps.deliver) delivery = await deps.deliver({ original: source, text: output, target: captured.target, isCurrent: () => !voiceSuperseded() });
         else await deps.writeClipboard(output);
       }
       catch {

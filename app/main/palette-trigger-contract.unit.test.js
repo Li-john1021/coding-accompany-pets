@@ -33,7 +33,7 @@ assert.doesNotMatch(probe, /SendInput|keyTap|clipboard|SetFocus|Select\(/i, 'pas
 assert.doesNotMatch(main, /uIOhook\.on\('mousemove'/, 'legacy drag selection watcher is absent');
 assert.doesNotMatch(main, /captureAndShowPalette\(gesture\.start/, 'legacy drag/double-click trigger is absent');
 const hook = main.slice(main.indexOf('function setMouseRecordHook()'));
-assert.match(hook, /const want = cfg\.mouseRecord === true;/, 'hook registration is controlled only by mouseRecord');
+assert.match(hook, /if \(!inputDirtyGuard\) inputDirtyGuard = createInputDirtyGuard/, 'v5 shared input guard registers once independently of retired palette');
 assert.match(hook, /if \(config\.load\(\)\.mouseRecord === true\)/, 'side-button recording route is preserved');
 
 console.log('PASS palette probe/gate checks and disabled legacy trigger with side-button recording preserved');
