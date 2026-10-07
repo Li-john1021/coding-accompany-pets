@@ -66,7 +66,9 @@ public class V5FixtureFocus {
     async function toastToken() {
       const win = await waitFor(() => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('/undo.html') && w.isVisible()), 'undo toast');
       await waitFor(() => !win.webContents.isLoading(), 'undo load');
-      assert.equal(win.isFocusable(), false); assert.deepEqual(win.getSize(), [280, 76]);
+      assert.equal(win.isFocusable(), false);
+      const [width, height] = win.getSize();
+      assert.ok(Math.abs(width - 280) <= 1 && Math.abs(height - 76) <= 1, 'fixed toast size allows one DIP of Windows rounding');
       const token = await waitFor(() => win.webContents.executeJavaScript('token'), 'opaque token');
       return { win, token };
     }
