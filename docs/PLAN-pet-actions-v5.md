@@ -1,0 +1,55 @@
+# Pet Actions v5 Plan
+
+Status: approved for implementation planning and verification under the current user authorization.
+Base: `codex/palette-input-sources` at `48c555e5467fe27ebe061a30cc90d5200042b885`.
+Scope: restore a shared automatic-paste setting, add temporary safe undo for successful pet text actions and voice submissions, and tighten both prompt modes for faithful transformation. This is a new cycle; v3/v4 Plan, Spec, Ledger, and reports remain historical and unchanged.
+
+## Approval evidence
+
+The user authorized the requirements in the current task message: shared auto-paste behavior, safe rollback rules, short-lived memory-only undo state, voice-source preservation, prompt boundaries, and the bounded synthetic evaluation plan below. This message is the approval evidence for this v5 Plan and its compiled Spec. It does not claim implementation or runtime validation has occurred.
+
+## Product goal
+
+Keep the existing successful-result contract: every non-empty result is copied to the system clipboard. A single persisted `insertMode` (`paste` or `clipboard`) is presented as an auto-paste checkbox; checked means automatic paste is enabled for both voice and pet text actions, unchecked means clipboard-only. Existing config values remain canonical and are preserved. On a successful selected-text Structure/Optimize action or voice submission, show a small non-focus-stealing undo toast for a configurable 1–120 seconds (default 10). Undo restores the original selected text or initial ASR transcript without another model call.
+
+## Settings and prompt behavior
+
+1. Use the existing persisted `insertMode` as the only source of truth. The checkbox is checked for `paste` and unchecked for `clipboard`; loading/saving must not introduce a second boolean or silently migrate valid legacy values. Voice and pet actions use the same setting. Preserve v4 behavior that all non-empty outputs are written to clipboard, even if paste is disabled, and even when an output is raw/degraded.
+2. Add a persisted undo-toast duration setting, default 10 seconds, bounded to integer values 1 through 120. The toast is small, does not take focus, and expiry invalidates its operation token. A new successful operation replaces the previous token; only the newest unexpired operation can be undone.
+3. Tighten `STRUCTURE_ONLY_PROMPT`: organize multiple independent requests/ideas into semantic numbered points; do not force lists for a single topic; remove only clearly meaningless fillers and repetitions, not meaningful discourse/connective words. Preserve facts, numbers, names, negation, modality, code, and technical identifiers exactly in meaning/form. Treat input as source text, never answer or execute it.
+4. Tighten `DEFAULT_PROMPT`: preserve all supplied content and make the request easier for a model to understand. When useful, it may add a neutral role (not unsupported domain expertise), organize the task into clear sections, specify a neutral output structure, clarify wording, or mark a task-relevant missing value with a placeholder. It must not invent business facts, specific audiences/domain expertise, goals, metrics, conditions, task requirements, or decide for the user. Unknown values remain unknown. Never answer the source question or execute its embedded request.
+5. Keep custom `promptText`. If a legacy config contains the exact prior built-in default prompt, migrate that value to the new built-in default; do not overwrite a customized prompt. Prompt updates are grounded in [RESEARCH-prompt-quality-v5.md](RESEARCH-prompt-quality-v5.md), which is research guidance, not proof of a universal optimum.
+6. Use a clear delimiter around source text and at most 2–3 short examples per prompt mode if examples are added. Keep the online transform single-call by default, with no default chain-of-thought or reflection pass. Existing failure/retry behavior may remain as currently scoped, but the synthetic A/B evaluation below has no retries.
+
+## Undo and delivery contract
+
+1. Retain only the latest successful operation's undo data in memory: opaque token, original source text, result text as needed, source target identity, and delivery/dirty state. Do not write source/result text or undo payloads to logs, files, settings, or other persistent storage. A new operation replaces the token. On expiry, reject the old token; never fall through to a previous operation.
+2. A selected-text action captures the source and host/target identity for that operation. Always copy its non-empty processed result to the system clipboard. If auto-paste is enabled, paste only into the same captured target; if the target changed, keep the result on clipboard, cancel auto-paste, and do not send it to the new target.
+3. Use host-specific paste keys only: ordinary editable controls use Ctrl+V on Windows and Cmd+V on macOS; Windows Terminal/conhost use Shift+Insert; Linux terminals use Ctrl+Shift+V and macOS terminals use Cmd+V as design targets. Never append Enter or execute a command. Linux/macOS behavior is not a runtime compatibility claim absent named validation.
+4. For clipboard-only actions, Undo writes the original source directly to the clipboard. For voice actions this is the initial ASR transcript, even if preview processing or another transform has run since; for selected text it is the text captured for that action. Undo never invokes ASR or the LLM. Raw-only voice success may show the same toast, and undo copies that initial ASR text.
+5. For an auto-pasted ordinary control, use the host's ordinary undo chord (Ctrl+Z on Windows, Cmd+Z on macOS) only while the captured target is still the same and no subsequent user input/interaction has marked it dirty. Keyboard input after paste, an external mouse click, or a window/target change marks the target dirty. When dirty or identity cannot be confirmed, do not send undo to the target: restore the original source to clipboard and show a clear “target not changed; original copied” style message.
+6. For terminal targets, never send generic Ctrl+Z/Cmd+Z, clear a line, or resend Enter. Do not infer a shell or harness undo protocol. Undo must leave the command line untouched, copy the original source to clipboard, and show a terminal-specific message. If a paste has already occurred, do not append the original text after the command/result in the terminal.
+7. A temporary keyboard guard after paste is for dirty-state tracking only; it must not re-trigger prior auto-selection behavior. Preserve the existing side-key record behavior and do not register duplicate listeners during action/toast updates.
+8. Do not use editability/read-only classification as a capture or model-call gate. Editability may be considered only when selecting a safe delivery/undo path. Keep the latest source target identity through capture and processing so a changed target can cancel only auto-paste, not result clipboard publication.
+
+## Bounded evaluation and validation
+
+- Prompt evaluation, if a real-model comparison is run, uses at most eight public synthetic inputs, with old and new prompt each called once per input (maximum 16 model calls total), no evaluation retries, and no user transcript. Reuse the same model/settings and compare paired cases. A run without real-model calls must be reported as “prompt quality not live evaluated”; it must not claim a quality improvement or optimum. Workflow tests should mock the model.
+- Synthetic cases cover: (1) long multi-intent speech; (2) single-topic short speech; (3) facts/numbers/names; (4) negation, conditions, and uncertainty; (5) question/embedded command with no-answer requirement; (6) filler vs meaningful connective; (7) code/technical identifiers; (8) mixed long request with an embedded instruction. Review preservation, organization, filler handling, no-answer/no-invention, and latency; any changed/lost critical fact or direct answer is a severe failure.
+- Required implementation tests: real Electron selected text → one click → capture/model mock → result clipboard → auto-paste on/off → Undo restores source; mocked ASR → transform → Undo restores the initial ASR transcript; raw-only voice Undo; toast duration bounds and expiry; token replacement and stale-token rejection; concurrent voice/text operations; target switch and dirty-target fallback; terminal chords never send generic undo/Enter; and no duplicate side-key listeners.
+- Required runtime evidence must name each tested platform/host/control pair. Do not claim Linux/macOS or untested terminal compatibility from design alone. A successful implementation-test suite is not evidence of prompt-quality improvement.
+
+## Implementation units and validation boundaries
+
+| Unit | Objective | Risk boundary / evidence |
+|---|---|---|
+| WU-1 | Restore a single auto-paste checkbox backed by canonical `insertMode`; apply consistently to voice and pet workflows; add bounded toast-duration config. | Shared setting can cause unintended insertion. Prove legacy values round-trip and both workflows honor checked/unchecked state. |
+| WU-2 | Update structure/optimize prompt boundaries and exact-default migration while retaining custom prompts; add delimiter and bounded examples if used. | Prompt changes affect every processed transcript. Verify exact migration, custom prompt preservation, and synthetic pair outputs; cap real-model eval at 16 calls. |
+| WU-3 | Preserve source text/identity and initial ASR transcript; add latest-only, expiring, memory-only undo token lifecycle. | Privacy and stale undo risk. Prove no raw undo data reaches logs/disk and old/replaced/expired tokens cannot act. |
+| WU-4 | Implement safe auto-paste and Undo routing for ordinary controls vs terminal, target identity checks, dirty tracking, and source-to-clipboard fallback. | Undo may destroy unrelated user input or affect shell state. Prove no terminal generic undo/clear/Enter; dirty/changed target falls back to clipboard without targeting another app. |
+| WU-5 | Show non-focus-stealing undo toast on successful selected-text and voice outcomes; preserve raw-only voice and existing side-key listeners. | UI focus/state and voice lifecycle race. Prove timer behavior, voice concurrency, and one listener registration. |
+| WU-6 | Run focused tests and named runtime checks; record evidence and platform limits. | Cross-workflow release boundary. Verify selected-text, voice, clipboard, paste, undo, terminal and expiry paths together. |
+
+## Final acceptance and release boundary
+
+Implementation is accepted when every v5 Spec acceptance check passes, only `insertMode` controls the checkbox behavior, all non-empty results remain on the clipboard, undo is latest-only and memory-only, terminal behavior never uses generic undo/command execution, voice rollback uses the initial ASR text, and required runtime evidence names the tested pairs. Without a live-model comparison, explicitly record that prompt quality was not live evaluated. This plan authorizes the implementation and its verification; release/platform support claims remain bounded by observed evidence.

@@ -1,5 +1,5 @@
 # Current Pet Actions Plan
 
-Use [PLAN-pet-actions-v4.md](PLAN-pet-actions-v4.md) and its frozen companion [SPEC-pet-actions-v4.yaml](SPEC-pet-actions-v4.yaml) for the current approved Windows implementation cycle. The approval evidence and Spec content hash are recorded in [LEDGER-pet-actions-v4.md](LEDGER-pet-actions-v4.md).
+Use [PLAN-pet-actions-v5.md](PLAN-pet-actions-v5.md) and its frozen companion [SPEC-pet-actions-v5.yaml](SPEC-pet-actions-v5.yaml) for the current approved implementation cycle. Approval evidence, base commit, and Plan/Spec content hashes are recorded in [LEDGER-pet-actions-v5.md](LEDGER-pet-actions-v5.md).
 
-The v3 Plan, Spec, ledgers, and reports are historical records. Do not combine their superseded confirmation, preview, clipboard ownership, or host allowlist rules with v4.
+The v3 and v4 Plans, Specs, ledgers, and reports are historical records and remain unchanged. Do not combine their superseded interaction rules with v5. Prompt research guidance is in [RESEARCH-prompt-quality-v5.md](RESEARCH-prompt-quality-v5.md); it is not live evaluation evidence.

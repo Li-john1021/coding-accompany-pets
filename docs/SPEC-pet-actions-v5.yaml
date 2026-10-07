@@ -1,0 +1,180 @@
+spec_version: "1"
+goal: "Unify voice/pet auto-paste through the existing insertMode setting and add safe, latest-only temporary undo while preserving source text and tightening faithful prompts."
+source:
+  plan_ref: "docs/PLAN-pet-actions-v5.md"
+  plan_version: "v5, based on 48c555e5467fe27ebe061a30cc90d5200042b885"
+  approval_evidence: "Current user task message explicitly authorizing the enumerated v5 decisions and this plan/spec/ledger/current-pointer documentation cycle."
+requirements:
+  - id: REQ-001
+    statement: "The auto-paste checkbox is a view of canonical insertMode only; paste means checked, clipboard means unchecked, existing valid values are preserved, and both voice and pet actions honor the setting."
+    source_refs: ["Settings and prompt behavior 1"]
+  - id: REQ-002
+    statement: "Every successful non-empty operation result remains on the system clipboard, whether or not auto-paste occurs and whether the result is normal, raw, or degraded."
+    source_refs: ["Product goal", "Settings and prompt behavior 1", "Undo and delivery contract 2"]
+  - id: REQ-003
+    statement: "Undo-toast duration defaults to 10 seconds and is persisted/clamped to integer seconds from 1 through 120; the toast does not take focus."
+    source_refs: ["Product goal", "Settings and prompt behavior 2"]
+  - id: REQ-004
+    statement: "Structure prompts organize multiple independent intents, avoid forcing lists for one topic, remove only semantically empty fillers/repetition, preserve supplied facts and form, and never answer/execute source content."
+    source_refs: ["Settings and prompt behavior 3"]
+  - id: REQ-005
+    statement: "Optimize prompts may add a neutral role, clearer section/output organization, wording clarification, and task-relevant missing-value placeholders to improve model understandability; they may not invent business facts, metrics, conditions, requirements, unsupported expertise/audience, decide for the user, or answer/execute the source request; custom prompts survive except an exact match of the old built-in default."
+    source_refs: ["Settings and prompt behavior 4", "Settings and prompt behavior 5"]
+  - id: REQ-006
+    statement: "Source text is delimited; online prompting adds no default CoT/reflection or extra call, and any added examples are limited to 2–3 per mode."
+    source_refs: ["Settings and prompt behavior 6"]
+  - id: REQ-007
+    statement: "Undo data for only the latest successful operation is held in memory; a new operation replaces it, expiry invalidates it, and no source/result/undo payload is written to logs, disk, settings, or persistent storage."
+    source_refs: ["Undo and delivery contract 1"]
+  - id: REQ-008
+    statement: "Selected-text capture retains source and target identity; result clipboard publication always occurs, while auto-paste is canceled if the target changed and the result is never sent to that new target."
+    source_refs: ["Undo and delivery contract 2", "Undo and delivery contract 8"]
+  - id: REQ-009
+    statement: "Paste uses host-specific chords, never appends Enter or executes a command, and unverified Linux/macOS design chords are not represented as runtime support."
+    source_refs: ["Undo and delivery contract 3"]
+  - id: REQ-010
+    statement: "Clipboard-only Undo copies the operation's original source; voice Undo uses immutable initial ASR text (including raw-only success); no Undo path calls the model or ASR."
+    source_refs: ["Undo and delivery contract 4"]
+  - id: REQ-011
+    statement: "Ordinary-control host undo is allowed only when target identity is unchanged and the target is not dirty; keyboard input, external click, or window/target change marks dirty, and uncertain/dirty state falls back to original-source clipboard with a clear no-target-change note."
+    source_refs: ["Undo and delivery contract 5"]
+  - id: REQ-012
+    statement: "Terminal Undo never sends generic Ctrl+Z/Cmd+Z, clears a line, resends Enter, guesses shell undo, or appends source after terminal content; it copies source to clipboard and displays a terminal-specific message."
+    source_refs: ["Undo and delivery contract 6"]
+  - id: REQ-013
+    statement: "Post-paste keyboard guarding only tracks dirty state, never re-triggers auto-selection behavior; existing side-key recording remains and listeners are not duplicated."
+    source_refs: ["Undo and delivery contract 7"]
+  - id: REQ-014
+    statement: "Editability is not a capture/model-call gate and may only inform safe delivery/undo; target changes cancel only auto-paste, not result clipboard publication."
+    source_refs: ["Undo and delivery contract 8"]
+  - id: REQ-015
+    statement: "A real-model prompt comparison, if run, uses at most 8 synthetic inputs, one old and one new call per input, at most 16 calls, no retries, and no user transcript; without such calls, report no live prompt evaluation and no quality-improvement claim."
+    source_refs: ["Bounded evaluation and validation 1-2"]
+  - id: REQ-016
+    statement: "Required verification covers selected-text and voice rollback flows, raw-only voice, duration/token/expiry, target dirty/switch, concurrency, terminal keys, and side-key listener uniqueness, with runtime claims limited to named tested pairs."
+    source_refs: ["Bounded evaluation and validation 3-4"]
+acceptance:
+  - id: AC-001
+    proves: [REQ-001, REQ-002]
+    check: "Settings migration/round-trip and workflow tests prove the checkbox maps only to insertMode; voice and pet actions both auto-paste when paste and remain clipboard-only when clipboard, with every non-empty result on clipboard."
+    evidence: "Settings, voice and pet action test report"
+  - id: AC-002
+    proves: [REQ-003, REQ-007]
+    check: "Tests prove default/range/clamping, non-focus behavior, newest-token replacement, expiry rejection, memory-only storage, and absence of raw/result undo payloads in logs or persistent writes."
+    evidence: "Undo lifecycle and privacy test report"
+  - id: AC-003
+    proves: [REQ-004, REQ-005, REQ-006]
+    check: "Prompt source review proves exact-default-only migration and custom prompt retention, delimited inputs, explicit structure/optimize boundaries, no default extra reasoning call, and no more than 2–3 examples per mode; synthetic cases check the listed preservation/no-answer properties."
+    evidence: "Prompt diff, migration tests, and synthetic evaluation ledger"
+  - id: AC-004
+    proves: [REQ-008, REQ-009, REQ-014]
+    check: "Capture/delivery tests prove source-target retention, clipboard result publication after target switch, auto-paste cancellation on switch, no editability capture gate, and host-specific paste chords with no Enter."
+    evidence: "Target identity and paste routing test report"
+  - id: AC-005
+    proves: [REQ-010, REQ-011, REQ-012]
+    check: "Electron workflow tests prove selected-text Undo restores captured selection, voice/raw-only Undo restores initial ASR, no model/ASR call occurs during Undo, ordinary host undo only runs for unchanged clean target, and terminal/dirty/uncertain targets use clipboard fallback without terminal mutation."
+    evidence: "Selected-text and voice Undo integration report"
+  - id: AC-006
+    proves: [REQ-013, REQ-016]
+    check: "Tests/runtime checks prove dirty tracking does not re-trigger selection actions, side-key listeners register once, concurrency/timers behave, and each external compatibility claim lists the tested host/control pair."
+    evidence: "UI/input lifecycle and named runtime matrix"
+  - id: AC-007
+    proves: [REQ-015]
+    check: "Evaluation record lists the synthetic set, exact number of old/new calls, retries (zero), model/settings if called, and per-case results; otherwise it states that prompt quality was not live evaluated and makes no improvement/optimality claim."
+    evidence: "Synthetic evaluation section in implementation ledger"
+dependencies:
+  - id: DEP-001
+    statement: "Existing persisted config field insertMode and settings renderer controls; preserve paste/clipboard values."
+    status: verified
+  - id: DEP-002
+    statement: "Existing pet-action capture/workflow and result clipboard publication."
+    status: verified
+  - id: DEP-003
+    statement: "Existing voice pipeline, preview path, and initial ASR transcript lifecycle."
+    status: verified
+  - id: DEP-004
+    statement: "Host identity, foreground target change and dirty-input tracking primitives sufficient to route paste and undo safely."
+    status: assumed
+  - id: DEP-005
+    statement: "Platform-specific paste and undo key adapters, including terminal detection."
+    status: assumed
+assumptions:
+  - id: ASM-001
+    statement: "The app can retain a stable identity for the captured host target through processing and observe enough user input/window changes to conservatively mark it dirty."
+    validation: "WU-3/WU-4 must validate target identity and dirty-state behavior; any uncertain state takes the clipboard-only fallback."
+  - id: ASM-002
+    statement: "A non-focus-stealing toast can remain actionable without changing the foreground application or target identity."
+    validation: "WU-5 tests focus/foreground identity before and after toast display and Undo activation."
+invariants:
+  - id: INV-001
+    statement: "Every non-empty successful result remains in system clipboard regardless of auto-paste outcome."
+  - id: INV-002
+    statement: "Undo state is latest-only, memory-only and expiring; Undo never invokes ASR/LLM."
+  - id: INV-003
+    statement: "Terminal safety takes precedence over automatic rollback; no generic undo, line clearing, or command execution is permitted."
+  - id: INV-004
+    statement: "Voice Undo always refers to the first ASR text for that submission, never a later preview/edit/transform buffer."
+  - id: INV-005
+    statement: "Existing side-key recording behavior remains registered once and voice/text busy guards remain effective."
+forbidden_effects:
+  - id: FORB-001
+    statement: "No separate auto-paste boolean that can conflict with canonical insertMode; no loss/rewriting of valid legacy insertMode or customized promptText."
+  - id: FORB-002
+    statement: "No raw text, result text or undo payload in logs, files, settings or other persistent storage."
+  - id: FORB-003
+    statement: "No stale-token Undo, Undo of a previous operation after replacement/expiry, or additional model/ASR request from Undo."
+  - id: FORB-004
+    statement: "No paste into a changed target; no unsafe Ctrl+Z/Cmd+Z after target dirty/change; no generic terminal undo, line clear, Enter, command execution, or appended source text."
+  - id: FORB-005
+    statement: "No editability/read-only gate on capture/model invocation; no clipboard-only path that discards the successful result."
+  - id: FORB-006
+    statement: "No default CoT/reflection/multi-call prompt path, no user transcript in prompt evaluation, and no unsubstantiated quality improvement or universal optimality claim."
+implementation_units:
+  - id: WU-1
+    objective: "Unify auto-paste setting and duration setting across voice and pet workflows."
+    depends_on: [DEP-001, DEP-002, DEP-003]
+    checks: [AC-001, AC-002]
+  - id: WU-2
+    objective: "Tighten both built-in prompts, delimiter/examples policy, and exact-old-default migration while retaining custom prompt text."
+    depends_on: [DEP-003]
+    checks: [AC-003, AC-007]
+  - id: WU-3
+    objective: "Capture selected source/target and immutable initial ASR text; implement latest-only expiring memory undo tokens."
+    depends_on: [DEP-002, DEP-003]
+    checks: [AC-002, AC-004, AC-005]
+  - id: WU-4
+    objective: "Implement host-specific paste and conservative dirty/target-aware Undo routing with clipboard-only and terminal fallbacks."
+    depends_on: [DEP-004, DEP-005]
+    checks: [AC-004, AC-005]
+  - id: WU-5
+    objective: "Show non-focus-stealing success Undo toast for selected-text and voice paths; preserve side-key and concurrency behavior."
+    depends_on: [DEP-001, DEP-002, DEP-003]
+    checks: [AC-002, AC-006]
+  - id: WU-6
+    objective: "Run scoped tests, optional bounded synthetic live evaluation, named runtime matrix, and record evidence/limits."
+    depends_on: [WU-1, WU-2, WU-3, WU-4, WU-5]
+    checks: [AC-001, AC-002, AC-003, AC-004, AC-005, AC-006, AC-007]
+validation_boundaries:
+  - id: VB-001
+    trigger: "Shared setting changes affect voice and pet insertion, risking unexpected host mutations or dropped clipboard results."
+    scope: [WU-1, WU-5]
+    evidence: "Round-trip migration plus voice/pet checked/unchecked workflow tests and non-empty clipboard assertions."
+  - id: VB-002
+    trigger: "Undo crosses privacy, expiry, and operation replacement boundaries."
+    scope: [WU-3, WU-5]
+    evidence: "Memory/log/disk audit and tests for raw source, initial ASR, token replacement, expiry, raw-only voice, and no model calls."
+  - id: VB-003
+    trigger: "Wrong-target paste or undo may overwrite another app's input; terminal keystrokes may execute or alter a command."
+    scope: [WU-3, WU-4]
+    evidence: "Changed-target/dirty-target and named terminal routing tests proving clipboard fallback and zero generic undo/clear/Enter."
+  - id: VB-004
+    trigger: "Prompt changes can lose or invent content or answer source questions."
+    scope: [WU-2, WU-6]
+    evidence: "Prompt diff, migration tests, up to 8 paired public synthetic cases/16 total calls if live evaluation occurs, otherwise explicit no-live-eval record."
+  - id: VB-005
+    trigger: "Toast lifetime and hooks/listeners interact with voice state, focus, and side-key recording."
+    scope: [WU-5, WU-6]
+    evidence: "Timer/focus/concurrency tests and proof that existing side-key listener is not duplicated."
+final_acceptance:
+  proves: [REQ-001, REQ-002, REQ-003, REQ-004, REQ-005, REQ-006, REQ-007, REQ-008, REQ-009, REQ-010, REQ-011, REQ-012, REQ-013, REQ-014, REQ-015, REQ-016]
+  release_boundary: "Implementation may be handed off after all acceptance evidence is recorded; platform/host support and prompt-quality claims are limited to named runtime/evaluation evidence."
