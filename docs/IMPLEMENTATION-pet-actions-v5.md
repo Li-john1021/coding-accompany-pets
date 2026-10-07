@@ -31,4 +31,18 @@ This implementation agent made zero provider calls, did not access user provider
 
 ## Remaining release checks
 
-Independent review and clean runtime testing remain required, especially actual editable-host replacement/Undo, focus preservation, input dirtiness and named terminal controls. The current implementation is reviewable; unit success is not a substitute for that runtime release boundary.
+Independent review and clean runtime testing remain required, especially input dirtiness and named terminal controls. The current implementation is reviewable; unit success is not a substitute for that runtime release boundary.
+
+## Runtime repair and successful follow-up
+
+The initial foreground failures above describe earlier attempts. With the user allowing desktop tests, subsequent execution reached a genuine native dispatch defect: the generated PowerShell used the unsupported `[ushort[]]` alias, so C# was never invoked. It now uses `[uint16[]]` (and `[uint32[]]` event flags). Generic native status output distinguishes rejected targets, failed injection and exceptions without source text. All identity checks remain intact.
+
+Voice delivery now records `kind: voice` in memory. On a clean, unchanged, affirmatively writable ordinary target, voice Undo restores the initial ASR clipboard and dispatches Ctrl+Z followed by Ctrl+V in a single native input packet. Selection Undo retains its single Ctrl+Z. Terminal/dirty/changed/unknown-writable paths remain clipboard-only. No Undo path invokes ASR/model or sends Enter. Toast positioning sets the intended small bounds when moving across displays.
+
+The final production-script E2E rerun passed after diagnostic script rewrites were removed. Named observed pairs:
+
+- Windows / Electron BrowserWindow textarea: real selection copy, result clipboard, non-focusable toast, clipboard Undo, and real Ctrl+V replacement. This fixture exposes only a UIA Window, not affirmative writable evidence; Undo correctly leaves the processed target unchanged and restores only the source clipboard.
+- Windows / existing native Win32 Edit fixture: real selection replacement followed by Ctrl+Z restores the captured selection; voice result paste followed by the single restoration packet leaves the input box equal to the initial synthetic ASR transcript.
+- Windows / Electron preview UI with mocked ASR: edited/reprocessed preview finalization, raw-only submission and short-preview bypass each restore the immutable initial ASR to the clipboard with no new model/ASR calls.
+
+All 22 main unit files and Live2D tests passed again after this repair. Frozen Spec SHA-256 remains unchanged. The passing fixture includes test-only activation/physical click restricted to its own source window and bounds; production delivery does not activate or refocus windows. Terminal/macOS/Linux runtime compatibility remains unclaimed.

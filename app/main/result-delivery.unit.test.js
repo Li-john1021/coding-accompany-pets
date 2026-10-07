@@ -33,6 +33,14 @@ function fixture() {
     assert.deepEqual(f.state.chords, ['ctrl-v']);
   }
   {
+    const f = fixture(); await f.run({ kind: 'voice', original: 'initial ASR', text: 'processed voice' });
+    assert.equal((await f.delivery.undo(f.token())).restored, true);
+    assert.deepEqual(f.state.chords, ['ctrl-v', 'voice-restore']); assert.equal(f.state.writes.at(-1), 'initial ASR');
+    const script = buildTargetKeysScript('voice-restore', target);
+    assert.match(script, /\[uint16\[\]\]@\(17,90,90,17,17,86,86,17\)/);
+    assert.doesNotMatch(script, /\[ushort\[\]\]/);
+  }
+  {
     const f = fixture(); f.state.target = { ...target, readOnly: undefined };
     await f.run(); await f.delivery.undo(f.token());
     assert.deepEqual(f.state.chords, ['ctrl-v'], 'unknown editability permits opt-in paste but never generic undo');

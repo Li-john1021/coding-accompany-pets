@@ -339,7 +339,7 @@ function registerIpc() {
         const skip = Number(config.load().previewSkipChars) || 12;
         if ((result.raw || '').trim().length < skip) {
           const r2 = await pipeline.processText(result.raw, 'default', setState);
-          const ins = await deliverResult({ original: result.raw, text: r2.text, target, isCurrent });
+          const ins = await deliverResult({ original: result.raw, text: r2.text, target, kind: 'voice', isCurrent });
           if (!isCurrent()) return { ok: false, voiceSuperseded: true };
           const out = { raw: result.raw, polished: r2.text, mode: r2.mode, note: r2.note, ...ins };
           setState('done');
@@ -350,7 +350,7 @@ function registerIpc() {
         petBroadcast('v2p:toast', { text: '请在预览卡中选择处理方式' });
         return { ok: true, ...result, preview: true };
       }
-      const delivery = await deliverResult({ original: result.raw, text: result.polished, target, isCurrent });
+      const delivery = await deliverResult({ original: result.raw, text: result.polished, target, kind: 'voice', isCurrent });
       if (!isCurrent()) return { ok: false, voiceSuperseded: true };
       const out = { ...result, ...delivery, note: [result.note, delivery.note].filter(Boolean).join('；') };
       petBroadcast('v2p:result', out);
@@ -938,7 +938,7 @@ function showUndoToast(payload) {
   const win = undoWin;
   const display = require('electron').screen.getDisplayNearestPoint(require('electron').screen.getCursorScreenPoint());
   const area = display.workArea;
-  win.setPosition(area.x + area.width - 296, area.y + area.height - 92);
+  win.setBounds({ x: area.x + area.width - 296, y: area.y + area.height - 92, width: 280, height: 76 });
   const show = () => { if (!win.isDestroyed() && undoToastPayload) { win.webContents.send('v2p:undo-show', undoToastPayload); win.showInactive(); } };
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', show);
   else show();
@@ -1000,7 +1000,7 @@ ipcMain.handle('v2p:preview-insert', async (_e, { text, copyOnly }) => {
   if (previewWin && !previewWin.isDestroyed()) previewWin.hide();
   voiceSubmissionActive = true;
   try {
-    const result = await deliverResult({ original: session.initialRaw, text: String(text || ''), target: session.target,
+    const result = await deliverResult({ original: session.initialRaw, text: String(text || ''), target: session.target, kind: 'voice',
       insertMode: copyOnly ? 'clipboard' : config.load().insertMode });
     session.delivered = true;
     return { ok: true, ...result };

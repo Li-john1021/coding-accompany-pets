@@ -33,12 +33,14 @@ function fixture() {
   {
     const f = fixture(); const result = await f.call('submit', { audio: [1], options: { mode: 'none' } });
     assert.equal(result.ok, true); assert.equal(f.deliveries.length, 1); assert.equal(f.deliveries[0].original, ' initial raw ASR\n');
+    assert.equal(f.deliveries[0].kind, 'voice');
     assert.equal(f.deliveries[0].text, 'processed voice'); assert.equal(f.context.voiceSubmissionActive, false);
   }
   {
     const f = fixture(); f.cfg.previewEnabled = true; f.cfg.previewSkipChars = 120;
     await f.call('submit', { audio: [1], options: {} });
     assert.equal(f.deliveries.length, 1); assert.equal(f.deliveries[0].original, ' initial raw ASR\n');
+    assert.equal(f.deliveries[0].kind, 'voice');
     assert.equal(f.deliveries[0].text, 'processed  initial raw ASR\n');
   }
   {
@@ -49,6 +51,7 @@ function fixture() {
     assert.equal(f.context.pendingPreview.initialRaw, ' initial raw ASR\n');
     const result = await f.call('preview-insert', { text: 'final edit', copyOnly: true });
     assert.equal(result.ok, true); assert.equal(f.deliveries[0].original, ' initial raw ASR\n');
+    assert.equal(f.deliveries[0].kind, 'voice');
     assert.equal(f.deliveries[0].insertMode, 'clipboard');
     assert.equal((await f.call('preview-insert', { text: 'duplicate' })).ok, false);
   }

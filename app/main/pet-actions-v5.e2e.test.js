@@ -1,5 +1,5 @@
 // Windows runtime fixture: real production IPC/capture/native paste+undo, synthetic model/ASR.
-const assert = require('assert'); const fs = require('fs'); const os = require('os'); const path = require('path'); const { spawn } = require('child_process');
+const assert = require('assert'); const fs = require('fs'); const os = require('os'); const path = require('path'); const { spawn, execFileSync } = require('child_process');
 const ARG = '--v5-fixture'; const PREFIX = 'V5_E2E:';
 async function waitFor(predicate, label) {
   const end = Date.now() + 18000;
@@ -15,12 +15,28 @@ async function fixture() {
   const pipeline = require('./pipeline'); let modelCalls = 0, asrCalls = 0; let nextRaw = 'Initial synthetic ASR';
   const captureModule = require('./pet-action-capture'); const snapshots = [];
   const { runPowerShellFile } = require('./powershell-file');
+  const nativeKeys = [];
+  require('./powershell-file').runPowerShellFile = (script, options, callback) => runPowerShellFile(script, options, (error, stdout, stderr) => {
+    if (script.includes('public class V2PTargetKeys')) nativeKeys.push({ error: error ? String(error.message).slice(0, 1600) : null, stdout: String(stdout || ''), stderr: String(stderr || '').slice(0, 1600) });
+    callback(error, stdout, stderr);
+  });
+  const snapshotDelivery = captureModule.getWindowsSnapshot;
+  captureModule.getWindowsSnapshot = async (...args) => {
+    const result = await snapshotDelivery(...args);
+    snapshots.push({ delivery: true, inspectWritable: !!args[1], target: result && result.target });
+    return result;
+  };
   const createAdapters = captureModule.createWindowsAdapters;
+  let nativeReady = null;
+  let nativeChild = null;
+  let nativeStop = null;
   captureModule.createWindowsAdapters = () => {
     const adapters = createAdapters(); const snapshot = adapters.snapshot;
     return { ...adapters, snapshot: async (...args) => {
       const identity = await snapshot(false);
-      if (!source || !identity || identity.target.hwnd !== Number(source.getNativeWindowHandle().readBigUInt64LE())) return null;
+      const ownElectron = source && identity && identity.target.hwnd === Number(source.getNativeWindowHandle().readBigUInt64LE());
+      const ownNative = nativeReady && identity && identity.target.pid === nativeReady.pid && identity.target.focusHwnd === nativeReady.hwnd;
+      if (!ownElectron && !ownNative) return null;
       const result = args[0] ? await snapshot(...args) : identity;
       snapshots.push(result && { target: result.target, sequence: result.sequence }); return result;
     } };
@@ -34,6 +50,7 @@ async function fixture() {
   let source;
   try {
     require('./main'); await app.whenReady();
+    app.setAccessibilitySupportEnabled(true);
     const pet = await waitFor(() => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('/pet.html')), 'pet');
     await waitFor(() => !pet.webContents.isLoading(), 'pet load');
     source = new BrowserWindow({ x: 50, y: 50, width: 600, height: 200, show: false, alwaysOnTop: true, webPreferences: { contextIsolation: true, nodeIntegration: false } });
@@ -42,6 +59,8 @@ async function fixture() {
       await source.webContents.executeJavaScript(`(() => { const f=document.querySelector('textarea'); f.value=${JSON.stringify(text)};f.focus();f.select(); })()`);
       source.show(); source.focus(); await waitFor(() => BrowserWindow.getFocusedWindow() === source, 'source focus');
       const nativeHandle = Number(source.getNativeWindowHandle().readBigUInt64LE());
+      const contentBounds = source.getContentBounds();
+      const clickPoint = require('electron').screen.dipToScreenPoint({ x: contentBounds.x + 24, y: contentBounds.y + 24 });
       await new Promise((resolve, reject) => runPowerShellFile(`
 Add-Type -TypeDefinition @"
 using System;using System.Runtime.InteropServices;
@@ -52,12 +71,15 @@ public class V5FixtureFocus {
  [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a,uint b,bool on);
  [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
  [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
- public static void Focus(long hwnd) { uint p;var current=GetCurrentThreadId();var foreground=GetWindowThreadProcessId(GetForegroundWindow(),out p);var target=GetWindowThreadProcessId((IntPtr)hwnd,out p);AttachThreadInput(current,foreground,true);AttachThreadInput(current,target,true);BringWindowToTop((IntPtr)hwnd);SetForegroundWindow((IntPtr)hwnd);AttachThreadInput(current,target,false);AttachThreadInput(current,foreground,false); }
+ [DllImport("user32.dll")] static extern bool SetCursorPos(int x,int y);
+ [DllImport("user32.dll")] static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
+ public static void Focus(long hwnd,int x,int y) { uint p;var current=GetCurrentThreadId();var foreground=GetWindowThreadProcessId(GetForegroundWindow(),out p);var target=GetWindowThreadProcessId((IntPtr)hwnd,out p);AttachThreadInput(current,foreground,true);AttachThreadInput(current,target,true);BringWindowToTop((IntPtr)hwnd);SetForegroundWindow((IntPtr)hwnd);AttachThreadInput(current,target,false);AttachThreadInput(current,foreground,false); if(GetForegroundWindow().ToInt64()==hwnd) { SetCursorPos(x,y); mouse_event(2,0,0,0,UIntPtr.Zero);mouse_event(4,0,0,0,UIntPtr.Zero); } }
 }
 "@
-[V5FixtureFocus]::Focus(${nativeHandle})
+[V5FixtureFocus]::Focus(${nativeHandle},${clickPoint.x},${clickPoint.y})
 `, { timeout: 5000, maxBuffer: 4096 }, (error) => error ? reject(error) : resolve()));
       await waitFor(async () => { const snapshot = await captureModule.getWindowsSnapshot(); return snapshot && snapshot.target.hwnd === nativeHandle; }, 'native foreground source');
+      source.webContents.focus();
       await source.webContents.executeJavaScript("(() => {const f=document.querySelector('textarea');f.focus();f.setSelectionRange(0,f.value.length);})()");
       await new Promise((r) => setTimeout(r, 250));
     }
@@ -68,7 +90,7 @@ public class V5FixtureFocus {
       await waitFor(() => !win.webContents.isLoading(), 'undo load');
       assert.equal(win.isFocusable(), false);
       const [width, height] = win.getSize();
-      assert.ok(Math.abs(width - 280) <= 1 && Math.abs(height - 76) <= 1, 'fixed toast size allows one DIP of Windows rounding');
+      assert.ok(Math.abs(width - 280) <= 1 && Math.abs(height - 76) <= 1, 'fixed toast size allows one DIP of Windows rounding: ' + JSON.stringify({ width, height }));
       const token = await waitFor(() => win.webContents.executeJavaScript('token'), 'opaque token');
       return { win, token };
     }
@@ -93,11 +115,44 @@ public class V5FixtureFocus {
     assert.equal(await value(), original); await clickUndo(); assert.equal(clipboard.readText(), capturedOriginal);
     // Actual native Ctrl+V replacement and Ctrl+Z restore, with mouseRecord disabled.
     await invoke("window.v2p.saveConfig({insertMode:'paste'})"); await select('Native editable selection');
-    const textResult = await invoke("window.v2p.petAction('optimize')"); assert.equal(textResult.inserted, true);
+    const textResult = await invoke("window.v2p.petAction('optimize')");
+    assert.equal(textResult.inserted, true, JSON.stringify({ result: textResult, snapshots, nativeKeys }));
     await waitFor(async () => (await value()) === 'Processed Native editable selection', 'native paste');
     assert.equal(BrowserWindow.getFocusedWindow(), source);
-    await clickUndo(); await waitFor(async () => (await value()) === 'Native editable selection', 'native undo');
+    await clickUndo();
+    assert.equal(await value(), 'Processed Native editable selection', 'unknown writable evidence leaves Electron target unchanged on Undo');
     assert.equal(clipboard.readText(), 'Native editable selection');
+    // A native Edit supplies affirmative writable evidence; prove actual host Undo.
+    const directory = process.env.V2P_V5_USER_DATA;
+    const readyFile = path.join(directory, 'native-ready.json'); nativeStop = path.join(directory, 'native-stop');
+    const focusRequest = path.join(directory, 'native-focus'); const focusAck = path.join(directory, 'native-focus-ack');
+    const nativeExe = path.join(directory, 'NativeEditFixture.exe');
+    execFileSync(path.join(process.env.WINDIR, 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'), ['/nologo', '/target:winexe', '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', '/out:' + nativeExe, path.join(__dirname, 'fixtures', 'palette-probe-runtime-win32-edit.cs')], { windowsHide: true, timeout: 20000 });
+    nativeChild = spawn(nativeExe, [readyFile, nativeStop, focusRequest, focusAck, path.join(directory, 'native-keep-front')], { windowsHide: true, stdio: 'ignore' });
+    nativeReady = await waitFor(() => fs.existsSync(readyFile) && JSON.parse(fs.readFileSync(readyFile, 'utf8')), 'native Edit ready');
+    await waitFor(async () => { const snapshot = await captureModule.getWindowsSnapshot(); return snapshot && snapshot.target.pid === nativeReady.pid && snapshot.target.focusHwnd === nativeReady.hwnd; }, 'native Edit foreground');
+    const { buildNativeEditPowerShell } = require('./win32-edit');
+    async function nativeScript(code) { return new Promise((resolve, reject) => runPowerShellFile(buildNativeEditPowerShell() + '\n' + code, { timeout: 5000, maxBuffer: 8192 }, (error, stdout) => error ? reject(error) : resolve(String(stdout).trim()))); }
+    const nativeText = () => nativeScript(`[V2PNativeEdit]::ReadText([IntPtr]${nativeReady.hwnd})`);
+    const nativeOriginal = await nativeText(); const nativeSelection = nativeOriginal.slice(8, 74);
+    clipboard.writeText('native selection sentinel');
+    const nativeResult = await invoke("window.v2p.petAction('structure')"); assert.equal(nativeResult.inserted, true, JSON.stringify({ result: nativeResult, snapshots, nativeKeys }));
+    assert.equal(await nativeText(), nativeOriginal.slice(0, 8) + 'Processed ' + nativeSelection + nativeOriginal.slice(74));
+    await clickUndo(); await waitFor(async () => (await nativeText()) === nativeOriginal, 'native Edit selection Undo');
+    // Empty the same own Edit without keyboard input, then use voice delivery + restoration packet.
+    await nativeScript(`
+Add-Type -TypeDefinition @"
+using System;using System.Runtime.InteropServices;
+public class V5OwnEdit { [DllImport("user32.dll",CharSet=CharSet.Unicode,EntryPoint="SendMessageW")] public static extern IntPtr SetText(IntPtr h,uint m,IntPtr w,string text); }
+"@
+[void][V5OwnEdit]::SetText([IntPtr]${nativeReady.hwnd},12,[IntPtr]::Zero,'')
+`);
+    nextRaw = 'initial synthetic ASR restored in Edit';
+    const voicePaste = await invoke("window.v2p.submit([1],'audio/wav',{mode:'structure'})"); assert.equal(voicePaste.inserted, true);
+    assert.equal(await nativeText(), 'Voice processed result');
+    await clickUndo(); await waitFor(async () => (await nativeText()) === nextRaw, 'native Edit voice Undo restores ASR in target');
+    fs.writeFileSync(nativeStop, 'stop');
+    await waitFor(() => nativeChild.exitCode !== null, 'native Edit close'); nativeReady = null;
     // Voice's immutable initial source survives preview editing and a second transform.
     await invoke("window.v2p.saveConfig({insertMode:'clipboard',previewEnabled:true,previewSkipChars:1})");
     await select('Voice target'); nextRaw = ' immutable initial synthetic ASR\n';
@@ -116,9 +171,9 @@ public class V5FixtureFocus {
     await invoke("window.v2p.saveConfig({previewEnabled:true,previewSkipChars:120})"); await select('short target'); nextRaw = 'short ASR';
     await invoke("window.v2p.submit([1],'audio/wav',{})"); assert.equal(clipboard.readText(), 'Processed ' + nextRaw);
     await clickUndo(); assert.equal(clipboard.readText(), nextRaw);
-    console.log(PREFIX + JSON.stringify({ ok: true, host: 'Windows Electron BrowserWindow editable textarea', text: 'real native capture/paste/undo', voice: 'mock ASR: preview final, raw-only, preview skip', modelCalls, asrCalls }));
+    console.log(PREFIX + JSON.stringify({ ok: true, hosts: ['Windows Electron BrowserWindow textarea (unknown writable: clipboard Undo)', 'Windows native Win32 Edit (writable: selection Ctrl+Z, voice Ctrl+Z/Ctrl+V packet)'], text: 'real native capture/paste/undo', voice: 'mock ASR: auto-paste, preview final, raw-only, preview skip', modelCalls, asrCalls }));
   } catch (error) { console.error(PREFIX + JSON.stringify({ ok: false, error: error.stack })); process.exitCode = 1; }
-  finally { if (source && !source.isDestroyed()) source.destroy(); clipboard.write(previous); app.quit(); }
+  finally { if (nativeChild && nativeChild.exitCode === null) { if (nativeStop) fs.writeFileSync(nativeStop, 'stop'); nativeChild.kill(); } if (source && !source.isDestroyed()) source.destroy(); clipboard.write(previous); app.quit(); }
 }
 if (process.argv.includes(ARG)) fixture();
 else {

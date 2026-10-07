@@ -39,7 +39,7 @@ function createResultDelivery(deps) {
     }, 500);
     if (watchTimer && watchTimer.unref) watchTimer.unref();
   }
-  async function deliver({ original, text, target, insertMode, undoToastSeconds, isCurrent = () => true }) {
+  async function deliver({ original, text, target, kind = 'selection', insertMode, undoToastSeconds, isCurrent = () => true }) {
     if (delivering || undoing) throw new Error('结果正在写入，请稍后重试');
     if (typeof text !== 'string' || !text.trim()) return { inserted: false, copiedOnly: true, empty: true };
     if (!isCurrent()) return { inserted: false, copiedOnly: true, cancelled: true };
@@ -47,7 +47,7 @@ function createResultDelivery(deps) {
     clear();
     try {
       await deps.writeClipboard(text);
-      const op = { token: randomUUID(), original: String(original ?? ''), target, inserted: false,
+      const op = { token: randomUUID(), original: String(original ?? ''), target, kind, inserted: false,
         terminal: classifyHost(target) !== HOSTS.ORDINARY, dirty: false, armed: false,
         expiresAt: now() + clampUndoSeconds(undoToastSeconds ?? 10) * 1000 };
       let note = '';
@@ -88,7 +88,7 @@ function createResultDelivery(deps) {
     if (op.inserted && !op.terminal && op.armed && !op.dirty) {
       const current = await deps.snapshot();
       if (!op.dirty && sameTarget(op.target, current && current.target) && current.target.readOnly === false) {
-        try { restored = (await deps.sendChord(deps.platform === 'darwin' ? 'cmd-z' : 'ctrl-z', op.target)) === true; }
+        try { restored = (await deps.sendChord(op.kind === 'voice' ? 'voice-restore' : deps.platform === 'darwin' ? 'cmd-z' : 'ctrl-z', op.target)) === true; }
         catch { /* Clipboard fallback. */ }
       }
     }
