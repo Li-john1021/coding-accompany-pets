@@ -14,7 +14,8 @@ function harness(options = {}) {
     snapshot: async (includeText = false) => {
       state.snapshots++;
       return { target: { ...state.target }, sequence: state.sequence,
-        ...(includeText ? { stable: true, text: state.text } : {}) };
+        ...(includeText ? { stable: options.stable !== false, text: state.text, ownerHwnd: 99,
+          ownerPid: state.ownerPid === undefined ? state.target.pid : state.ownerPid } : {}) };
     },
     readClipboard: () => { state.reads++; return state.text; },
     sendCopy: (strategy) => { state.copies.push(strategy); if (options.copyEffect) options.copyEffect(state); }
@@ -35,6 +36,8 @@ function harness(options = {}) {
   const textSnapshotScript = buildSnapshotScript(true);
   assert.match(textSnapshotScript, /Clipboard\]::GetText\(\)/);
   assert.match(textSnapshotScript, /sequenceBefore -eq \$sequenceAfter/);
+  assert.match(textSnapshotScript, /GetClipboardOwner/);
+  assert.match(textSnapshotScript, /ownerPidBefore -eq \$ownerPidAfter/);
   const parsed = parseSnapshot('{"ok":true,"hwnd":10,"pid":20,"threadId":30,"windowClass":"AppWindow","focusHwnd":11,"focusClass":"Edit","processName":"unknown-app","sequence":7}');
   assert.strictEqual(parsed.sequence, 7);
   assert.strictEqual(parseSnapshot('{"ok":true,"hwnd":0,"pid":20,"threadId":30,"windowClass":"x","focusHwnd":11,"focusClass":"Edit","processName":"x","sequence":7}'), null);
@@ -79,6 +82,23 @@ function harness(options = {}) {
     const result = await h.capture.click('optimize', false);
     assert.strictEqual(result.kind, 'authorized', 'a new sequence can authorize equal text');
     assert.strictEqual(result.text, 'old clipboard');
+    assert.strictEqual(result.evidence.ownerMatched, true);
+  }
+  {
+    const h = harness({ copyEffect: (s) => { s.sequence++; s.text = 'other app clipboard'; s.ownerPid = 999; } });
+    const result = await h.capture.click('structure', false);
+    assert.strictEqual(result.kind, 'rejected');
+    assert.strictEqual(result.reason, 'clipboard-owner-mismatch');
+  }
+  {
+    const h = harness({ stable: false, copyEffect: (s) => { s.sequence++; s.text = 'raced clipboard'; } });
+    assert.strictEqual((await h.capture.click('structure', false)).reason, 'clipboard-changed');
+  }
+  {
+    const h = harness({ copyEffect: (s) => { s.sequence++; s.text = 'owner unknown'; s.ownerPid = 0; } });
+    const result = await h.capture.click('structure', false);
+    assert.strictEqual(result.kind, 'authorized', 'unknown clipboard ownership remains compatible');
+    assert.strictEqual(result.evidence.ownerMatched, false);
   }
   {
     const h = harness({ copyEffect: (s) => { s.sequence++; s.text = '  '; } });

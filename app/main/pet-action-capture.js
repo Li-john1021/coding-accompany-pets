@@ -22,6 +22,7 @@ public static class V2PPetCaptureNative {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
   [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
+  [DllImport("user32.dll")] public static extern IntPtr GetClipboardOwner();
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr hwnd, StringBuilder name, int count);
   [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint thread, ref GUITHREADINFO info);
   [StructLayout(LayoutKind.Sequential)] public struct GUITHREADINFO {
@@ -43,10 +44,16 @@ if (-not [V2PPetCaptureNative]::GetGUIThreadInfo($thread, [ref]$info)) { throw '
 $focus = $info.hwndFocus
 $process = (Get-Process -Id $pidValue -ErrorAction Stop).ProcessName
 ${includeClipboardText ? `$sequenceBefore = [V2PPetCaptureNative]::GetClipboardSequenceNumber()
+$ownerBefore = [V2PPetCaptureNative]::GetClipboardOwner()
+$ownerPidBefore = [uint32]0
+if ($ownerBefore -ne [IntPtr]::Zero) { [void][V2PPetCaptureNative]::GetWindowThreadProcessId($ownerBefore, [ref]$ownerPidBefore) }
 $text = [Windows.Forms.Clipboard]::GetText()
+$ownerAfter = [V2PPetCaptureNative]::GetClipboardOwner()
+$ownerPidAfter = [uint32]0
+if ($ownerAfter -ne [IntPtr]::Zero) { [void][V2PPetCaptureNative]::GetWindowThreadProcessId($ownerAfter, [ref]$ownerPidAfter) }
 $sequenceAfter = [V2PPetCaptureNative]::GetClipboardSequenceNumber()
 $text64 = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($text))
-@{ ok = $true; hwnd = $hwnd.ToInt64(); pid = $pidValue; threadId = $thread; windowClass = [V2PPetCaptureNative]::ClassName($hwnd); focusHwnd = $focus.ToInt64(); focusClass = if ($focus -eq [IntPtr]::Zero) { '' } else { [V2PPetCaptureNative]::ClassName($focus) }; processName = $process; sequence = $sequenceAfter; stable = ($sequenceBefore -eq $sequenceAfter); text64 = $text64 } | ConvertTo-Json -Compress` : `@{ ok = $true; hwnd = $hwnd.ToInt64(); pid = $pidValue; threadId = $thread; windowClass = [V2PPetCaptureNative]::ClassName($hwnd); focusHwnd = $focus.ToInt64(); focusClass = if ($focus -eq [IntPtr]::Zero) { '' } else { [V2PPetCaptureNative]::ClassName($focus) }; processName = $process; sequence = [V2PPetCaptureNative]::GetClipboardSequenceNumber() } | ConvertTo-Json -Compress`}
+@{ ok = $true; hwnd = $hwnd.ToInt64(); pid = $pidValue; threadId = $thread; windowClass = [V2PPetCaptureNative]::ClassName($hwnd); focusHwnd = $focus.ToInt64(); focusClass = if ($focus -eq [IntPtr]::Zero) { '' } else { [V2PPetCaptureNative]::ClassName($focus) }; processName = $process; sequence = $sequenceAfter; ownerHwnd = $ownerAfter.ToInt64(); ownerPid = $ownerPidAfter; stable = ($sequenceBefore -eq $sequenceAfter -and $ownerBefore -eq $ownerAfter -and $ownerPidBefore -eq $ownerPidAfter); text64 = $text64 } | ConvertTo-Json -Compress` : `@{ ok = $true; hwnd = $hwnd.ToInt64(); pid = $pidValue; threadId = $thread; windowClass = [V2PPetCaptureNative]::ClassName($hwnd); focusHwnd = $focus.ToInt64(); focusClass = if ($focus -eq [IntPtr]::Zero) { '' } else { [V2PPetCaptureNative]::ClassName($focus) }; processName = $process; sequence = [V2PPetCaptureNative]::GetClipboardSequenceNumber(); ownerHwnd = ([V2PPetCaptureNative]::GetClipboardOwner()).ToInt64() } | ConvertTo-Json -Compress`}
 `;
 }
 
@@ -62,6 +69,8 @@ function parseSnapshot(stdout) {
       focusClass: value.focusClass, processName: value.processName }, sequence: value.sequence };
     if (typeof value.stable === 'boolean') snapshot.stable = value.stable;
     if (typeof value.text64 === 'string') snapshot.text = Buffer.from(value.text64, 'base64').toString('utf16le');
+    if (Number.isSafeInteger(value.ownerHwnd) && value.ownerHwnd >= 0) snapshot.ownerHwnd = value.ownerHwnd;
+    if (Number.isInteger(value.ownerPid) && value.ownerPid >= 0) snapshot.ownerPid = value.ownerPid;
     return snapshot;
   } catch { return null; }
 }
@@ -151,11 +160,16 @@ function createPetActionCapture(adapters) {
       if (!after || !sameTarget(before.target, after.target)) return makeResult('rejected', 'target-changed', { host: strategy.host });
       if (!after || after.sequence === before.sequence) return makeResult('rejected', 'no-fresh-clipboard', { host: strategy.host });
       if (after.stable === false) return makeResult('rejected', 'clipboard-changed', { host: strategy.host });
+      if (Number.isInteger(after.ownerPid) && after.ownerPid > 0 && after.ownerPid !== before.target.pid) {
+        return makeResult('rejected', 'clipboard-owner-mismatch', { host: strategy.host });
+      }
       const text = typeof after.text === 'string' ? after.text : adapters.readClipboard();
       if (typeof text !== 'string' || !text.trim()) return makeResult('rejected', 'empty-or-invalid-text', { host: strategy.host });
       const token = randomUUID();
       return makeResult('authorized', null, { mode, text, token, target: after.target,
-        clipboardSequence: after.sequence, evidence: { type: 'fresh-clipboard', host: strategy.host } });
+        clipboardSequence: after.sequence, evidence: { type: 'fresh-clipboard', host: strategy.host,
+          ownerMatched: Number.isInteger(after.ownerPid) && after.ownerPid > 0,
+          ownerPid: Number.isInteger(after.ownerPid) && after.ownerPid > 0 ? after.ownerPid : null } });
     } finally { busy = false; }
   }
 

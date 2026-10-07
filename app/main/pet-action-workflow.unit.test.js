@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { createPetActionWorkflow } = require('./pet-action-workflow');
+const { createPetActionCapture } = require('./pet-action-capture');
 
 function harness(options = {}) {
   const state = { voice: false, calls: [], writes: [], captureCalls: 0 };
@@ -46,6 +47,26 @@ function harness(options = {}) {
     const result = await h.workflow.run('structure');
     assert.strictEqual(result.ok, false);
     assert.strictEqual(h.state.calls.some((call) => call[0] === 'process'), false, 'capture failure makes zero model calls');
+  }
+  {
+    let sequence = 1;
+    const target = { hwnd: 10, pid: 20, threadId: 30, windowClass: 'Browser', focusHwnd: 11,
+      focusClass: 'Edit', processName: 'chrome' };
+    const capture = createPetActionCapture({
+      platform: 'win32',
+      snapshot: async (includeText) => ({ target, sequence,
+        ...(includeText ? { text: 'written by another app', stable: true, ownerPid: 999 } : {}) }),
+      sendCopy: () => { sequence++; },
+      sleep: async () => {}
+    });
+    let modelCalls = 0;
+    const workflow = createPetActionWorkflow({
+      capture, isVoiceBusy: () => false, processText: async () => { modelCalls++; return { text: 'bad' }; },
+      writeClipboard: async () => {}, onCaptureResult: (result) => ({ ok: false, capture: result })
+    });
+    const result = await workflow.run('structure');
+    assert.strictEqual(result.capture.reason, 'clipboard-owner-mismatch');
+    assert.strictEqual(modelCalls, 0, 'a concurrent other-app clipboard write never reaches the model');
   }
   {
     const h = harness();

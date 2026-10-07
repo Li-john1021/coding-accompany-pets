@@ -33,6 +33,7 @@ const STATUS_CLASS = {
 
 let bubbleTimer = null;
 let voiceUiEpoch = 0;
+let uiStateEpoch = 0;
 const VOICE_UI_STAGES = new Set(['listening', 'transcribing']);
 function say(text, ms = 3500) {
   bubble.textContent = text;
@@ -43,6 +44,7 @@ function say(text, ms = 3500) {
 
 function setState(s) {
   const prev = curStage;
+  uiStateEpoch++;
   if (VOICE_UI_STAGES.has(s) && !VOICE_UI_STAGES.has(prev)) voiceUiEpoch++;
   curStage = s;
   stage.className = s + (window.petLive2d && window.petLive2d.active() ? ' live2d' : '');
@@ -59,6 +61,15 @@ function setState(s) {
   if (s === 'listening' && prev !== 'listening') {
     say(LISTEN_LINES[(Math.random() * LISTEN_LINES.length) | 0], 2600);
   }
+}
+
+function scheduleIdle(delayMs) {
+  const expectedVoiceEpoch = voiceUiEpoch;
+  const expectedStateEpoch = uiStateEpoch;
+  setTimeout(() => {
+    if (voiceUiBusy() || voiceUiEpoch !== expectedVoiceEpoch || uiStateEpoch !== expectedStateEpoch) return;
+    setState('idle');
+  }, delayMs);
 }
 
 let activePetAction = null;
@@ -105,11 +116,11 @@ for (const button of actionButtons) {
         if (!result.ok) {
           say(result.error || '文本处理失败', 5000);
           setState('error');
-          setTimeout(() => { if (!activePetAction) setState('idle'); }, 5000);
+          scheduleIdle(5000);
         } else {
           say(result.note ? `处理完成，结果已复制 · ${result.note}` : '处理完成，结果已复制', 5000);
           setState('done');
-          setTimeout(() => { if (!activePetAction) setState('idle'); }, 5000);
+          scheduleIdle(5000);
         }
       } else if (result && result.capture && result.capture.kind === 'cancelled') {
         say('捕获已取消，请重新操作', 3500);
@@ -124,7 +135,7 @@ for (const button of actionButtons) {
       } else {
         say('已完成', 3000);
         setState('done');
-        setTimeout(() => { if (!activePetAction) setState('idle'); }, 3000);
+        scheduleIdle(3000);
       }
     } finally {
       activePetAction = null;
@@ -213,7 +224,7 @@ async function startRecording() {
     window.v2p.setRecordingFlag(false); // 失败回传，避免主进程热键状态失同步
     setState('error');
     say('无法访问麦克风：' + (e.message || e));
-    setTimeout(() => setState('idle'), 3000);
+    scheduleIdle(3000);
     return;
   }
   starting = false;
@@ -267,12 +278,12 @@ async function stopRecording() {
     if (!res.ok) {
       setState('error');
       say(res.error || '处理失败', 6000);
-      setTimeout(() => setState('idle'), 4000);
+      scheduleIdle(4000);
     }
   } catch (e) {
     setState('error');
     say('提交失败：' + (e.message || e), 6000);
-    setTimeout(() => setState('idle'), 4000);
+    scheduleIdle(4000);
   } finally {
     window.v2p.setRecordingFlag(false);
     updateActionButtons();
@@ -384,9 +395,9 @@ window.v2p.onResult((r) => {
     statusEl.textContent = modeTag + note + (r.note ? ' · ' + r.note : '') + ' · ' + body;
   }
   say((r.polished || '').slice(0, 90) + ((r.polished || '').length > 90 ? '…' : '') + note, 5000);
-  setTimeout(() => setState('idle'), 3000);
+  scheduleIdle(3000);
 });
-window.v2p.onToast((text) => { say(text, 5000); setState('error'); setTimeout(() => setState('idle'), 3500); });
+window.v2p.onToast((text) => { say(text, 5000); setState('error'); scheduleIdle(3500); });
 window.v2p.onHotkeyStart(startRecording);
 window.v2p.onHotkeyStop(stopRecording);
 window.v2p.onPetImageChanged((dataUrl) => { if (dataUrl) petImg.src = dataUrl; });
