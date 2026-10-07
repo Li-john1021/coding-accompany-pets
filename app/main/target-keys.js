@@ -1,7 +1,7 @@
 const { runPowerShellFile } = require('./powershell-file');
 // Re-check the captured HWND, process, thread, classes and focused child in the same
 // native routine that sends a single chord. Never activate a target or send Enter.
-function buildTargetKeysScript(chord, target) {
+function buildTargetKeysScript(chord, target, waitForCommit = false) {
   const packets = { 'ctrl-v': [[0x11, 0x56]], 'shift-insert': [[0x10, 0x2d]], 'ctrl-shift-v': [[0x11, 0x10, 0x56]], 'ctrl-z': [[0x11, 0x5a]], 'voice-restore': [[0x11, 0x5a], [0x11, 0x56]] }[chord];
   if (!packets || !target || !['hwnd', 'pid', 'threadId', 'focusHwnd'].every((key) => Number.isSafeInteger(target[key]) && target[key] > 0)) return null;
   const events = packets.flatMap((keys) => [...keys.map((key) => [key, 0]), ...keys.slice().reverse().map((key) => [key, 2])]);
@@ -43,16 +43,52 @@ public class V2PTargetKeys {
 }
 "@ -ErrorAction Stop
 $t = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}')) | ConvertFrom-Json
+${waitForCommit ? `[Console]::Out.WriteLine('V2P_READY')
+[Console]::Out.Flush()
+if ([Console]::In.ReadLine() -ne 'COMMIT') { exit 0 }` : ''}
 try {
  $sent = [V2PTargetKeys]::Send($t.hwnd,$t.pid,$t.threadId,$t.focusHwnd,$t.windowClass,$t.focusClass,$t.processName,[uint16[]]@(${events.map((event) => event[0]).join(',')}),[uint32[]]@(${events.map((event) => event[1]).join(',')}))
 } catch { [V2PTargetKeys]::Status = 'V2P_NATIVE_ERROR: ' + $_.Exception.Message }
 [V2PTargetKeys]::Status
 `;
 }
-function sendTargetChord(chord, target) {
-  const script = process.platform === 'win32' && buildTargetKeysScript(chord, target);
+function sendTargetChord(chord, target, { signal, onCommit } = {}) {
+  if (signal && signal.aborted) return Promise.resolve(false);
+  const script = process.platform === 'win32' && buildTargetKeysScript(chord, target, !!signal);
   if (!script) return Promise.resolve(false);
-  return new Promise((resolve) => runPowerShellFile(script, { timeout: 5000, maxBuffer: 4096 },
-    (error, stdout) => resolve(!error && String(stdout).trim() === 'V2P_SENT')));
+  return new Promise((resolve) => {
+    let child = null;
+    let settled = false;
+    let aborted = false;
+    let committed = false;
+    let output = '';
+    const onAbort = () => { if (committed) return; aborted = true; if (child) child.kill(); };
+    const onData = (chunk) => {
+      output += chunk.toString();
+      if (!committed && output.split(/\r?\n/).includes('V2P_READY')) {
+        if (aborted || signal.aborted) { onAbort(); return; }
+        // End startup cancellation immediately before granting the one native packet.
+        committed = true;
+        signal.removeEventListener('abort', onAbort);
+        try { if (onCommit) onCommit(); child.stdin.end('COMMIT\n'); }
+        catch { aborted = true; child.kill(); }
+      }
+    };
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      if (signal) signal.removeEventListener('abort', onAbort);
+      if (child && child.stdout && signal) child.stdout.removeListener('data', onData);
+      resolve(value);
+    };
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    try {
+      child = runPowerShellFile(script, { timeout: 5000, maxBuffer: 4096, keepStdinOpen: !!signal },
+        (error, stdout) => finish(!aborted && (!signal || committed) && !error && String(stdout).trim().split(/\r?\n/).pop() === 'V2P_SENT'));
+      if (child && child.stdout && signal) child.stdout.on('data', onData);
+      if (aborted && child) child.kill();
+      if (!child && !settled) finish(false);
+    } catch { finish(false); }
+  });
 }
 module.exports = { buildTargetKeysScript, sendTargetChord };

@@ -6,7 +6,7 @@ function fixture() {
   const context = {
     Buffer, Object, String, Number, recordingActive: false, voiceSubmissionActive: false, voiceDeliveryEpoch: 0,
     voiceTargetPromise: null, pendingPreview: null, previewWin: null,
-    config: { load: () => cfg }, resultDelivery: { busy: false },
+    config: { load: () => cfg }, resultDelivery: { busy: false, markDirty() {} },
     petActionCapture: { cancel() {} }, petActionWorkflow: { busy: false, run: async () => ({ ok: true }) },
     ipcMain: { handle: (name, fn) => { handlers[name] = fn; } },
     setState: (stage) => states.push(stage), petBroadcast() {},
@@ -30,6 +30,17 @@ function fixture() {
   return { context, cfg, deliveries, states, call };
 }
 (async () => {
+  {
+    const f = fixture(); f.context.resultDelivery.busy = true;
+    let dirty = 0; f.context.resultDelivery.markDirty = () => { dirty++; };
+    assert.equal((await f.call('submit', { audio: [1], options: {} })).ok, false);
+    assert.equal((await f.call('process-text', { text: 'preview', mode: 'structure' })).ok, false);
+    assert.equal((await f.call('pet-action', 'structure')).ok, false);
+    f.context.pendingPreview = { initialRaw: 'first' };
+    assert.equal((await f.call('preview-insert', { text: 'next' })).ok, false);
+    assert.equal((await f.call('recording-flag', true)).ok, false); assert.equal(dirty, 1); assert.equal(f.context.recordingActive, false);
+    assert.equal(f.deliveries.length, 0);
+  }
   {
     const f = fixture(); const result = await f.call('submit', { audio: [1], options: { mode: 'none' } });
     assert.equal(result.ok, true); assert.equal(f.deliveries.length, 1); assert.equal(f.deliveries[0].original, ' initial raw ASR\n');

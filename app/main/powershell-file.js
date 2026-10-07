@@ -63,7 +63,7 @@ function runPowerShellFile(script, options, callback) {
     if (code !== 0) return finish(new Error(`PowerShell script exited with code ${code}`));
     finish(null);
   });
-  try { child.stdin.end(options.stdin || ''); }
+  try { if (!options.keepStdinOpen) child.stdin.end(options.stdin || ''); }
   catch {
     stdinFailed = true;
     child.kill();

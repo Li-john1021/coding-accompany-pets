@@ -213,9 +213,17 @@ function encodeWav(samples, sampleRate) {
 async function startRecording() {
   if (isRecording || starting) return;
   starting = true;
+  const previousStage = curStage;
   setState('listening');
   updateActionButtons();
-  window.v2p.setRecordingFlag(true);
+  const admission = await window.v2p.setRecordingFlag(true);
+  if (admission && admission.ok === false) {
+    starting = false;
+    setState(previousStage);
+    updateActionButtons();
+    say(admission.error || '已有操作正在进行');
+    return;
+  }
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {

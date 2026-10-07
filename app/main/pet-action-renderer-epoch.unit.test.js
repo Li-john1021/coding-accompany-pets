@@ -4,7 +4,8 @@ const path = require('path');
 const vm = require('vm');
 const { invoke } = require('../renderer/pet-action-settlement');
 
-function createRendererHarness() {
+function createRendererHarness(options = {}) {
+  const state = { microphoneCalls: 0 };
   const timers = [];
   const listeners = new Map();
   const elements = new Map();
@@ -38,7 +39,7 @@ function createRendererHarness() {
   });
   const v2p = {
     petAction: async (mode) => ({ ok: true, capture: { kind: 'authorized' }, note: '', mode }),
-    setRecordingFlag() {},
+    setRecordingFlag() { return { ok: !options.denyRecording, error: '结果正在写入' }; },
     onState(callback) { listeners.set('state', callback); },
     onLoudness() {}, onProbe() {}, onResult(callback) { listeners.set('result', callback); },
     onToast(callback) { listeners.set('toast', callback); },
@@ -61,7 +62,7 @@ function createRendererHarness() {
   };
   const context = {
     window, document,
-    navigator: { mediaDevices: { getUserMedia: () => new Promise(() => {}) } },
+    navigator: { mediaDevices: { getUserMedia: () => { state.microphoneCalls++; return new Promise(() => {}); } } },
     performance: { now: () => 100 },
     console: { log() {}, warn() {}, error() {} },
     setTimeout(callback, delay) { const timer = { callback, delay, cleared: false }; timers.push(timer); return timer; },
@@ -71,7 +72,7 @@ function createRendererHarness() {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf8'), context,
     { filename: 'pet.js' });
   return {
-    stage, buttons, timers, listeners,
+    stage, buttons, timers, listeners, state,
     clickAction: () => buttons[0].handler('click')({ stopPropagation() {} }),
     fireDelay(delay) { for (const timer of timers.filter((item) => item.delay === delay && !item.cleared)) timer.callback(); }
   };
@@ -90,5 +91,10 @@ function createRendererHarness() {
   await ordinary.clickAction();
   ordinary.fireDelay(5000);
   assert.match(ordinary.stage.className, /^idle/, 'normal completion still returns to idle');
+  const denied = createRendererHarness({ denyRecording: true });
+  denied.listeners.get('hotkeyStart')();
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(denied.state.microphoneCalls, 0, 'rejected main admission must not start microphone capture');
+  assert.match(denied.stage.className, /^idle/, 'recording denial restores the previous voice UI state');
   console.log('PASS renderer VM completion timer respects voice epoch and preserves ordinary idle transition');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

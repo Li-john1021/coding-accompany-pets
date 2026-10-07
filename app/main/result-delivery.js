@@ -18,6 +18,7 @@ function createResultDelivery(deps) {
   let undoing = null;
   const now = deps.now || Date.now;
   function clear() {
+    if (undoing && undoing.controller) undoing.controller.abort();
     if (timer) (deps.clearTimer || clearTimeout)(timer);
     timer = null;
     if (watchTimer) (deps.clearTimer || clearTimeout)(watchTimer);
@@ -27,7 +28,10 @@ function createResultDelivery(deps) {
   }
   function markDirty() {
     if (latest && latest.armed) latest.dirty = true;
-    if (undoing) undoing.dirty = true;
+    if (undoing) {
+      undoing.dirty = true;
+      if (undoing.controller && !undoing.committed) undoing.controller.abort();
+    }
   }
   function watchTarget(token, target) {
     if (!deps.watchTarget) return;
@@ -82,13 +86,14 @@ function createResultDelivery(deps) {
     // Consume before awaiting: duplicate requests can never undo twice.
     clear();
     undoing = op;
+    op.controller = new AbortController();
     try {
     await deps.writeClipboard(op.original);
     let restored = false;
     if (op.inserted && !op.terminal && op.armed && !op.dirty) {
       const current = await deps.snapshot();
       if (!op.dirty && sameTarget(op.target, current && current.target) && current.target.readOnly === false) {
-        try { restored = (await deps.sendChord(op.kind === 'voice' ? 'voice-restore' : deps.platform === 'darwin' ? 'cmd-z' : 'ctrl-z', op.target)) === true; }
+        try { restored = (await deps.sendChord(op.kind === 'voice' ? 'voice-restore' : deps.platform === 'darwin' ? 'cmd-z' : 'ctrl-z', op.target, { signal: op.controller.signal, onCommit: () => { op.committed = true; } })) === true && !op.controller.signal.aborted; }
         catch { /* Clipboard fallback. */ }
       }
     }

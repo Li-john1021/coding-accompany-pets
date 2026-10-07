@@ -88,6 +88,7 @@ let voiceTargetPromise = null;
 let voiceDeliveryEpoch = 0;
 
 function noteVoiceStart(captureTarget = true) {
+  resultDelivery.markDirty();
   voiceDeliveryEpoch++;
   petActionWorkflow.voiceStarted();
   petActionCapture.cancel('voice-busy');
@@ -212,6 +213,7 @@ function registerHotkey() {
       recordingActive = false;
       petBroadcast('v2p:hotkey-stop');
     } else {
+      if (resultDelivery.busy) { resultDelivery.markDirty(); return; }
       recordingActive = true;
       noteVoiceStart();
       petBroadcast('v2p:hotkey-start');
@@ -367,7 +369,7 @@ function registerIpc() {
 
   // 纯文本整理（选区浮条 / 预览卡共用）
   ipcMain.handle('v2p:process-text', async (_e, { text, mode }) => {
-    if (voiceSubmissionActive || petActionWorkflow.busy) return { ok: false, error: '已有操作正在进行' };
+    if (voiceSubmissionActive || recordingActive || petActionWorkflow.busy || resultDelivery.busy) return { ok: false, error: '已有操作正在进行' };
     const session = pendingPreview;
     voiceSubmissionActive = true;
     try {
@@ -378,6 +380,10 @@ function registerIpc() {
   });
 
   ipcMain.handle('v2p:recording-flag', (_e, active) => {
+    if (active && resultDelivery.busy) {
+      resultDelivery.markDirty();
+      return { ok: false, error: '结果正在写入，请稍后重试' };
+    }
     const wasActive = recordingActive;
     recordingActive = !!active;
     if (recordingActive && !wasActive) noteVoiceStart();
@@ -944,6 +950,9 @@ function showUndoToast(payload) {
   else show();
 }
 ipcMain.handle('v2p:undo', async (_e, token) => {
+  if (petActionWorkflow.busy || petActionCapture.busy || recordingActive || voiceSubmissionActive || pendingPreview || resultDelivery.busy) {
+    return { ok: false, note: '已有操作正在进行，请完成后再回退' };
+  }
   const result = await resultDelivery.undo(token);
   if (result.ok) {
     showUndoToast({ note: result.note });
@@ -1052,6 +1061,7 @@ function setMouseRecordHook() {
               recordingActive = false;
               petBroadcast('v2p:hotkey-stop');
             } else {
+              if (resultDelivery.busy) { resultDelivery.markDirty(); return; }
               recordingActive = true;
               noteVoiceStart();
               petBroadcast('v2p:hotkey-start');

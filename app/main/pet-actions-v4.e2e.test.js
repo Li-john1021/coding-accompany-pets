@@ -50,6 +50,20 @@ function runFixture() {
   }
 
   const calls = [];
+  const captureMetadata = [];
+  let sourceHwnd = null;
+  const captureModule = require('./pet-action-capture');
+  const originalAdapters = captureModule.createWindowsAdapters;
+  const { runPowerShellFile } = require('./powershell-file');
+  captureModule.createWindowsAdapters = () => {
+    const adapters = originalAdapters();
+    return { ...adapters, snapshot: async (includeText) => {
+      const identity = await adapters.snapshot(false);
+      captureMetadata.push(identity && { target: identity.target, sequence: identity.sequence });
+      if (!identity || identity.target.hwnd !== sourceHwnd) return null;
+      return includeText ? adapters.snapshot(true) : identity;
+    } };
+  };
   let nextPlan = null;
   const pipeline = require('./pipeline');
   pipeline.processText = async (text, mode) => {
@@ -79,6 +93,26 @@ function runFixture() {
     sourceWindow.show();
     sourceWindow.focus();
     await waitFor(() => BrowserWindow.getFocusedWindow() === sourceWindow, 'ordinary source host focus');
+    const hwnd = Number(sourceWindow.getNativeWindowHandle().readBigUInt64LE());
+    await new Promise((resolve, reject) => runPowerShellFile(`
+Add-Type -TypeDefinition @"
+using System;using System.Runtime.InteropServices;
+public class V4OwnFocus {
+ [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+ [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h,out uint p);
+ [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+ [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a,uint b,bool on);
+ [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+ [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+ public static void Focus(long hwnd) { uint p;var current=GetCurrentThreadId();var foreground=GetWindowThreadProcessId(GetForegroundWindow(),out p);var target=GetWindowThreadProcessId((IntPtr)hwnd,out p);AttachThreadInput(current,foreground,true);AttachThreadInput(current,target,true);BringWindowToTop((IntPtr)hwnd);SetForegroundWindow((IntPtr)hwnd);AttachThreadInput(current,target,false);AttachThreadInput(current,foreground,false); }
+}
+"@
+[V4OwnFocus]::Focus(${hwnd})
+`, { timeout: 5000, maxBuffer: 4096 }, (error) => error ? reject(error) : resolve()));
+    const native = await captureModule.getWindowsSnapshot();
+    assert.ok(native && native.target.hwnd === hwnd, 'v4 fixture must hold actual Windows foreground: ' + JSON.stringify(native && native.target));
+    sourceWindow.webContents.focus();
+    await sourceWindow.webContents.executeJavaScript(`(() => {const field=document.querySelector('textarea');field.focus();field.setSelectionRange(${collapsed ? text.length : 0},${text.length});})()`);
 
     const box = await petWindow.webContents.executeJavaScript(`(() => {
       const button = document.querySelector('#action-row [data-mode="${mode}"]');
@@ -103,9 +137,10 @@ function runFixture() {
     await petWindow.webContents.executeJavaScript('document.querySelectorAll("#action-row .pet-action").length');
 
     const sourceWindow = new BrowserWindow({
-      x: 40, y: 40, width: 620, height: 190, show: false, alwaysOnTop: false,
+      x: 40, y: 40, width: 620, height: 190, show: false, alwaysOnTop: true,
       webPreferences: { contextIsolation: true, nodeIntegration: false }
     });
+    sourceHwnd = Number(sourceWindow.getNativeWindowHandle().readBigUInt64LE());
     await sourceWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html>
       <meta charset="utf-8"><textarea readonly style="width:580px;height:120px;font-size:18px">${
         'E2E_SOURCE_TEXT_PLACEHOLDER'
@@ -139,7 +174,8 @@ function runFixture() {
       const start = calls.length;
       setPlan(result);
       await action(petWindow, sourceWindow, text, mode, collapsed);
-      await waitFor(() => calls.length === start + 1, `${mode} model call`);
+      try { await waitFor(() => calls.length === start + 1, `${mode} model call`); }
+      catch (error) { throw new Error(error.message + '; capture=' + JSON.stringify(captureMetadata) + '; message=' + await petWindow.webContents.executeJavaScript('document.querySelector("#bubble").textContent')); }
       await waitFor(() => clipboard.readText() === expectedClipboard, `${mode} system clipboard result`);
       assert.deepStrictEqual(calls[start], { text, mode }, `${mode} receives exactly the selected source`);
       const sourceAfter = await sourceWindow.webContents.executeJavaScript(`(() => {
@@ -242,7 +278,7 @@ if (process.argv.includes(FIXTURE_ARG)) {
   fixture.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
   fixture.on('close', (code) => {
     clearTimeout(timeout);
-    const line = stdout.split(/\r?\n/).find((entry) => entry.startsWith(RESULT_PREFIX));
+    const line = (stdout + '\n' + stderr).split(/\r?\n/).find((entry) => entry.startsWith(RESULT_PREFIX));
     try {
       assert.ok(line, `Electron fixture returned no result (exit ${code}): ${stderr.slice(-1200)}`);
       const result = JSON.parse(line.slice(RESULT_PREFIX.length));

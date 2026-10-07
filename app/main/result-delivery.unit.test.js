@@ -13,6 +13,36 @@ function fixture() {
   return { state, delivery, run, token };
 }
 (async () => {
+  {
+    let token; let delivery;
+    delivery = createResultDelivery({ platform: 'win32', snapshot: async () => ({ target }), guardAvailable: () => true,
+      writeClipboard: async () => {}, onShow: (p) => { token = p.token; },
+      sendChord: async (chord, _target, options) => {
+        if (chord !== 'ctrl-v') { options.onCommit(); delivery.markDirty(); assert.equal(options.signal.aborted, false, 'own committed packet is no longer startup-cancellable'); }
+        return true;
+      } });
+    await delivery.deliver({ original: 'initial', text: 'processed', kind: 'voice', target, insertMode: 'paste' });
+    assert.equal((await delivery.undo(token)).restored, true);
+  }
+  for (const kind of ['selection', 'voice']) {
+    for (const cancel of ['dirty', 'clear']) {
+      const f = fixture(); let entered; let release; const sent = [];
+      const started = new Promise((resolve) => { entered = resolve; });
+      const waiting = new Promise((resolve) => { release = resolve; });
+      const delivery = createResultDelivery({ platform: 'win32', snapshot: async () => ({ target }), guardAvailable: () => true,
+        writeClipboard: async () => {}, onShow: (p) => f.state.shows.push(p),
+        sendChord: async (chord, _target, options) => {
+          if (chord === 'ctrl-v') return true;
+          entered(); await waiting;
+          if (options.signal.aborted) return false;
+          sent.push(chord); return true;
+        } });
+      await delivery.deliver({ original: 'source', text: 'result', kind, target, insertMode: 'paste' });
+      const pending = delivery.undo(f.token()); await started;
+      if (cancel === 'dirty') delivery.markDirty(); else delivery.clear();
+      release(); assert.equal((await pending).restored, false); assert.deepEqual(sent, [], 'pending native startup must not send Undo after cancellation');
+    }
+  }
   for (const mode of ['paste', 'clipboard']) {
     const f = fixture(); await f.run({ insertMode: mode });
     assert.deepEqual(f.state.writes, ['result']);
