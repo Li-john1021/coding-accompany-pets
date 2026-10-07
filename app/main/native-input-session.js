@@ -23,6 +23,7 @@ class NativeInputSession {
       try {
         const source = (this.testMode ? '#define V2P_NATIVE_TEST\n' : '') + fs.readFileSync(path.join(__dirname, 'native-input-guard.cs'), 'utf8');
         temporary = createPowerShellFile(`[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)\nAdd-Type -TypeDefinition @"\n${source}\n"@ -ReferencedAssemblies 'System.Web.Extensions.dll' -ErrorAction Stop\n[V2PInputSession]::Run()`);
+        this.cleanupSource = temporary.cleanup;
         child = this.spawnProcess('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', temporary.file], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
         this.child = child;
         const closed = () => {
@@ -40,7 +41,7 @@ class NativeInputSession {
             const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
             let value; try { value = JSON.parse(line); } catch { continue; }
             if (!this.sessionId) continue;
-            if (value.type === 'ready') { this.running = true; this.generation = value.generation; done(true); }
+            if (value.type === 'ready') { this.running = true; this.generation = value.generation; try { temporary.cleanup(); } catch {} done(true); }
             else if (value.type === 'unavailable') { this.invalidate(child); done(false); }
             else if (value.type === 'dirty') { this.generation = value.generation; this.onDirty(value.generation); }
             else if (this.testMode && value.type === 'test-wait') this.onTestWait(value.id);
@@ -60,6 +61,7 @@ class NativeInputSession {
     if (child !== this.child) return;
     const active = !!this.sessionId;
     this.running = false; this.sessionId = null;
+    if (this.cleanupSource) { try { this.cleanupSource(); } catch {} this.cleanupSource = null; }
     for (const request of [...this.pending.values()]) request.finish({ sent: false, reason: 'session-lost' });
     if (active) this.onUnavailable();
     if (child && !this.closing) { this.closing = true; child.kill(); }
@@ -86,7 +88,14 @@ class NativeInputSession {
     if (signal && signal.aborted) return { sent: false };
     // A stale operation can never restart a lost session and use its new counter.
     if (sessionId && (!this.running || sessionId !== this.sessionId)) return { sent: false, reason: 'session-lost' };
-    if (!this.running && !(await this.start())) return { sent: false };
+    if (!this.running) {
+      const cancelStartup = () => this.invalidate();
+      if (signal) signal.addEventListener('abort', cancelStartup, { once: true });
+      let ready;
+      try { ready = await this.start(); }
+      finally { if (signal) signal.removeEventListener('abort', cancelStartup); }
+      if (!ready || (signal && signal.aborted)) return { sent: false };
+    }
     return this.request({ type: 'send', target, keys: events.map((e) => e[0]), flags: events.map((e) => e[1]), expectedGeneration: Number.isSafeInteger(expectedGeneration) ? expectedGeneration : -1,
       ...(this.testMode && testWaitFile ? { testWaitFile } : {}) }, { signal });
   }

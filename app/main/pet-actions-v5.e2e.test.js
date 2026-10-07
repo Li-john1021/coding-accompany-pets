@@ -59,8 +59,6 @@ async function fixture() {
       await source.webContents.executeJavaScript(`(() => { const f=document.querySelector('textarea'); f.value=${JSON.stringify(text)};f.focus();f.select(); })()`);
       source.show(); source.focus(); await waitFor(() => BrowserWindow.getFocusedWindow() === source, 'source focus');
       const nativeHandle = Number(source.getNativeWindowHandle().readBigUInt64LE());
-      const contentBounds = source.getContentBounds();
-      const clickPoint = require('electron').screen.dipToScreenPoint({ x: contentBounds.x + 24, y: contentBounds.y + 24 });
       await new Promise((resolve, reject) => runPowerShellFile(`
 Add-Type -TypeDefinition @"
 using System;using System.Runtime.InteropServices;
@@ -71,12 +69,10 @@ public class V5FixtureFocus {
  [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a,uint b,bool on);
  [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
  [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
- [DllImport("user32.dll")] static extern bool SetCursorPos(int x,int y);
- [DllImport("user32.dll")] static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
- public static void Focus(long hwnd,int x,int y) { uint p;var current=GetCurrentThreadId();var foreground=GetWindowThreadProcessId(GetForegroundWindow(),out p);var target=GetWindowThreadProcessId((IntPtr)hwnd,out p);AttachThreadInput(current,foreground,true);AttachThreadInput(current,target,true);BringWindowToTop((IntPtr)hwnd);SetForegroundWindow((IntPtr)hwnd);AttachThreadInput(current,target,false);AttachThreadInput(current,foreground,false); if(GetForegroundWindow().ToInt64()==hwnd) { SetCursorPos(x,y); mouse_event(2,0,0,0,UIntPtr.Zero);mouse_event(4,0,0,0,UIntPtr.Zero); } }
+ public static void Focus(long hwnd) { uint p;var current=GetCurrentThreadId();var foreground=GetWindowThreadProcessId(GetForegroundWindow(),out p);var target=GetWindowThreadProcessId((IntPtr)hwnd,out p);AttachThreadInput(current,foreground,true);AttachThreadInput(current,target,true);BringWindowToTop((IntPtr)hwnd);SetForegroundWindow((IntPtr)hwnd);AttachThreadInput(current,target,false);AttachThreadInput(current,foreground,false); }
 }
 "@
-[V5FixtureFocus]::Focus(${nativeHandle},${clickPoint.x},${clickPoint.y})
+[V5FixtureFocus]::Focus(${nativeHandle})
 `, { timeout: 5000, maxBuffer: 4096 }, (error) => error ? reject(error) : resolve()));
       await waitFor(async () => { const snapshot = await captureModule.getWindowsSnapshot(); return snapshot && snapshot.target.hwnd === nativeHandle; }, 'native foreground source');
       source.webContents.focus();

@@ -16,6 +16,7 @@ function createResultDelivery(deps) {
   let watchTimer = null;
   let delivering = false;
   let undoing = null;
+  let pendingDelivery = null;
   const now = deps.now || Date.now;
   function clear() {
     if (undoing && undoing.controller) undoing.controller.abort();
@@ -27,10 +28,11 @@ function createResultDelivery(deps) {
     if (deps.onHide) deps.onHide();
   }
   function markDirty() {
+    if (pendingDelivery) pendingDelivery.dirty = true;
     if (latest && latest.armed) latest.dirty = true;
     if (undoing) {
       undoing.dirty = true;
-      if (undoing.controller && !undoing.committed) undoing.controller.abort();
+      if (undoing.controller) undoing.controller.abort();
     }
   }
   function watchTarget(token, target) {
@@ -54,15 +56,23 @@ function createResultDelivery(deps) {
       const op = { token: randomUUID(), original: String(original ?? ''), target, kind, inserted: false,
         terminal: classifyHost(target) !== HOSTS.ORDINARY, dirty: false, armed: false,
         expiresAt: now() + clampUndoSeconds(undoToastSeconds ?? 10) * 1000 };
+      pendingDelivery = op;
       let note = '';
       if (insertMode === 'paste') {
         const current = await deps.snapshot();
         if (!isCurrent()) return { inserted: false, copiedOnly: true, cancelled: true };
         if (sameTarget(target, current && current.target) && current.target.readOnly !== true) {
-          try { op.inserted = (await deps.sendChord(pasteChord(target, deps.platform), target)) === true; }
+          try {
+            const sent = await deps.sendChord(pasteChord(target, deps.platform), target);
+            op.inserted = sent === true || !!(sent && sent.sent);
+            if (sent && typeof sent === 'object') {
+              op.generation = sent.generation; op.sessionId = sent.sessionId;
+              op.uncertainGuard = !Number.isSafeInteger(sent.generation) || typeof sent.sessionId !== 'string';
+            }
+          }
           catch { op.inserted = false; }
-          // Own injected paste has finished; subsequent input alone dirties this operation.
-          op.armed = op.inserted && current.target.readOnly === false && deps.guardAvailable() === true;
+          // Native origin filtering preserves real input during the entire async paste.
+          op.armed = op.inserted && !op.uncertainGuard && current.target.readOnly === false && deps.guardAvailable() === true;
           if (!op.inserted) note = '未自动粘贴，结果已复制';
         } else note = '目标已变化或不可写，结果已复制';
       }
@@ -75,7 +85,7 @@ function createResultDelivery(deps) {
       if (op.armed) watchTarget(op.token, target);
       if (deps.onShow) deps.onShow({ token: op.token, seconds, inserted: op.inserted, note });
       return { inserted: op.inserted, copiedOnly: !op.inserted, note };
-    } finally { delivering = false; }
+    } finally { pendingDelivery = null; delivering = false; }
   }
   async function undo(token) {
     const op = latest;
@@ -90,14 +100,20 @@ function createResultDelivery(deps) {
     try {
     await deps.writeClipboard(op.original);
     let restored = false;
+    let uncertain = false;
     if (op.inserted && !op.terminal && op.armed && !op.dirty) {
       const current = await deps.snapshot();
       if (!op.dirty && sameTarget(op.target, current && current.target) && current.target.readOnly === false) {
-        try { restored = (await deps.sendChord(op.kind === 'voice' ? 'voice-restore' : deps.platform === 'darwin' ? 'cmd-z' : 'ctrl-z', op.target, { signal: op.controller.signal, onCommit: () => { op.committed = true; } })) === true && !op.controller.signal.aborted; }
-        catch { /* Clipboard fallback. */ }
+        try {
+          const sent = await deps.sendChord(op.kind === 'voice' ? 'voice-restore' : deps.platform === 'darwin' ? 'cmd-z' : 'ctrl-z', op.target,
+            { signal: op.controller.signal, expectedGeneration: op.generation, sessionId: op.sessionId });
+          restored = sent && typeof sent === 'object' ? !!sent.sent : sent === true && !op.controller.signal.aborted;
+          uncertain = !!(sent && typeof sent === 'object' && !sent.sent && !['dirty', 'target-changed', 'guard-unavailable', 'metadata-error'].includes(sent.reason));
+        }
+        catch { uncertain = true; }
       }
     }
-    const note = restored ? '已回退，原文已复制' : op.terminal ? '终端内容未修改，原文已复制' :
+    const note = restored ? '已回退，原文已复制' : uncertain ? '未确认回退，原文已复制' : op.terminal ? '终端内容未修改，原文已复制' :
       op.inserted ? '目标未修改，原文已复制' : '原文已复制';
     return { ok: true, restored, copiedOnly: !restored, note };
     } finally { undoing = null; }

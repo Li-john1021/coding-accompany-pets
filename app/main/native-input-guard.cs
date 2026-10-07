@@ -81,6 +81,12 @@ public static class V2PInputSession {
             Class(hwnd)==(string)target["windowClass"] && Class(info.focus)==(string)target["focusClass"] &&
             Process.GetProcessById((int)pid).ProcessName==(string)target["processName"];
     }
+    static bool QuickTarget(Dictionary<string,object> target) {
+        var hwnd=GetForegroundWindow(); uint pid; var thread=GetWindowThreadProcessId(hwnd,out pid);
+        var info=new GUI(); info.size=Marshal.SizeOf(typeof(GUI));
+        return hwnd.ToInt64()==Number(target,"hwnd") && pid==Number(target,"pid") && thread==Number(target,"threadId") &&
+            GetGUIThreadInfo(thread,ref info) && info.focus.ToInt64()==Number(target,"focusHwnd");
+    }
     static bool PumpPendingInput() {
         MSG message; bool commandPending=false, quit=false; int count=0;
         // Drain LL-hook/window callbacks without recursively executing send commands.
@@ -123,6 +129,7 @@ public static class V2PInputSession {
             // Hooks and this command run on the same message thread. This is the last
             // check before the single atomic packet, after all identity/API work.
             if(!PumpPendingInput()) { Output(new { id=id,sent=false,generation=generation,reason="guard-unavailable" }); return; }
+            if(!QuickTarget(target)) { Output(new { id=id,sent=false,generation=generation,reason="target-changed" }); return; }
             long baseline=generation;
             long expected=Number(command,"expectedGeneration");
             if(expected>=0 && baseline!=expected) { Output(new { id=id,sent=false,generation=baseline,reason="dirty" }); return; }
@@ -151,7 +158,10 @@ public static class V2PInputSession {
             }); reader.IsBackground=true; reader.Start();
             Output(new { type="ready", generation=generation });
             while(GetMessage(out msg,IntPtr.Zero,0,0)>0) {
-                if(msg.message==0x8001) { Dictionary<string,object> command; if(commands.TryDequeue(out command)) Command(command); }
+                if(msg.message==0x8001) {
+                    Dictionary<string,object> command; if(commands.TryDequeue(out command)) Command(command);
+                    if(!commands.IsEmpty) PostThreadMessage(messageThread,0x8001,UIntPtr.Zero,IntPtr.Zero);
+                }
                 else { TranslateMessage(ref msg); DispatchMessage(ref msg); }
             }
         }

@@ -1,6 +1,6 @@
 const assert = require('assert');
 const { createResultDelivery, pasteChord } = require('./result-delivery');
-const { buildTargetKeysScript } = require('./target-keys');
+const { keyEvents } = require('./target-keys');
 const target = { hwnd: 1, pid: 2, threadId: 3, focusHwnd: 4, windowClass: 'Chrome_WidgetWin_1', focusClass: 'Edit', processName: 'chrome', readOnly: false };
 function fixture() {
   const state = { now: 0, target, writes: [], chords: [], shows: [], timers: [], guard: true };
@@ -18,11 +18,38 @@ function fixture() {
     delivery = createResultDelivery({ platform: 'win32', snapshot: async () => ({ target }), guardAvailable: () => true,
       writeClipboard: async () => {}, onShow: (p) => { token = p.token; },
       sendChord: async (chord, _target, options) => {
-        if (chord !== 'ctrl-v') { options.onCommit(); delivery.markDirty(); assert.equal(options.signal.aborted, false, 'own committed packet is no longer startup-cancellable'); }
+        if (chord !== 'ctrl-v') {
+          delivery.markDirty();
+          assert.equal(options.signal.aborted, true, 'a prior JS grant never suppresses genuine dirty input');
+          return false;
+        }
         return true;
       } });
     await delivery.deliver({ original: 'initial', text: 'processed', kind: 'voice', target, insertMode: 'paste' });
-    assert.equal((await delivery.undo(token)).restored, true);
+    assert.equal((await delivery.undo(token)).restored, false);
+  }
+  {
+    let token, entered, release; const chords = [];
+    const started = new Promise((resolve) => { entered = resolve; });
+    const waiting = new Promise((resolve) => { release = resolve; });
+    const delivery = createResultDelivery({ platform: 'win32', snapshot: async () => ({ target }), guardAvailable: () => true,
+      writeClipboard: async () => {}, onShow: (p) => { token = p.token; },
+      sendChord: async (chord) => { chords.push(chord); entered(); await waiting; return { sent: true, generation: 4, sessionId: 'same-native-session' }; } });
+    const pending = delivery.deliver({ original: 'source', text: 'processed', target, insertMode: 'paste' });
+    await started; delivery.markDirty(); release(); await pending;
+    assert.equal((await delivery.undo(token)).restored, false, 'post-injection input before paste promise settles remains dirty');
+    assert.deepEqual(chords, ['ctrl-v']);
+  }
+  {
+    let token;
+    const delivery = createResultDelivery({ platform: 'win32', snapshot: async () => ({ target }), guardAvailable: () => true,
+      writeClipboard: async () => {}, onShow: (p) => { token = p.token; },
+      sendChord: async (chord, _target, options) => {
+        if (chord !== 'ctrl-v') { assert.equal(options.expectedGeneration, 7); assert.equal(options.sessionId, 'session-one'); }
+        return { sent: true, generation: 7, sessionId: 'session-one' };
+      } });
+    await delivery.deliver({ original: 'initial', text: 'processed', kind: 'voice', target, insertMode: 'paste' });
+    assert.equal((await delivery.undo(token)).restored, true, 'own-origin filtering permits a clean native packet');
   }
   for (const kind of ['selection', 'voice']) {
     for (const cancel of ['dirty', 'clear']) {
@@ -66,9 +93,7 @@ function fixture() {
     const f = fixture(); await f.run({ kind: 'voice', original: 'initial ASR', text: 'processed voice' });
     assert.equal((await f.delivery.undo(f.token())).restored, true);
     assert.deepEqual(f.state.chords, ['ctrl-v', 'voice-restore']); assert.equal(f.state.writes.at(-1), 'initial ASR');
-    const script = buildTargetKeysScript('voice-restore', target);
-    assert.match(script, /\[uint16\[\]\]@\(17,90,90,17,17,86,86,17\)/);
-    assert.doesNotMatch(script, /\[ushort\[\]\]/);
+    assert.deepEqual(keyEvents('voice-restore'), [[17,0],[90,0],[90,2],[17,2],[17,0],[86,0],[86,2],[17,2]]);
   }
   {
     const f = fixture(); f.state.target = { ...target, readOnly: undefined };
@@ -104,7 +129,7 @@ function fixture() {
     await f.run({ original: 'raw ASR', text: 'raw ASR', insertMode: 'clipboard' }); await f.delivery.undo(f.token());
     assert.equal(f.state.writes.at(-1), 'raw ASR');
   }
-  for (const chord of ['ctrl-v', 'shift-insert', 'ctrl-z']) assert.match(buildTargetKeysScript(chord, target), /GetGUIThreadInfo/);
-  for (const forbidden of ['enter', 'ctrl-u', 'escape', 'clear', 'cmd-z']) assert.equal(buildTargetKeysScript(forbidden, target), null);
+  for (const chord of ['ctrl-v', 'shift-insert', 'ctrl-z']) assert.ok(keyEvents(chord));
+  for (const forbidden of ['enter', 'ctrl-u', 'escape', 'clear', 'cmd-z']) assert.equal(keyEvents(forbidden), null);
   console.log('PASS v5 delivery clipboard/paste, exact source, tokens, expiry, dirty/change, terminal no-undo/no-Enter, raw ASR and native identity guards');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

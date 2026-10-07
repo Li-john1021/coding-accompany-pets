@@ -14,6 +14,7 @@ const { createPetActionCapture, createWindowsAdapters, getWindowsSnapshot } = re
 const { createPetActionWorkflow } = require('./pet-action-workflow');
 const { createResultDelivery } = require('./result-delivery');
 const { sendTargetChord } = require('./target-keys');
+const { nativeInputSession } = require('./native-input-session');
 const { createInputDirtyGuard } = require('./input-dirty-guard');
 const resultDelivery = createResultDelivery({
   platform: process.platform,
@@ -21,10 +22,12 @@ const resultDelivery = createResultDelivery({
   watchTarget: true,
   writeClipboard: (text) => require('electron').clipboard.writeText(text),
   sendChord: sendTargetChord,
-  guardAvailable: () => !!inputDirtyGuard && inputDirtyGuard.running,
+  guardAvailable: () => nativeInputSession.running,
   onShow: (payload) => showUndoToast(payload),
-  onHide: () => { undoToastPayload = null; if (undoWin && !undoWin.isDestroyed()) undoWin.hide(); }
+  onHide: () => { undoToastPayload = null; nativeInputSession.setToastBounds(null); if (undoWin && !undoWin.isDestroyed()) undoWin.hide(); }
 });
+nativeInputSession.onDirty = () => resultDelivery.markDirty();
+nativeInputSession.onUnavailable = () => resultDelivery.markDirty();
 function deliverResult(payload) {
   const cfg = config.load();
   return resultDelivery.deliver({ ...payload, insertMode: payload.insertMode || cfg.insertMode, undoToastSeconds: cfg.undoToastSeconds });
@@ -945,7 +948,15 @@ function showUndoToast(payload) {
   const display = require('electron').screen.getDisplayNearestPoint(require('electron').screen.getCursorScreenPoint());
   const area = display.workArea;
   win.setBounds({ x: area.x + area.width - 296, y: area.y + area.height - 92, width: 280, height: 76 });
-  const show = () => { if (!win.isDestroyed() && undoToastPayload) { win.webContents.send('v2p:undo-show', undoToastPayload); win.showInactive(); } };
+  const show = async () => {
+    if (win.isDestroyed() || !undoToastPayload) return;
+    const payload = undoToastPayload;
+    const b = win.getBounds(); const screen = require('electron').screen;
+    const first = screen.dipToScreenPoint({ x: b.x, y: b.y });
+    const last = screen.dipToScreenPoint({ x: b.x + b.width, y: b.y + b.height });
+    await nativeInputSession.setToastBounds({ hwnd: Number(win.getNativeWindowHandle().readBigUInt64LE()), left: first.x, top: first.y, right: last.x, bottom: last.y });
+    if (!win.isDestroyed() && undoToastPayload === payload) { win.webContents.send('v2p:undo-show', payload); win.showInactive(); }
+  };
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', show);
   else show();
 }
@@ -1047,7 +1058,8 @@ function setMouseRecordHook() {
     try {
       const { uIOhook } = require('uiohook-napi');
       if (!inputDirtyGuard) inputDirtyGuard = createInputDirtyGuard({ hook: uIOhook,
-        markDirty: () => resultDelivery.markDirty(),
+        // uiohook exposes no injection origin; native hooks own Windows dirty tracking.
+        markDirty: () => { if (!nativeInputSession.running) resultDelivery.markDirty(); },
         isToastPoint: (x, y) => {
           if (!undoWin || undoWin.isDestroyed() || !undoWin.isVisible()) return false;
           const point = process.platform === 'win32' ? require('electron').screen.screenToDipPoint({ x, y }) : { x, y };
@@ -1070,6 +1082,7 @@ function setMouseRecordHook() {
         }
       });
       inputDirtyGuard.start();
+      nativeInputSession.start();
       mouseHookOn = true;
       console.log('[mouse] hook on');
     } catch (e) {
@@ -1081,6 +1094,7 @@ function stopMouseRecordHook() {
   if (inputDirtyGuard) { try { inputDirtyGuard.stop(); } catch { } }
   mouseHookOn = false;
   resultDelivery.clear();
+  nativeInputSession.stop();
 }
 
 app.on('will-quit', () => {

@@ -15,6 +15,10 @@ function fake() {
   return { session, commands, output, get child() { return child; }, get spawned() { return spawned; } };
 }
 (async () => {
+  const boot = fake(); const bootController = new AbortController();
+  const booting = boot.session.send(keys, target, { signal: bootController.signal }); bootController.abort();
+  assert.equal(boot.child.kills, 1); assert.equal(boot.session.running, false); assert.equal(boot.session.sessionId, null);
+  assert.equal((await booting).sent, false, 'startup abort kills the compiler/helper before it can accept a packet');
   const f = fake(); const pre = new AbortController(); pre.abort();
   assert.equal((await f.session.send(keys, target, { signal: pre.signal })).sent, false); assert.equal(f.spawned, 0);
   const starting = f.session.start(); f.output({ type: 'ready', generation: 7 }); assert.equal(await starting, true);
