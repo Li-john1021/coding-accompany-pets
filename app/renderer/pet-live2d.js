@@ -268,6 +268,7 @@
   function hasVisiblePixels() {
     try {
       if (!canvas) return false;
+      if (app) app.render();
       const c = document.createElement('canvas');
       c.width = canvas.width; c.height = canvas.height;
       const x = c.getContext('2d', { willReadFrequently: true });
