@@ -1,0 +1,78 @@
+spec_version: "1"
+goal: "Restore Main's structure-only prompt behavior with small context-sensitive spoken-cleanup additions while retaining JSON source handling."
+source:
+  plan_ref: "docs/PLAN-structure-prompt-v6.md"
+  plan_version: "v6; base codex/palette-input-sources at 89d61c29d96cb149077a323b571b8b75ccc54ae7"
+  approval_evidence: "User task instruction dated 2026-10-09, explicitly authorizing this prompt-only cycle and its validation/release boundaries."
+requirements:
+  - id: REQ-001
+    statement: "Restore the structure-only prompt behavior from Main commit bd52106c7723006ddcc2a56268d9d17377571fe6, including semantic two-level numbering for multiple matters and no required numbering for a short single-topic sentence."
+    source_refs: ["Approval and goal", "Implementation and acceptance"]
+  - id: REQ-002
+    statement: "Remove only contextually meaningless fillers and semantic repetition; use the last clear formulation after self-correction while preserving meaning-bearing reference, condition, order, contrast, possibility, uncertainty, and opinion."
+    source_refs: ["Approval and goal"]
+  - id: REQ-003
+    statement: "Preserve negation, numbers, names, paths, code, facts, and distinct proper names; never answer, execute, or add facts to the source."
+    source_refs: ["Approval and goal"]
+  - id: REQ-004
+    statement: "Keep the existing JSON source input contract, structure routing, and single-call pipeline behavior."
+    source_refs: ["Approval and goal", "Scope and constraints"]
+  - id: REQ-005
+    statement: "Keep DEFAULT_PROMPT, provider/model settings, architecture, UI fallback behavior, and historical v5 evaluation artifacts unchanged; make no live-provider calls or model-quality claim."
+    source_refs: ["Scope and constraints", "Implementation and acceptance"]
+  - id: REQ-006
+    statement: "Use deterministic actual-pipeline mock tests and a synthetic corpus spanning the specified speech cases; do not represent hand-authored mock rewrites as semantic-quality evidence."
+    source_refs: ["Scope and constraints", "Implementation and acceptance"]
+acceptance:
+  - id: AC-001
+    proves: [REQ-001, REQ-002, REQ-003]
+    check: "Prompt-source review checks the baseline contract, two-level multi-matter numbering, single-topic exemption, context-dependent filler/repetition rules, last-clear self-correction, preservation rules, and no-answer/no-execution boundary."
+    evidence: "Prompt diff and focused prompt contract tests"
+  - id: AC-002
+    proves: [REQ-004, REQ-006]
+    check: "Actual pipeline tests with a mocked model capture the routed system prompt and JSON source for synthetic multi-matter speech, reference/condition/negation/uncertainty, paths/proper names, embedded instructions, repetition, and self-correction. Tests assert transport/routing only, not model-generated semantic outcomes."
+    evidence: "Focused pipeline mock test report and command output"
+  - id: AC-003
+    proves: [REQ-005]
+    check: "Diff review confirms the excluded prompt, settings, architecture, fallback, and v5 evaluation files are unchanged; execution record confirms zero provider/model/ASR/key/profile/GUI calls and labels prompt quality not live evaluated."
+    evidence: "Candidate diff and implementation ledger"
+dependencies:
+  - id: DEP-001
+    statement: "Existing structure prompt export and pipeline structure-mode routing in app/main/config.js, app/main/text-prompts.js, and app/main/pipeline.js."
+    status: verified
+  - id: DEP-002
+    statement: "Existing sourceMessage(text) JSON serialization contract in app/main/text-prompts.js."
+    status: verified
+assumptions:
+  - id: ASM-001
+    statement: "The user's report that the same MiMo model is unchanged and Main's earlier structure behavior was better is the product rationale for restoring the baseline; no independent quality comparison is claimed in this cycle."
+    validation: "Use the user instruction as approval rationale; quality remains not live evaluated."
+invariants:
+  - id: INV-001
+    statement: "Source text remains data in the JSON source field and is never followed as an instruction."
+  - id: INV-002
+    statement: "Meaning-bearing discourse and all facts, negation, uncertainty, numbers, names, paths, and code remain preserved in meaning/form."
+  - id: INV-003
+    statement: "Structure processing remains on the existing route and does not gain an additional online call."
+forbidden_effects:
+  - id: FORB-001
+    statement: "No edits to DEFAULT_PROMPT, sourceMessage behavior, model/provider settings, pipeline architecture, UI fallback behavior, or historical v5 evaluation artifacts."
+  - id: FORB-002
+    statement: "No mechanical deletion of listed filler strings where they carry meaning; no merging of distinct names such as Grok and Growth; no fact invention, answering, or execution."
+  - id: FORB-003
+    statement: "No provider, LLM, ASR, key/profile, or GUI access; no hand-authored fake-LLM output used as semantic-quality proof; no live-quality claim."
+  - id: FORB-004
+    statement: "No merge, push, or restart of the user's portable app."
+implementation_units:
+  - id: WU-001
+    objective: "Restore the Main structure-only prompt baseline with narrowly scoped spoken-cleanup and JSON-source rules; update focused deterministic tests."
+    depends_on: [DEP-001, DEP-002]
+    checks: [AC-001, AC-002, AC-003]
+validation_boundaries:
+  - id: VB-001
+    trigger: "The prompt affects every structure-mode request and careless cleanup can lose negation, references, or identifiers."
+    scope: [WU-001]
+    evidence: "Independent review of candidate prompt/test diff against preservation, no-answer, routing, forbidden-effects, and deterministic-evidence requirements."
+final_acceptance:
+  proves: [REQ-001, REQ-002, REQ-003, REQ-004, REQ-005, REQ-006]
+  release_boundary: "Implementation and deterministic tests may be completed and reviewed. Prompt quality remains not live evaluated; merge, push, production promotion, and portable-app restart are not authorized."
