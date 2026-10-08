@@ -1,6 +1,6 @@
 # Structure Prompt v6 Ledger
 
-Status: WU-001 implemented in candidate commit `c2b43c000b9dd0163f1f3c50dc5e62ca89efeb06`; deterministic checks passed. Independent review and clean tester remain pending.
+Status: WU-001 implemented in candidate commits `c2b43c000b9dd0163f1f3c50dc5e62ca89efeb06` and narrow fixup `ade984f7c76471607a30881afab544d6a829a8a9`; deterministic checks passed. Independent review and clean tester remain pending.
 
 ## Frozen inputs
 
@@ -40,9 +40,10 @@ The planning documents were committed separately as `ec2eac66fd1d27758483a5d7c72
 |---|---|
 | Candidate commit | `c2b43c000b9dd0163f1f3c50dc5e62ca89efeb06` (`feat: restore main structure prompt behavior`) |
 | Scope | Restored the Main baseline as the exact structure-prompt prefix; appended short context-sensitive cleanup and JSON source instructions; updated the v5 config prompt assertion; added shared synthetic cases and an actual pipeline mock-routing test. |
-| Prompt file SHA-256 | `B619B25320DDB5385D2BD2A9E37EBD297CA046549167D4A3F1FFA4CB9E528CD5` (`app/main/text-prompts.js`) |
+| Prompt file SHA-256 | `E548E850004E54A1932FEE4A549269E1288783B9E523D1A7C211FF3BFCD76641` (`app/main/text-prompts.js`, after fixup) |
 | Provider/model/ASR/key/profile/GUI access | 0; no live evaluation was run. The pipeline test made five mocked `chatCompletion` invocations. |
 | Prompt quality | Not live evaluated; no semantic quality claim. |
+| Synthetic long case | 708 Unicode code points, with a Windows path represented as single backslashes at runtime and actual newline separators. |
 
 Checks run (all exit 0):
 
@@ -55,3 +56,5 @@ Checks run (all exit 0):
 - `git diff --check 89d61c29d96cb149077a323b571b8b75ccc54ae7..HEAD` — passed.
 
 The candidate commit changes only the structure prompt and its focused tests/fixture. `DEFAULT_PROMPT`, `sourceMessage`, pipeline implementation, models/config, UI fallback, and v5 live-evaluation artifacts are unchanged. This record is separate from the candidate commit; independent review and clean testing must be recorded after they occur.
+
+Narrow fixup `ade984f7c76471607a30881afab544d6a829a8a9` makes the filler/repetition instruction explicitly removal-oriented while retaining contextual judgment, restores the two existing `DEFAULT_PROMPT` contract assertions, expands the long multi-matter fixture to 708 characters, and makes the correction cue explicit. The same focused tests, pipeline/mode guards, syntax checks, and whitespace check were rerun after the fixup; all passed. The mock test still asserts routing and transport only.
