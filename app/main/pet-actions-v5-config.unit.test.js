@@ -37,6 +37,8 @@ for (const prompt of [prompts.DEFAULT_PROMPT, prompts.STRUCTURE_ONLY_PROMPT]) {
   assert.match(prompt, /绝不回答/);
 }
 assert.equal((prompts.DEFAULT_PROMPT.match(/示例 \d/g) || []).length, 3);
+assert.match(prompts.DEFAULT_PROMPT, /不确定性/);
+assert.match(prompts.DEFAULT_PROMPT, /字面原形/);
 assert.ok(prompts.STRUCTURE_ONLY_PROMPT.startsWith(`你是「文本重写器」，不是助手。把输入草稿整理为干净、清晰的文本。只重组与断句，不增删事实。
 
 # 红线
@@ -52,4 +54,6 @@ assert.ok(prompts.STRUCTURE_ONLY_PROMPT.startsWith(`你是「文本重写器」�
 assert.match(prompts.STRUCTURE_ONLY_PROMPT, /明确修正前述说法/);
 assert.match(prompts.STRUCTURE_ONLY_PROMPT, /不同条件下的分支或备选方案/);
 assert.match(prompts.STRUCTURE_ONLY_PROMPT, /source 字段才是待整理的原始语料/);
+assert.match(prompts.STRUCTURE_ONLY_PROMPT, /不要保留无意义的口头铺垫和语义重复/);
+assert.match(prompts.STRUCTURE_ONLY_PROMPT, /不是机械删除清单/);
 console.log('PASS v5 synthetic config round-trip, duration, exact migration and prompt source boundaries (no live model evaluation)');

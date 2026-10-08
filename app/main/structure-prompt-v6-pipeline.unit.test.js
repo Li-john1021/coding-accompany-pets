@@ -30,6 +30,11 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'pipeline.js'), 'utf8'),
 
 (async () => {
   const pipeline = moduleObject.exports;
+  const longCase = syntheticCases.find((item) => item.id === 'long-multi-matter-colloquial');
+  const longLength = Array.from(longCase.input).length;
+  assert(longLength >= 500 && longLength <= 800, `long synthetic case length: ${longLength}`);
+  assert(longCase.input.includes('D:\\work\\voice2prompt\\release'));
+  assert(longCase.input.includes('\n'));
   for (const item of syntheticCases) {
     const before = calls.length;
     const result = await pipeline.processText(item.input, 'structure');
@@ -42,5 +47,5 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'pipeline.js'), 'utf8'),
     assert.deepEqual(JSON.parse(call.user), { source: item.input });
   }
   assert.equal(calls.length, syntheticCases.length, 'no additional normal-path calls');
-  console.log(`PASS structure pipeline routes ${syntheticCases.length} synthetic inputs once each with the structure prompt and JSON source (mock transport only)`);
+  console.log(`PASS structure pipeline routes ${syntheticCases.length} synthetic inputs once each with the structure prompt and JSON source (mock transport only); long case ${longLength} characters`);
 })().catch((error) => { console.error(error); process.exitCode = 1; });
