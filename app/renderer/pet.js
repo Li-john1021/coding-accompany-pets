@@ -3,6 +3,8 @@ const stage = document.getElementById('stage');
 const petImg = document.getElementById('pet');
 const statusEl = document.getElementById('status');
 const bubble = document.getElementById('bubble');
+const actionRow = document.getElementById('action-row');
+const actionButtons = [...document.querySelectorAll('#action-row .pet-action')];
 
 // 进入监听时随机弹一句「在听」的表演反馈
 const LISTEN_LINES = [
@@ -30,6 +32,9 @@ const STATUS_CLASS = {
 };
 
 let bubbleTimer = null;
+let voiceUiEpoch = 0;
+let uiStateEpoch = 0;
+const VOICE_UI_STAGES = new Set(['listening', 'transcribing']);
 function say(text, ms = 3500) {
   bubble.textContent = text;
   bubble.classList.add('show');
@@ -39,6 +44,8 @@ function say(text, ms = 3500) {
 
 function setState(s) {
   const prev = curStage;
+  uiStateEpoch++;
+  if (VOICE_UI_STAGES.has(s) && !VOICE_UI_STAGES.has(prev)) voiceUiEpoch++;
   curStage = s;
   stage.className = s + (window.petLive2d && window.petLive2d.active() ? ' live2d' : '');
   statusEl.className = STATUS_CLASS[s] || '';
@@ -50,10 +57,93 @@ function setState(s) {
     statusEl.textContent = text;
   }
   if (window.petLive2d) window.petLive2d.setState(s);
+  updateActionButtons();
   if (s === 'listening' && prev !== 'listening') {
     say(LISTEN_LINES[(Math.random() * LISTEN_LINES.length) | 0], 2600);
   }
 }
+
+function scheduleIdle(delayMs) {
+  const expectedVoiceEpoch = voiceUiEpoch;
+  const expectedStateEpoch = uiStateEpoch;
+  setTimeout(() => {
+    if (voiceUiBusy() || voiceUiEpoch !== expectedVoiceEpoch || uiStateEpoch !== expectedStateEpoch) return;
+    setState('idle');
+  }, delayMs);
+}
+
+let activePetAction = null;
+function updateActionButtons() {
+  const voiceBusy = voiceUiBusy();
+  for (const button of actionButtons) {
+    const mode = button.dataset.mode;
+    button.classList.toggle('active', mode === activePetAction);
+    button.disabled = mode === 'image_recognition' || mode === 'image' ||
+      voiceBusy || (!!activePetAction && mode !== activePetAction);
+    if (mode === activePetAction) button.setAttribute('aria-busy', 'true');
+    else button.removeAttribute('aria-busy');
+  }
+}
+
+function voiceUiBusy() {
+  return ['listening', 'transcribing'].includes(curStage) || starting || isRecording;
+}
+
+for (const button of actionButtons) {
+  for (const eventName of ['pointerdown', 'mousedown', 'click', 'dblclick', 'contextmenu', 'wheel']) {
+    button.addEventListener(eventName, (event) => event.stopPropagation());
+  }
+  button.addEventListener('click', async () => {
+    if (activePetAction || ['listening', 'transcribing'].includes(curStage) || isRecording || starting) return;
+    const mode = button.dataset.mode;
+    if (mode !== 'structure' && mode !== 'optimize') return;
+    activePetAction = mode;
+    setState(mode === 'structure' ? 'structuring' : 'optimizing');
+    const actionVoiceEpoch = voiceUiEpoch;
+    try {
+      const settlement = await window.petActionSettlement.invoke(
+        () => window.v2p.petAction(mode),
+        () => voiceUiBusy() || actionVoiceEpoch !== voiceUiEpoch,
+        () => {
+          say('文本操作暂不可用', 3500);
+          setState('idle');
+        }
+      );
+      if (settlement.status !== 'resolved') return;
+      const result = settlement.value;
+      if (voiceUiBusy() || actionVoiceEpoch !== voiceUiEpoch || (result && result.voiceSuperseded)) return;
+      if (result && result.capture && result.capture.kind === 'authorized') {
+        if (!result.ok) {
+          say(result.error || '文本处理失败', 5000);
+          setState('error');
+          scheduleIdle(5000);
+        } else {
+          say(result.note ? `处理完成，结果已复制 · ${result.note}` : '处理完成，结果已复制', 5000);
+          setState('done');
+          scheduleIdle(5000);
+        }
+      } else if (result && result.capture && result.capture.kind === 'cancelled') {
+        say('捕获已取消，请重新操作', 3500);
+        setState('idle');
+      } else if (result && result.capture && result.capture.kind === 'rejected') {
+        say((result && result.error) || '文本捕获未完成', 3500);
+        setState('idle');
+      } else
+      if (!result || !result.ok) {
+        say((result && result.error) || '文本操作暂不可用', 3500);
+        setState('idle');
+      } else {
+        say('已完成', 3000);
+        setState('done');
+        scheduleIdle(3000);
+      }
+    } finally {
+      activePetAction = null;
+      updateActionButtons();
+    }
+  });
+}
+actionRow.addEventListener('wheel', (event) => event.stopPropagation());
 
 // ---------------- 录音（PCM 采集 + 前端编 WAV） ----------------
 // 说明：部分 ASR（如小米 MiMo）只收 wav/mp3，不收 webm，
@@ -123,14 +213,26 @@ function encodeWav(samples, sampleRate) {
 async function startRecording() {
   if (isRecording || starting) return;
   starting = true;
+  const previousStage = curStage;
+  setState('listening');
+  updateActionButtons();
+  const admission = await window.v2p.setRecordingFlag(true);
+  if (admission && admission.ok === false) {
+    starting = false;
+    setState(previousStage);
+    updateActionButtons();
+    say(admission.error || '已有操作正在进行');
+    return;
+  }
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
     starting = false;
+    updateActionButtons();
     window.v2p.setRecordingFlag(false); // 失败回传，避免主进程热键状态失同步
     setState('error');
     say('无法访问麦克风：' + (e.message || e));
-    setTimeout(() => setState('idle'), 3000);
+    scheduleIdle(3000);
     return;
   }
   starting = false;
@@ -148,7 +250,7 @@ async function startRecording() {
   procNode.connect(audioCtx.destination);
   isRecording = true;
   setState('listening');
-  window.v2p.setRecordingFlag(true);
+  updateActionButtons();
 }
 
 async function stopRecording() {
@@ -184,14 +286,15 @@ async function stopRecording() {
     if (!res.ok) {
       setState('error');
       say(res.error || '处理失败', 6000);
-      setTimeout(() => setState('idle'), 4000);
+      scheduleIdle(4000);
     }
   } catch (e) {
     setState('error');
     say('提交失败：' + (e.message || e), 6000);
-    setTimeout(() => setState('idle'), 4000);
+    scheduleIdle(4000);
   } finally {
     window.v2p.setRecordingFlag(false);
+    updateActionButtons();
   }
 }
 
@@ -240,13 +343,30 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mouseup', (e) => {
-  if (e.button !== 0 || !down) return;
+  const releaseAction = window.resolvePetMouseUp({
+    button: e.button,
+    bodyGestureActive: down,
+    targetInActionRow: !!(e.target.closest && e.target.closest('#action-row')),
+    triggerMode,
+    recording: isRecording,
+    dragging,
+    elapsedMs: performance.now() - downTime
+  });
+  if (releaseAction === 'ignore') return;
   down = false;
   cancelHold();
-  if (triggerMode === 'hold') {
-    if (isRecording) stopRecording();
-    else if (!dragging) window.v2p.openSettings(); // 单击打开设置
-  } else if (!dragging && performance.now() - downTime < 500) {
+  if (releaseAction === 'stop-recording') {
+    stopRecording();
+    dragging = false;
+    return;
+  }
+  if (releaseAction === 'discard') {
+    dragging = false;
+    return;
+  }
+  if (releaseAction === 'open-settings') {
+    window.v2p.openSettings();
+  } else if (releaseAction === 'toggle-recording') {
     // 防误触：按住超过 500ms 才松手（明显不是干脆的单击）不触发
     clickToggle();
   }
@@ -283,9 +403,9 @@ window.v2p.onResult((r) => {
     statusEl.textContent = modeTag + note + (r.note ? ' · ' + r.note : '') + ' · ' + body;
   }
   say((r.polished || '').slice(0, 90) + ((r.polished || '').length > 90 ? '…' : '') + note, 5000);
-  setTimeout(() => setState('idle'), 3000);
+  scheduleIdle(3000);
 });
-window.v2p.onToast((text) => { say(text, 5000); setState('error'); setTimeout(() => setState('idle'), 3500); });
+window.v2p.onToast((text) => { say(text, 5000); setState('error'); scheduleIdle(3500); });
 window.v2p.onHotkeyStart(startRecording);
 window.v2p.onHotkeyStop(stopRecording);
 window.v2p.onPetImageChanged((dataUrl) => { if (dataUrl) petImg.src = dataUrl; });

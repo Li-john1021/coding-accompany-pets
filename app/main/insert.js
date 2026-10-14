@@ -4,14 +4,33 @@
 // IME 拦截转成 VK_PROCESSKEY（Chromium 里 e.key="Process"），应用永远收不到，
 // 结果就是"只进了剪贴板，还是要手动 Ctrl+V"。
 // 解法：注入前先敲一下 Shift 让 IME 切到英文直通，粘完再敲一下恢复原状态；
-// IME 未打开（纯英文键盘）则直接 SendInput。另外必须 -EncodedCommand：
-// -Command 传参经过双层解析会把引号拆进按键流。
+// IME 未打开（纯英文键盘）则直接 SendInput。Target text is passed separately on stdin.
 const { clipboard } = require('electron');
 const { execFile } = require('child_process');
+const { runPowerShellFile } = require('./powershell-file');
+const {
+  buildPasteTargetGuard,
+  REQUIRE_NATIVE_TARGET,
+  RESTORE_SHIFT_IF_NATIVE_TARGET
+} = require('./palette-paste-guard');
 
 // true=注入成功（按键发出去了；目标是否受理无法检测，交给 copiedOnly 兜底语义）
-function pasteViaSendInput() {
+function pasteViaSendInput(target) {
   return new Promise((resolve) => {
+    let targetGuard = '';
+    let requireTarget = '';
+    let restoreShift = '[V2PPaste]::TapShift()';
+    if (target) {
+      targetGuard = buildPasteTargetGuard(target);
+      if (!targetGuard) { resolve('cancelled'); return; }
+      if (target.provider === 'win32-edit') {
+        requireTarget = REQUIRE_NATIVE_TARGET;
+        restoreShift = RESTORE_SHIFT_IF_NATIVE_TARGET;
+      } else {
+        resolve('cancelled');
+        return;
+      }
+    }
     const script = `
 Start-Sleep -Milliseconds 100
 Add-Type -TypeDefinition @"
@@ -28,6 +47,7 @@ public struct INPUT { public uint type; public INPUTUNION u; }
 public class V2PPaste {
   [DllImport("user32.dll")] public static extern uint SendInput(uint n, INPUT[] inputs, int size);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
   [DllImport("imm32.dll")] public static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hwnd);
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
   static void Key(ushort vk, uint flags) {
@@ -48,28 +68,48 @@ public class V2PPaste {
   }
 }
 "@
+${targetGuard}
 Start-Sleep -Milliseconds 60
+${requireTarget}
 $ime = [V2PPaste]::ImeOpen()
-if ($ime) { [V2PPaste]::TapShift(); Start-Sleep -Milliseconds 120 }
+if ($ime) {
+  ${requireTarget}
+  [V2PPaste]::TapShift()
+  Start-Sleep -Milliseconds 120
+}
+${requireTarget}
 [V2PPaste]::Paste()
 Start-Sleep -Milliseconds 160
-if ($ime) { [V2PPaste]::TapShift() }
+if ($ime) { ${restoreShift} }
 `;
-    const b64 = Buffer.from(script, 'utf16le').toString('base64');
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-EncodedCommand', b64],
-      { timeout: 8000, windowsHide: true },
-      (err) => resolve(!err)
-    );
+    runPowerShellFile(script, {
+      timeout: 8000,
+      maxBuffer: 256 * 1024,
+      stdin: target ? Buffer.from(target.text, 'utf8').toString('base64') + '\n' : ''
+    }, (err, stdout) => {
+        if (target && (err || String(stdout || '').includes('V2P_CANCEL'))) resolve('cancelled');
+        else resolve(!err);
+      });
   });
 }
 
 // 返回 { inserted: boolean }
-async function insertText(text, mode) {
+async function insertText(text, mode, options = {}) {
+  const guarded = !!options.target;
+  if (guarded && !buildPasteTargetGuard(options.target)) {
+    return { inserted: false, copiedOnly: false, cancelled: true };
+  }
+  const oldClipboard = guarded ? clipboard.readText() || '' : '';
   clipboard.writeText(text);
   if (mode !== 'paste') return { inserted: false, copiedOnly: true };
-  const ok = await pasteViaSendInput();
+  const result = await pasteViaSendInput(options.target);
+  if (result === 'cancelled') {
+    if (guarded && clipboard.readText() === text) {
+      try { clipboard.writeText(oldClipboard); } catch { /* ignore */ }
+    }
+    return { inserted: false, copiedOnly: false, cancelled: true };
+  }
+  const ok = !!result;
   return { inserted: ok, copiedOnly: !ok };
 }
 

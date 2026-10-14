@@ -33,8 +33,9 @@ $('#btn-optimize').addEventListener('click', async () => {
 });
 
 async function finish(copyOnly) {
-  const text = lastResult || rawEl.value;
+  const text = rawEl.value;
   const res = await window.v2p.previewInsert({ text, copyOnly });
+  if (!res.ok) { statusEl.textContent = res.error || '写入失败'; return; }
   window.v2p.previewClose({ ok: true, text, ...res });
 }
 
@@ -45,5 +46,19 @@ $('#btn-cancel').addEventListener('click', () => window.v2p.previewClose({ ok: f
 window.v2p.onPreviewShow((p) => {
   rawEl.value = (p && p.raw) || '';
   lastResult = rawEl.value;
+  document.body.classList.toggle('result-only', !!(p && p.resultOnly));
+  if (p && p.resultOnly) {
+    mode = p.mode === 'structure' || p.mode === 'optimize' ? p.mode : 'none';
+    $('#btn-copy').textContent = '复制结果';
+    $('#btn-cancel').textContent = '关闭';
+    statusEl.textContent = '剪贴板未更新，请检查结果后显式复制';
+    for (const id of ['btn-none', 'btn-structure', 'btn-optimize']) $(id).hidden = true;
+    $('#btn-insert').hidden = true;
+    return;
+  }
+  $('#btn-copy').textContent = '仅复制';
+  $('#btn-cancel').textContent = '取消';
+  for (const id of ['btn-none', 'btn-structure', 'btn-optimize']) $(id).hidden = false;
+  $('#btn-insert').hidden = false;
   setMode('none');
 });

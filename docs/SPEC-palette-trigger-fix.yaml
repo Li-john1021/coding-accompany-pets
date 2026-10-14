@@ -1,0 +1,132 @@
+spec_version: "1"
+goal: "Only show the automatic selection palette for a confirmed non-empty selection made within the same editable, non-read-only control, with passive detection and fail-closed behavior."
+source:
+  plan_ref: "docs/PLAN-palette-trigger-fix.md"
+  plan_version: "v1 (approved plan in this commit)"
+  approval_evidence: "Current task handoff records user authorization to implement the latest false-popup product requirements and prior direction; see plan Approval evidence."
+requirements:
+  - id: REQ-001
+    statement: "The automatic palette is eligible only when a real non-empty text selection is positively confirmed in an editable, non-read-only text control, and mouse-down and mouse-up resolve to the same control."
+    source_refs: ["Plan Product request", "Plan R1"]
+  - id: REQ-002
+    statement: "The automatic palette is denied for desktop, Explorer/files/objects, menus, web read-only content, chat/history, PDFs/read-only documents, terminals, and any ambiguous or failed probe; foreground focus alone is insufficient evidence."
+    source_refs: ["Plan Product request", "Plan R2"]
+  - id: REQ-003
+    statement: "Passive eligibility detection does not synthesize Ctrl+C, modify the clipboard, shift focus, or change selection, and does not intercept or suppress the user's own copy action."
+    source_refs: ["Plan Product request", "Plan R3"]
+  - id: REQ-004
+    statement: "The automatic palette is suppressed while recording is active."
+    source_refs: ["Plan Product request", "Plan R4"]
+  - id: REQ-005
+    statement: "The configured minimum-character threshold is evaluated only after a real non-empty selected string has been confirmed."
+    source_refs: ["Plan Product request", "Plan R5"]
+  - id: REQ-006
+    statement: "Processing is initiated only by an explicit palette button click; action-time revalidation cancels stale targets or selections, and overlapping work cannot apply to the wrong target."
+    source_refs: ["Plan Product request", "Plan R6"]
+  - id: REQ-007
+    statement: "The existing palette UI and voice workflows remain functionally intact."
+    source_refs: ["Plan Product request", "Plan R7"]
+  - id: REQ-008
+    statement: "A browser editable area is eligible only when a non-side-effecting probe positively confirms its editable selection; otherwise the palette is denied."
+    source_refs: ["Plan Product request", "Plan R8"]
+acceptance:
+  - id: AC-001
+    proves: [REQ-001]
+    check: "Exercise a confirmed selection in an editable input and gestures crossing controls/borders or over objects; only the same-control non-empty selection shows the palette."
+    evidence: "Implementation test output and trigger scenario record."
+  - id: AC-002
+    proves: [REQ-002]
+    check: "Exercise desktop, Explorer/file/object, menu, browser read-only, chat/history, PDF/read-only, terminal, probe error/timeout, and focus-mismatch cases; none shows the palette."
+    evidence: "Implementation test output and trigger scenario record."
+  - id: AC-003
+    proves: [REQ-003]
+    check: "Inspect and exercise the passive trigger path; verify no synthetic copy/input or clipboard/focus/selection mutation occurs and a user Ctrl+C still copies normally."
+    evidence: "Code review plus targeted Windows observation record."
+  - id: AC-004
+    proves: [REQ-004]
+    check: "Make an otherwise eligible selection while recording; palette remains hidden."
+    evidence: "Implementation test output and trigger scenario record."
+  - id: AC-005
+    proves: [REQ-005]
+    check: "Verify missing/empty/failed selection is rejected before threshold evaluation, and confirmed selections below/at-or-above threshold follow configuration."
+    evidence: "Implementation test output and trigger scenario record."
+  - id: AC-006
+    proves: [REQ-006]
+    check: "Verify show/dismiss does not process; change target/selection before click or during async work and verify stale/overlapping work is canceled without applying to a different target."
+    evidence: "Implementation test output and async action scenario record."
+  - id: AC-007
+    proves: [REQ-007]
+    check: "Review existing palette presentation and exercise voice recording/transcription paths after trigger changes."
+    evidence: "Independent review notes and voice regression record."
+  - id: AC-008
+    proves: [REQ-008]
+    check: "Verify safe positive editable-selection evidence can pass in supported browser inputs; browser read-only content and unconfirmable contenteditable selection are denied."
+    evidence: "Targeted Windows/browser compatibility record."
+dependencies:
+  - id: DEP-001
+    statement: "Existing Electron global mouse-hook integration supplies mouse gesture events and screen coordinates."
+    status: verified
+  - id: DEP-002
+    statement: "Windows UI Automation TextPattern selection and native edit selection APIs are available as passive selection evidence on supported controls."
+    status: assumed
+  - id: DEP-003
+    statement: "A stable control identity can be obtained at both gesture endpoints and revalidated before applying asynchronous results."
+    status: assumed
+  - id: DEP-004
+    statement: "WU-001 exposes a passive eligibility result containing confirmed selection text and a control identity suitable for trigger integration."
+    status: assumed
+  - id: DEP-005
+    statement: "WU-002 exposes a stale-action cancellation path for work whose selection/control is no longer valid."
+    status: assumed
+assumptions:
+  - id: ASM-001
+    statement: "UIA TextPattern selection or an equivalent supported passive API can provide actual selected text on controls that are eligible."
+    validation: "During U1/U3, verify supported native controls; unavailable or ambiguous providers must fail closed."
+  - id: ASM-002
+    statement: "Control identity can be compared across mouse-down and mouse-up and retained long enough for action-time revalidation."
+    validation: "During U1/U2, demonstrate mismatch and stale-target scenarios; if identity is unavailable, deny the trigger."
+invariants:
+  - id: INV-001
+    statement: "Eligibility probing never takes keyboard focus or changes user selection or clipboard contents."
+  - id: INV-002
+    statement: "No model processing occurs before an explicit user action."
+  - id: INV-003
+    statement: "Unsupported, failed, stale, or ambiguous eligibility evidence fails closed."
+  - id: INV-004
+    statement: "Voice behavior and existing palette UI remain intact."
+forbidden_effects:
+  - id: FORB-001
+    statement: "Do not synthesize Ctrl+C or any other keystroke as part of passive eligibility detection."
+  - id: FORB-002
+    statement: "Do not mutate or temporarily replace clipboard contents, move focus, or alter selection during passive eligibility detection."
+  - id: FORB-003
+    statement: "Do not add a new shortcut, redesign the palette UI, or modify unrelated voice features."
+implementation_units:
+  - id: WU-001
+    objective: "Implement passive trigger probing and fail-closed eligibility for endpoint identity, editability, read-only state, non-empty selection, recording, and probe failures."
+    depends_on: [DEP-001, DEP-002, DEP-003]
+    checks: [AC-001, AC-002, AC-003, AC-004, AC-005, AC-008]
+  - id: WU-002
+    objective: "Integrate the mouse gesture with the eligibility gate, apply the threshold after selection confirmation, and cancel stale or overlapping explicit actions."
+    depends_on: [DEP-004]
+    checks: [AC-001, AC-005, AC-006]
+  - id: WU-003
+    objective: "Review compatibility and preserve existing palette presentation and voice behavior."
+    depends_on: [DEP-004, DEP-005]
+    checks: [AC-007, AC-008]
+validation_boundaries:
+  - id: VB-001
+    trigger: "Native probing crosses process boundaries and may fail or report misleading system focus."
+    scope: [WU-001]
+    evidence: "Probe failure, focus mismatch, endpoint mismatch, readonly, and non-empty selection scenarios all show fail-closed outcomes; passive path review confirms no clipboard/input/focus/selection side effects."
+  - id: VB-002
+    trigger: "Asynchronous processing can outlive or race with the selection/control that initiated it."
+    scope: [WU-002]
+    evidence: "Changed target/selection and overlapping action scenarios cancel without applying results to the wrong target."
+  - id: VB-003
+    trigger: "Control and browser providers expose different selection capabilities, while trigger changes share a process with voice and palette flows."
+    scope: [WU-003]
+    evidence: "Document supported/unsupported control cases and review voice/palette regression evidence."
+final_acceptance:
+  proves: [REQ-001, REQ-002, REQ-003, REQ-004, REQ-005, REQ-006, REQ-007, REQ-008]
+  release_boundary: "Only the approved automatic palette trigger safety change and its regression-preserving integration are authorized; no shortcut, UI redesign, or unrelated feature work."

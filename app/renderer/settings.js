@@ -247,18 +247,14 @@ async function loadConfig() {
   renderList('llm', cfg.llmProviders, cfg.activeLlmId);
   $('#hotkey').value = cfg.hotkey || '';
   $('#trigger-mode').value = cfg.triggerMode || 'hold';
-  $('#insert-mode').value = cfg.insertMode || 'paste';
+  $('#insert-mode').checked = cfg.insertMode === 'paste';
+  $('#undo-toast-seconds').value = cfg.undoToastSeconds ?? 10;
   $('#enable-structure').checked = !!cfg.enableStructure;
   $('#mouse-record').checked = cfg.mouseRecord === true;
   $('#enable-optimize').checked = !!cfg.enableOptimize;
   $('#preview-enabled').checked = !!cfg.previewEnabled;
   $('#structure-no-think').checked = cfg.structureDisableThinking !== false;
   $('#optimize-no-think').checked = cfg.optimizeDisableThinking !== false;
-  $('#palette-enabled').checked = cfg.paletteEnabled !== false;
-  $('#write-back-copy-only').checked = !!cfg.writeBackCopyOnly;
-  $('#clipboard-restore').checked = !!cfg.clipboardRestore;
-  $('#palette-min-chars').value = cfg.paletteMinChars != null ? cfg.paletteMinChars : 8;
-  $('#palette-long-hint').value = cfg.paletteLongHint != null ? cfg.paletteLongHint : 8000;
   $('#prompt-text').value = cfg.promptText || '';
   await renderPetModelSelect(cfg.petModel || '');
   applyPetKind((cfg.petModel || '') ? 'live2d' : 'image');
@@ -330,17 +326,13 @@ function wireEvents() {
       activeLlmId: llm.activeId,
       hotkey: $('#hotkey').value.trim(),
       triggerMode: $('#trigger-mode').value,
-      insertMode: $('#insert-mode').value,
+      insertMode: $('#insert-mode').checked ? 'paste' : 'clipboard',
+      undoToastSeconds: Number($('#undo-toast-seconds').value),
       enableStructure: $('#enable-structure').checked,
       enableOptimize: $('#enable-optimize').checked,
       previewEnabled: $('#preview-enabled').checked,
       structureDisableThinking: $('#structure-no-think').checked,
       optimizeDisableThinking: $('#optimize-no-think').checked,
-      paletteEnabled: $('#palette-enabled').checked,
-      writeBackCopyOnly: $('#write-back-copy-only').checked,
-      clipboardRestore: $('#clipboard-restore').checked,
-      paletteMinChars: Math.max(1, Number($('#palette-min-chars').value) || 8),
-      paletteLongHint: Math.max(2000, Number($('#palette-long-hint').value) || 8000),
       promptText: ensurePromptRedline($('#prompt-text').value),
       petModel: (document.querySelector('input[name=pet-kind]:checked') || {}).value === 'image' ? '' : $('#pet-model').value
     };
