@@ -55,6 +55,7 @@ function defaultConfig() {
     activeAsrId: '',
     activeLlmId: '',
     hotkey: 'Control+Shift+Space',
+    screenshotHotkey: 'Alt+A',
     triggerMode: 'hold',    // 宠物交互方式：hold=长按录音（拖动取消）| click=单击开始，再单击转录
     insertMode: 'paste',    // paste | clipboard
     undoToastSeconds: 10,
@@ -96,11 +97,15 @@ function load() {
     try { save(); } catch { /* Runtime gating also keeps legacy triggers disabled. */ }
   }
   if (cache.promptText === LEGACY_DEFAULT_PROMPT) cache.promptText = DEFAULT_PROMPT;
+  cache.llmProviders = (Array.isArray(cache.llmProviders) ? cache.llmProviders : [])
+    .map((provider) => ({ ...provider, multimodal: provider.multimodal === true }));
   cache.undoToastSeconds = clampUndoSeconds(cache.undoToastSeconds);
   return cache;
 }
 
 function save() {
+  cache.llmProviders = (Array.isArray(cache.llmProviders) ? cache.llmProviders : [])
+    .map((provider) => ({ ...provider, multimodal: provider.multimodal === true }));
   cache.undoToastSeconds = clampUndoSeconds(cache.undoToastSeconds);
   fs.mkdirSync(path.dirname(configPath()), { recursive: true });
   fs.writeFileSync(configPath(), JSON.stringify(cache, null, 2), 'utf8');

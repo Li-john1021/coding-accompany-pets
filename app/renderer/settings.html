@@ -43,11 +43,19 @@
         <span class="hint">默认关闭，说完直接按上面两开关处理；开启后可改错字、选「不处理/结构化/优化」</span>
       </div>
       <div class="form-row">
-        <label>全局热键（按下开始录音，再按结束；不受交互方式影响）</label>
+        <label>录音全局热键（按下开始录音，再按结束；不受交互方式影响）</label>
         <div class="hotkey-row">
           <input type="text" id="hotkey" placeholder="点击「录制」后按下组合键" readonly />
-          <button class="btn" id="hotkey-capture">⏺ 录制快捷键</button>
+          <button class="btn hotkey-capture" data-target="hotkey">⏺ 录制快捷键</button>
           <span id="hotkey-tip" class="hint"></span>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>截图全局热键</label>
+        <div class="hotkey-row">
+          <input type="text" id="screenshot-hotkey" placeholder="默认 Alt+A" readonly />
+          <button class="btn hotkey-capture" data-target="screenshot-hotkey">⏺ 录制快捷键</button>
+          <span id="screenshot-hotkey-tip" class="hint"></span>
         </div>
       </div>
       <div class="form-row">

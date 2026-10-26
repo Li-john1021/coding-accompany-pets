@@ -14,13 +14,24 @@ function fixture(saved) {
 }
 const legacy = fixture().config.LEGACY_DEFAULT_PROMPT;
 for (const insertMode of ['paste', 'clipboard']) {
-  const f = fixture({ insertMode, promptText: legacy });
+  const f = fixture({ insertMode, promptText: legacy, llmProviders: [{ id: 'legacy', model: 'chat' }] });
   assert.equal(f.config.load().promptText, prompts.DEFAULT_PROMPT);
+  assert.equal(f.config.load().screenshotHotkey, 'Alt+A');
+  assert.equal(f.config.load().llmProviders[0].multimodal, false);
   assert.equal(f.config.load().undoToastSeconds, 10);
+  f.config.load().screenshotHotkey = 'Control+Alt+S';
+  f.config.load().llmProviders.push({ id: 'vision', multimodal: true });
   f.config.save();
   assert.equal(f.disk().insertMode, insertMode);
+  assert.equal(f.disk().screenshotHotkey, 'Control+Alt+S');
+  assert.equal(f.disk().llmProviders[0].multimodal, false);
+  assert.equal(f.disk().llmProviders[1].multimodal, true);
   assert.equal(f.disk().promptText, prompts.DEFAULT_PROMPT);
   assert.equal('autoPaste' in f.disk(), false);
+}
+for (const value of [undefined, null, 1, 'true', false]) {
+  const f = fixture({ llmProviders: [{ id: 'model', multimodal: value }] });
+  assert.equal(f.config.load().llmProviders[0].multimodal, false);
 }
 for (const [value, expected] of [[-10, 1], [0, 1], [1.9, 1], [121, 120], ['22', 22], ['bad', 10]]) {
   const f = fixture({ promptText: legacy + '\ncustom', undoToastSeconds: value });

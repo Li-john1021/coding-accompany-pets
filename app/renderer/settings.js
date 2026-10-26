@@ -49,6 +49,7 @@ function providerRow(kind, p, isActive) {
     <input class="f-key" type="password" placeholder="API Key" value="${esc(p.apiKey)}" />
     <input class="f-model" placeholder="模型名（如：whisper-1 / gpt-4o）" value="${esc(p.model)}" />
     ${protoSelect}
+    ${kind === 'llm' ? `<label class="chk multimodal-option" title="声明此模型支持图片输入"><input class="f-multimodal" type="checkbox" ${p.multimodal === true ? 'checked' : ''} /> 多模态</label>` : ''}
     <button class="btn small validate">校验</button>
     <button class="btn small danger del">删除</button>
     <span class="validate-msg"></span>
@@ -73,6 +74,7 @@ function providerRow(kind, p, isActive) {
 function collectRow(row) {
   const proto = row.querySelector('.f-proto');
   const think = row.querySelector('.f-think');
+  const multimodal = row.querySelector('.f-multimodal');
   const noThinking = think ? (think.value === 'auto' ? undefined : think.value === 'on') : undefined;
   return {
     id: row.dataset.id,
@@ -81,7 +83,8 @@ function collectRow(row) {
     apiKey: row.querySelector('.f-key').value.trim(),
     model: row.querySelector('.f-model').value.trim(),
     ...(proto ? { asrProtocol: proto.value } : {}),
-    ...(think ? { noThinking } : {})
+    ...(think ? { noThinking } : {}),
+    ...(multimodal ? { multimodal: multimodal.checked } : {})
   };
 }
 
@@ -159,6 +162,7 @@ const KEY_NAMES = {
 };
 
 let capturing = false;
+let captureTarget = null;
 let capturePrevHotkey = '';
 
 function hotkeyFromEvent(e) {
@@ -180,35 +184,42 @@ function endHotkeyCapture() {
   if (!capturing) return;
   capturing = false;
   window.removeEventListener('keydown', onCaptureKeydown, true);
-  $('#hotkey-capture').textContent = '⏺ 录制快捷键';
-  $('#hotkey-tip').textContent = '';
+  const target = captureTarget;
+  const button = document.querySelector(`.hotkey-capture[data-target="${target}"]`);
+  if (button) button.textContent = '⏺ 录制快捷键';
+  $(`#${target}-tip`).textContent = '';
+  captureTarget = null;
   window.v2p.setHotkeyCapturing(false);   // 恢复全局热键
 }
 
 function onCaptureKeydown(e) {
   e.preventDefault();
   e.stopPropagation();
-  if (e.key === 'Escape') { $('#hotkey').value = capturePrevHotkey; endHotkeyCapture(); return; }
+  if (e.key === 'Escape') { $(`#${captureTarget}`).value = capturePrevHotkey; endHotkeyCapture(); return; }
   const r = hotkeyFromEvent(e);
   if (!r.key) {
-    $('#hotkey').value = r.partial.length ? r.partial.join('+') + ' + …' : '按下快捷键…（Esc 取消）';
+    $(`#${captureTarget}`).value = r.partial.length ? r.partial.join('+') + ' + …' : '按下快捷键…（Esc 取消）';
     return;
   }
-  $('#hotkey').value = r.combo;
-  $('#hotkey-tip').textContent = '已捕获，点「保存设置」生效';
-  setTimeout(() => ($('#hotkey-tip').textContent = ''), 3000);
+  $(`#${captureTarget}`).value = r.combo;
+  $(`#${captureTarget}-tip`).textContent = '已捕获，点「保存设置」生效';
+  setTimeout(() => ($(`#${captureTarget}-tip`).textContent = ''), 3000);
   endHotkeyCapture();
 }
 
-async function startHotkeyCapture() {
+async function startHotkeyCapture(target) {
   if (capturing) return;
   capturing = true;
-  capturePrevHotkey = $('#hotkey').value;
-  $('#hotkey-capture').textContent = '⏺ 正在监听按键…';
+  captureTarget = target;
+  capturePrevHotkey = $(`#${target}`).value;
+  document.querySelector(`.hotkey-capture[data-target="${target}"]`).textContent = '⏺ 正在监听按键…';
   // 暂停全局热键：否则按下的组合键会同时触发录音
   await window.v2p.setHotkeyCapturing(true);
+  if (!capturing) return;
   window.addEventListener('keydown', onCaptureKeydown, true);
 }
+
+window.addEventListener('beforeunload', endHotkeyCapture);
 
 // ---------------- 桌宠形象:Live2D 皮肤 / 静态图片 ----------------
 function applyPetKind(kind) {
@@ -246,6 +257,7 @@ async function loadConfig() {
   renderList('asr', cfg.asrProviders, cfg.activeAsrId);
   renderList('llm', cfg.llmProviders, cfg.activeLlmId);
   $('#hotkey').value = cfg.hotkey || '';
+  $('#screenshot-hotkey').value = cfg.screenshotHotkey || 'Alt+A';
   $('#trigger-mode').value = cfg.triggerMode || 'hold';
   $('#insert-mode').checked = cfg.insertMode === 'paste';
   $('#undo-toast-seconds').value = cfg.undoToastSeconds ?? 10;
@@ -266,7 +278,8 @@ function wireEvents() {
   $('#llm-add').addEventListener('click', () => addProvider('llm'));
 
   // 快捷键捕获：点击「录制」后进入捕获态，下一个组合键（含修饰键）即被记录；Esc 取消
-  $('#hotkey-capture').addEventListener('click', startHotkeyCapture);
+  document.querySelectorAll('.hotkey-capture').forEach((button) =>
+    button.addEventListener('click', () => startHotkeyCapture(button.dataset.target)));
 
   $('#pick-pet').addEventListener('click', async () => {
     const res = await window.v2p.pickPetImage();
@@ -325,6 +338,7 @@ function wireEvents() {
       activeAsrId: asr.activeId,
       activeLlmId: llm.activeId,
       hotkey: $('#hotkey').value.trim(),
+      screenshotHotkey: $('#screenshot-hotkey').value.trim() || 'Alt+A',
       triggerMode: $('#trigger-mode').value,
       insertMode: $('#insert-mode').checked ? 'paste' : 'clipboard',
       undoToastSeconds: Number($('#undo-toast-seconds').value),
@@ -336,9 +350,14 @@ function wireEvents() {
       promptText: ensurePromptRedline($('#prompt-text').value),
       petModel: (document.querySelector('input[name=pet-kind]:checked') || {}).value === 'image' ? '' : $('#pet-model').value
     };
-    await window.v2p.saveConfig(patch);
     const tip = $('#save-tip');
-    tip.textContent = '✅ 已保存';
+    try {
+      const result = await window.v2p.saveConfig(patch);
+      if (result && result.ok === false) throw new Error(result.error || '保存失败');
+      tip.textContent = '✅ 已保存';
+    } catch (error) {
+      tip.textContent = `❌ ${error.message || '保存失败'}`;
+    }
     setTimeout(() => (tip.textContent = ''), 2000);
   });
 }

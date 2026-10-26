@@ -1,0 +1,25 @@
+Screenshot / Vision P1 evidence
+Date: 2026-10-27
+Branch: codex/screenshot-vision-v1
+Baseline: c56e98b (frozen contract)
+
+Frozen inputs verified before implementation:
+- docs/PLAN-screenshot-vision-v1.md SHA-256: 93AD032E4D9715800B9DE713DBF305FDB06C6554DE9A5656568EA684DAFAE67
+- docs/SPEC-screenshot-vision-v1.json SHA-256: 05355AD48521BA5B2F622A6FF0A769BB77EFBB434AFE2A0C32BB9281FFF21BEC
+
+Checks:
+- `node --check app/renderer/settings.js` - PASS
+- `node --check app/main/pet-actions-v5-settings.e2e.test.js` - PASS
+- `node app/main/pet-actions-v5-config.unit.test.js` - PASS; synthetic config round-trip, default Alt+A, legacy multimodal false, custom hotkey, and true/false persistence.
+- `node app/main/pet-actions-v5-settings.e2e.test.js` - PASS; isolated Electron profiles exercised legacy default, multimodal checkbox and screenshot recorder Escape/capture, settings reopen, save, and fresh-process persistence. No provider calls.
+
+Parent baseline checks before P1:
+- `node app/main/models-thinking.unit.test.js` - PASS (8 checks).
+- `node app/main/result-delivery.unit.test.js` - PASS.
+- `node app/main/pipeline-delivery.unit.test.js` - PASS.
+- `node app/main/pet-window-layout.unit.test.js` - PASS.
+
+Boundary/integration notes:
+- P1 persists `screenshotHotkey` and per-LLM `multimodal`; it does not register screenshot hotkeys. P2 must add transactional dual registration and return/report registration failures through save IPC.
+- No provider calls, credentials, user images, or secrets used.
+- Independent P1 audit is pending; these checks are implementation evidence, not an independent pass.

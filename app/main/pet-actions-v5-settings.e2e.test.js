@@ -53,6 +53,7 @@ async function fixture() {
       await waitFor(() => settings.webContents.executeJavaScript("!!document.querySelector('#prompt-text').value && document.querySelector('#pet-model').options.length > 0"), 'settings loaded via IPC');
     }
     const state = () => settings.webContents.executeJavaScript("({checked:document.querySelector('#insert-mode').checked,seconds:Number(document.querySelector('#undo-toast-seconds').value)})");
+    const visionState = () => settings.webContents.executeJavaScript("({hotkey:document.querySelector('#screenshot-hotkey').value,multimodal:document.querySelector('#llm-list .f-multimodal')?.checked ?? false})");
     const persisted = () => JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8'));
     async function click(selector) {
       // HTMLElement.click performs checkbox activation and production listeners
@@ -78,11 +79,38 @@ async function fixture() {
       assert.deepStrictEqual(await settings.webContents.executeJavaScript('window.v2p.getConfig().then(c=>({insertMode:c.insertMode,seconds:c.undoToastSeconds}))'), {insertMode:disk.insertMode,seconds:expectedSeconds});
       await reopen({ checked, seconds: expectedSeconds });
     }
+    async function saveVisionSettings() {
+      await click('#llm-add');
+      await settings.webContents.executeJavaScript("document.querySelector('.hotkey-capture[data-target=\"screenshot-hotkey\"]').click()");
+      await waitFor(() => settings.webContents.executeJavaScript("document.querySelector('.hotkey-capture[data-target=\"screenshot-hotkey\"]').textContent.includes('正在监听')"), 'screenshot recorder started');
+      await settings.webContents.executeJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");
+      assert.equal((await visionState()).hotkey, 'Alt+A', 'Escape cancels screenshot recorder');
+      await settings.webContents.executeJavaScript("document.querySelector('.hotkey-capture[data-target=\"screenshot-hotkey\"]').click()");
+      await waitFor(() => settings.webContents.executeJavaScript("document.querySelector('.hotkey-capture[data-target=\"screenshot-hotkey\"]').textContent.includes('正在监听')"), 'screenshot recorder restarted');
+      await settings.webContents.executeJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'s',altKey:true,shiftKey:true,bubbles:true,cancelable:true}))");
+      const capture = await visionState();
+      assert.equal(capture.hotkey, 'Alt+Shift+S', 'screenshot recorder captures its own field');
+      await settings.webContents.executeJavaScript("(() => {const row=document.querySelector('#llm-list .provider-row');row.querySelector('.f-model').value='fixture-model';row.querySelector('.f-multimodal').checked=true;})()");
+      await click('#save');
+      await waitFor(() => settings.webContents.executeJavaScript("document.querySelector('#save-tip').textContent.includes('已保存')"), 'vision settings save completed');
+      const disk = persisted();
+      assert.equal(disk.screenshotHotkey, 'Alt+Shift+S');
+      assert.equal(disk.llmProviders[0].multimodal, true);
+      assert.deepStrictEqual(await visionState(), { hotkey: 'Alt+Shift+S', multimodal: true });
+      settings.close();
+      await waitFor(() => settings.isDestroyed(), 'settings closed after vision save');
+      await open();
+      assert.deepStrictEqual(await visionState(), { hotkey: 'Alt+Shift+S', multimodal: true }, 'vision settings persist after settings window recreation');
+    }
     await open();
     if (restart) {
       assert.deepStrictEqual(await state(), { checked: false, seconds: 37 }, 'fresh Electron process loads saved values from disk');
+      assert.deepStrictEqual(await visionState(), { hotkey: 'Alt+Shift+S', multimodal: true }, 'fresh Electron process loads vision settings');
     } else {
       assert.deepStrictEqual(await state(), { checked: scenario === 'default', seconds: 10 }, 'default 10 and canonical/legacy mode load');
+      assert.equal((await visionState()).hotkey, 'Alt+A', 'legacy config defaults screenshot hotkey');
+      assert.equal((await visionState()).multimodal, false, 'missing legacy capability is unchecked');
+      await saveVisionSettings();
       if (scenario === 'legacy-clipboard') await save(false, 10, 10);
       await save(false, 37, 37);
       await save(true, 17, 17);
