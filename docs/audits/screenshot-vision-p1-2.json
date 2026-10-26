@@ -1,0 +1,57 @@
+{
+  "verdict": "PASS",
+  "route": "none",
+  "candidate": "c56e98bbf424cd0167c67bee7876c3f55e7ebf27..5acb293152790fee015b5ece1d96c00bdf95dc45",
+  "scope": ["P1"],
+  "evidence": [
+    {
+      "id": "E-001",
+      "path": "docs/PLAN-screenshot-vision-v1.md",
+      "hash": "93AD032E4D9715800B9CDE713DBF305FDB06C6554DE9A5656568EA684DAFAE67"
+    },
+    {
+      "id": "E-002",
+      "path": "docs/SPEC-screenshot-vision-v1.json",
+      "hash": "05355AD48521BA5B2F622A6FF0A769BB77EFBB434AFE2A0C32BB9281FFF21BEC"
+    },
+    {
+      "id": "E-003",
+      "path": "docs/evidence/screenshot-vision-p1-repair.txt",
+      "hash": "6A37312AF2D3D54863323B536A110AF2FD03007B99720944B0C5954CF3DC97EC"
+    },
+    {
+      "id": "E-004",
+      "path": "app/main/config.js",
+      "hash": "DD9ED2AF3A27A4AFE97C8B2654852CA897A187641EB0B18E96DD494886A14430"
+    },
+    {
+      "id": "E-005",
+      "path": "app/renderer/settings.js",
+      "hash": "B1FF820C3A20695304BABFA8A0BA93947AB75EA9A4D71D360A019C7656880F54"
+    },
+    {
+      "id": "E-006",
+      "path": "app/main/pet-actions-v5-config.unit.test.js",
+      "hash": "37BB8D29F0016D5E95BF73C366318B3DA4BD56D1895A59D8C2D3224161FC4587"
+    },
+    {
+      "id": "E-006B",
+      "path": "app/main/pet-actions-v5-settings.e2e.test.js",
+      "hash": "226E0111CD12D4560AF6DE5C2608977FE9E72C291FBD4206A016735B907ECFA9"
+    },
+    {
+      "id": "E-008",
+      "path": "node --check app/renderer/settings.js; node --check app/main/pet-actions-v5-settings.e2e.test.js; node app/main/pet-actions-v5-config.unit.test.js; node app/main/pet-actions-v5-settings.e2e.test.js; git diff --check c56e98b..5acb293152790fee015b5ece1d96c00bdf95dc45",
+      "hash": null,
+      "result": "PASS; config unit and all isolated Electron settings scenarios passed, including delayed successful-capture feedback callback, checkbox/hotkey persistence, settings reopen, and fresh-process persistence."
+    }
+  ],
+  "findings": [],
+  "next_cycle_brief": {
+    "objective": "Proceed to P2 dual global hotkey management while preserving P1 configuration and settings behavior.",
+    "allowed_changes": ["Implement the next approved Plan/Spec unit only."],
+    "checks": ["Run focused P2 checks and retain their evidence before advancing."],
+    "prohibited": ["Do not treat this P1 audit as evidence for P2+ behavior; do not alter frozen Plan/Spec thresholds, remove historical audits, or claim untested runtime behavior."],
+    "carry_forward": ["P1 audit passed for the stated candidate range; historical finding F-001 is covered by the delayed-callback regression scenario."]
+  }
+}
