@@ -1,0 +1,16 @@
+P2 focused evidence
+Date: 2026-10-27
+Base: 73fa033bc3303bda493ca185b5ea3dc9d417f030
+
+Implemented an injected global hotkey manager for the voice and screenshot mappings. Unit checks cover modifier normalization, duplicate rejection before native calls, occupied-key and partial-install rollback, preservation of unrelated registrations, separate callbacks, blank legacy voice mapping, suspend/resume/dispose idempotence, rejecting changed pairs while suspended, and config/disk non-mutation on registration failure. A simulated persistence exception restores both in-memory config and the prior hotkey pair.
+
+Checks:
+- `node --check app/main/global-hotkeys.js; node --check app/main/main.js; node --check app/main/global-hotkeys.unit.test.js` — PASS
+- `node app/main/global-hotkeys.unit.test.js` — PASS
+- `node app/main/pet-actions-v5-config.unit.test.js` — PASS
+- `node app/main/pet-actions-v5-settings.e2e.test.js` — PASS (default and legacy profiles; production renderer/preload/config IPC; save, close/reopen, fresh-process persistence; no provider calls)
+- `node app/main/pet-action-workflow.unit.test.js` — PASS
+- `node app/main/voice-delivery-ipc.unit.test.js` — PASS
+- `git diff --check` — PASS
+
+P2 does not implement screenshot capture. The screenshot callback only reports that the entry is not ready and never starts recording. No provider calls, credential reads, or desktop automation were performed.

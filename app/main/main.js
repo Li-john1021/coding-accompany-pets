@@ -16,6 +16,7 @@ const { createResultDelivery } = require('./result-delivery');
 const { sendTargetChord } = require('./target-keys');
 const { nativeInputSession } = require('./native-input-session');
 const { createInputDirtyGuard } = require('./input-dirty-guard');
+const { createGlobalHotkeyManager, applyConfigPatchTransaction } = require('./global-hotkeys');
 const resultDelivery = createResultDelivery({
   platform: process.platform,
   snapshot: () => getWindowsSnapshot(false, true),
@@ -112,6 +113,45 @@ const setState = (stage) => {
   petBroadcast('v2p:state', { stage });
 };
 
+function handleVoiceHotkey() {
+  if (!petWin || petWin.isDestroyed()) return;
+  if (recordingActive) {
+    recordingActive = false;
+    petBroadcast('v2p:hotkey-stop');
+  } else {
+    if (resultDelivery.busy) { resultDelivery.markDirty(); return; }
+    recordingActive = true;
+    noteVoiceStart();
+    petBroadcast('v2p:hotkey-start');
+  }
+}
+
+function handleScreenshotHotkey() {
+  petBroadcast('v2p:toast', { text: '截图入口尚未就绪' });
+}
+
+let hotkeyManager = null;
+
+function initializeHotkeyManager() {
+  const cfg = config.load();
+  hotkeyManager = createGlobalHotkeyManager({
+    adapter: {
+      register: (accelerator, callback) => globalShortcut.register(accelerator, callback),
+      unregister: (accelerator) => globalShortcut.unregister(accelerator),
+      isRegistered: (accelerator) => globalShortcut.isRegistered(accelerator)
+    },
+    callbacks: { voice: handleVoiceHotkey, screenshot: handleScreenshotHotkey },
+    initialMappings: { voice: cfg.hotkey || '', screenshot: cfg.screenshotHotkey || 'Alt+A' }
+  });
+}
+
+function registerHotkeys() {
+  const cfg = config.load();
+  const result = hotkeyManager.apply({ voice: cfg.hotkey || '', screenshot: cfg.screenshotHotkey || 'Alt+A' });
+  if (!result.ok) petBroadcast('v2p:toast', { text: result.error });
+  return result;
+}
+
 // ---------------- 窗口 ----------------
 function openSettings() {
   if (settingsWin) {
@@ -129,8 +169,12 @@ function openSettings() {
     webPreferences: { preload: path.join(__dirname, '..', 'preload.js'), contextIsolation: true, nodeIntegration: false }
   });
   settingsWin.loadFile(path.join(__dirname, '..', 'renderer', 'settings.html'));
-  // 捕获快捷键途中直接关窗：全局热键已被 unregisterAll 暂停，这里恢复
-  settingsWin.on('closed', () => { settingsWin = null; registerHotkey(); });
+  // 捕获快捷键途中直接关窗：恢复此前暂停的录音和截图热键
+  settingsWin.on('closed', () => {
+    settingsWin = null;
+    const result = hotkeyManager.resume();
+    if (!result.ok) petBroadcast('v2p:toast', { text: result.error });
+  });
 }
 
 // 创建皮肤窗口：给键盘猫零件上色，画完一键生成可用皮肤
@@ -205,28 +249,6 @@ function applyPetScale(delta) {
   config.save();
 }
 
-// ---------------- 全局热键（按一下开始 / 再按一下结束） ----------------
-function registerHotkey() {
-  globalShortcut.unregisterAll();
-  const combo = config.load().hotkey;
-  if (!combo) return;
-  const ok = globalShortcut.register(combo, () => {
-    if (!petWin || petWin.isDestroyed()) return;
-    if (recordingActive) {
-      recordingActive = false;
-      petBroadcast('v2p:hotkey-stop');
-    } else {
-      if (resultDelivery.busy) { resultDelivery.markDirty(); return; }
-      recordingActive = true;
-      noteVoiceStart();
-      petBroadcast('v2p:hotkey-start');
-    }
-  });
-  if (!ok) {
-    petBroadcast('v2p:toast', { text: `热键 ${combo} 注册失败，可能被占用` });
-  }
-}
-
 // ---------------- 托盘 ----------------
 function createTray() {
   const iconPath = path.join(__dirname, '..', 'assets', 'tray.png');
@@ -294,21 +316,19 @@ function registerIpc() {
     const cfg = config.load();
     const modelChanged = 'petModel' in patch && patch.petModel !== cfg.petModel;
     const triggerChanged = 'triggerMode' in patch && patch.triggerMode !== cfg.triggerMode;
-    Object.assign(cfg, patch);
-    cfg.paletteEnabled = false;
-    config.save();
-    registerHotkey();
+    const result = applyConfigPatchTransaction({ configObject: cfg, patch, save: () => config.save(), hotkeys: hotkeyManager });
+    if (!result.ok) return result;
     setMouseRecordHook();
     if (modelChanged) petBroadcast('v2p:pet-model-changed', { name: cfg.petModel });
     if (triggerChanged) petBroadcast('v2p:trigger-mode-changed', { mode: cfg.triggerMode });
     return { ok: true };
   });
 
-  // 设置页录制快捷键期间暂停全局热键，避免按下的组合键直接触发录音
+  // 设置页录制快捷键期间暂停两项全局热键，避免按下的组合键误触发操作
   ipcMain.handle('v2p:hotkey-capturing', (_e, on) => {
-    if (on) globalShortcut.unregisterAll();
-    else registerHotkey();
-    return { ok: true };
+    const result = on ? hotkeyManager.suspend() : hotkeyManager.resume();
+    if (!result.ok) petBroadcast('v2p:toast', { text: result.error });
+    return result;
   });
 
   ipcMain.handle('v2p:validate-model', async (_e, { kind, provider }) => {
@@ -622,12 +642,13 @@ app.whenReady().then(() => {
   });
 
   config.load();
+  initializeHotkeyManager();
   registerIpc();
   paint.register();
   createTray();
   createPetWindow();
   try { if (petWin && !petWin.isDestroyed()) petWin.show(); } catch {}
-  registerHotkey();
+  registerHotkeys();
   // 置顶保活：别的置顶窗口弹出/全屏应用退出后 z 序可能压过宠物，定期把宠物顶回最上层。
   // moveTop 不抢焦点，不打断打字
   setInterval(() => { if (petWin && !petWin.isDestroyed() && petWin.isVisible()) petWin.moveTop(); }, 4000);
@@ -1098,7 +1119,7 @@ function stopMouseRecordHook() {
 }
 
 app.on('will-quit', () => {
-  globalShortcut.unregisterAll();
+  if (hotkeyManager) hotkeyManager.dispose();
   stopMouseRecordHook();
 });
 
