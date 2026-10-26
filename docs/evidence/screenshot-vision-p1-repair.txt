@@ -1,0 +1,22 @@
+Screenshot / Vision P1 repair evidence
+Date: 2026-10-27
+Base candidate: ad05ab887a1498c8667155877b64f8c5a62775c1
+
+Frozen input hashes (verified from audit evidence):
+- docs/PLAN-screenshot-vision-v1.md SHA-256: 93AD032E4D9715800B9CDE713DBF305FDB06C6554DE9A5656568EA684DAFAE67
+- docs/SPEC-screenshot-vision-v1.json SHA-256: 05355AD48521BA5B2F622A6FF0A769BB77EFBB434AFE2A0C32BB9281FFF21BEC
+
+Repair:
+- The successful-recorder feedback timer captures its target field ID before `endHotkeyCapture()` clears mutable recorder state.
+- The isolated Electron settings test intercepts the actual 3000 ms feedback timer, completes capture (which clears `captureTarget`), then executes the queued callback. The execution succeeds and validates the captured hotkey. This fails against the audited implementation because its callback queries `#null-tip` and dereferences `textContent`.
+
+Checks:
+- `node --check app/renderer/settings.js` - PASS
+- `node --check app/main/pet-actions-v5-settings.e2e.test.js` - PASS
+- `node app/main/pet-actions-v5-config.unit.test.js` - PASS
+- `node app/main/pet-actions-v5-settings.e2e.test.js` - PASS; isolated production renderer checks include delayed callback execution after capture end, recorder Escape/capture, checkbox/hotkey persistence, reopen, and fresh-process persistence. No provider calls.
+- `git diff --check` - PASS
+
+The earlier `docs/evidence/screenshot-vision-p1.txt` is retained as historical evidence. Its Plan hash line had a transcription error (`...0B9DE713...`); the correct SHA-256 is recorded above. The failed read-only audit remains at `docs/audits/screenshot-vision-p1-1.json` unchanged.
+
+No provider calls, credentials, user images, or secrets used. This is repair evidence; a fresh independent audit is pending.

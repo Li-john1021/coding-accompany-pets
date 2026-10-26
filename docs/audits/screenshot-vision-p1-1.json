@@ -1,0 +1,55 @@
+{
+  "verdict": "FAIL",
+  "route": "repair",
+  "candidate": "c56e98bbf424cd0167c67bee7876c3f55e7ebf27..ad05ab887a1498c8667155877b64f8c5a62775c1",
+  "evidence": [
+    {
+      "id": "E-001",
+      "path": "docs/PLAN-screenshot-vision-v1.md",
+      "hash": "93AD032E4D9715800B9CDE713DBF305FDB06C6554DE9A5656568EA684DAFAE67"
+    },
+    {
+      "id": "E-002",
+      "path": "docs/SPEC-screenshot-vision-v1.json",
+      "hash": "05355AD48521BA5B2F622A6FF0A769BB77EFBB434AFE2A0C32BB9281FFF21BEC"
+    },
+    {
+      "id": "E-003",
+      "path": "docs/evidence/screenshot-vision-p1.txt",
+      "hash": "AFAAD6284A84DAA4A913E6B5738E9EE64BEC08C70C60CDAC602F8719A768AB87"
+    },
+    {
+      "id": "E-004",
+      "path": "git diff --check c56e98bbf424cd0167c67bee7876c3f55e7ebf27..ad05ab887a1498c8667155877b64f8c5a62775c1",
+      "hash": null
+    },
+    {
+      "id": "E-005",
+      "path": "node --check app/renderer/settings.js; node --check app/main/pet-actions-v5-settings.e2e.test.js; node app/main/pet-actions-v5-config.unit.test.js; node app/main/pet-actions-v5-settings.e2e.test.js",
+      "hash": null
+    },
+    {
+      "id": "E-006",
+      "path": "app/renderer/settings.js:183-207",
+      "hash": "356E66A3409D648B70A153CA123076E0678F0F49153F4735508C360F2FF1B0F0"
+    }
+  ],
+  "findings": [
+    {
+      "id": "F-001",
+      "requirement_refs": ["R01", "A02"],
+      "statement": "After a successful hotkey capture, the 3-second feedback timer resolves captureTarget after endHotkeyCapture has set it to null. The callback then selects #null-tip and dereferences textContent, producing an uncaught TypeError on every completed recording. Capture and persistence currently pass, but the settings renderer emits an asynchronous runtime error during normal recorder use.",
+      "root_cause_assumptions": ["ASM-001: The timeout callback executes after the synchronous endHotkeyCapture cleanup; this follows directly from setTimeout's delay and the immediate captureTarget assignment."],
+      "confidence": "high",
+      "impact": "unit",
+      "route": "repair"
+    }
+  ],
+  "next_cycle_brief": {
+    "objective": "Repair successful hotkey capture feedback cleanup and revalidate the P1 settings boundary.",
+    "allowed_changes": ["Capture the target element or target id before ending capture so the delayed cleanup addresses the original tip safely."],
+    "checks": ["node --check app/renderer/settings.js", "node app/main/pet-actions-v5-config.unit.test.js", "node app/main/pet-actions-v5-settings.e2e.test.js", "Exercise the successful capture feedback timeout or add deterministic coverage for it."],
+    "prohibited": ["Do not change Plan/Spec thresholds, expand into P2+, alter credentials or provider behavior, or remove this audit."],
+    "carry_forward": ["F-001", "E-005"]
+  }
+}

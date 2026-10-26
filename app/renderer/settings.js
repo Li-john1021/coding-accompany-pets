@@ -202,8 +202,9 @@ function onCaptureKeydown(e) {
     return;
   }
   $(`#${captureTarget}`).value = r.combo;
-  $(`#${captureTarget}-tip`).textContent = '已捕获，点「保存设置」生效';
-  setTimeout(() => ($(`#${captureTarget}-tip`).textContent = ''), 3000);
+  const target = captureTarget;
+  $(`#${target}-tip`).textContent = '已捕获，点「保存设置」生效';
+  setTimeout(() => ($(`#${target}-tip`).textContent = ''), 3000);
   endHotkeyCapture();
 }
 

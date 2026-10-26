@@ -87,7 +87,8 @@ async function fixture() {
       assert.equal((await visionState()).hotkey, 'Alt+A', 'Escape cancels screenshot recorder');
       await settings.webContents.executeJavaScript("document.querySelector('.hotkey-capture[data-target=\"screenshot-hotkey\"]').click()");
       await waitFor(() => settings.webContents.executeJavaScript("document.querySelector('.hotkey-capture[data-target=\"screenshot-hotkey\"]').textContent.includes('正在监听')"), 'screenshot recorder restarted');
-      await settings.webContents.executeJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'s',altKey:true,shiftKey:true,bubbles:true,cancelable:true}))");
+      await settings.webContents.executeJavaScript("(() => {const original=window.setTimeout;window.__captureTimers=[];window.setTimeout=(callback,delay,...args)=>{if(delay===3000){window.__captureTimers.push(()=>callback(...args));return 1;}return original(callback,delay,...args);};window.dispatchEvent(new KeyboardEvent('keydown',{key:'s',altKey:true,shiftKey:true,bubbles:true,cancelable:true}));window.setTimeout=original;})()");
+      await settings.webContents.executeJavaScript('window.__captureTimers.shift()()');
       const capture = await visionState();
       assert.equal(capture.hotkey, 'Alt+Shift+S', 'screenshot recorder captures its own field');
       await settings.webContents.executeJavaScript("(() => {const row=document.querySelector('#llm-list .provider-row');row.querySelector('.f-model').value='fixture-model';row.querySelector('.f-multimodal').checked=true;})()");
