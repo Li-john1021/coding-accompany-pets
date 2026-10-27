@@ -1,0 +1,64 @@
+{
+  "verdict": "PASS",
+  "route": "none",
+  "candidate": "73fa033bc3303bda493ca185b5ea3dc9d417f030..86d7100cab3f22f50adb4fb242a4f21e38d24693",
+  "scope": {
+    "validation_boundary": "VB-P2",
+    "included": ["P2 transactional dual hotkeys", "R01", "A01-A03 relevant portions"],
+    "excluded": ["P3 screenshot capture implementation; screenshot callback reports not ready as planned"]
+  },
+  "spec_precheck": {
+    "result": "clean",
+    "plan": "docs/PLAN-screenshot-vision-v1.md",
+    "plan_sha256": "93AD032E4D9715800B9CDE713DBF305FDB06C6554DE9A5656568EA684DAFAE67",
+    "spec": "docs/SPEC-screenshot-vision-v1.json",
+    "spec_sha256": "05355AD48521BA5B2F622A6FF0A769BB77EFBB434AFE2A0C32BB9281FFF21BEC",
+    "notes": "R01 cites Plan section 1.1 and the hotkey/config contract. A01-A03 provide observable unit, settings persistence, and collision checks. The P2 boundary is independently testable; no contradiction or stale source was found."
+  },
+  "evidence": [
+    {
+      "id": "E-001",
+      "path": "docs/evidence/screenshot-vision-p2.txt",
+      "hash": "97DC4236ACE1AA913EDF5C7CF617157E5793C46CBB95DBF9E27F64E9D55EAA51"
+    },
+    {
+      "id": "E-002",
+      "path": "app/main/global-hotkeys.js; app/main/main.js; app/main/global-hotkeys.unit.test.js",
+      "hash": "candidate commit 86d7100cab3f22f50adb4fb242a4f21e38d24693",
+      "result": "Inspected candidate diff. Hotkeys are manager-owned and registered separately; duplicate keys reject before native calls; partial installation and save failure attempt restoration; settings recorder suspends both registrations and resumes on recorder end or window close; will-quit disposes owned registrations."
+    },
+    {
+      "id": "E-003",
+      "path": "node app/main/global-hotkeys.unit.test.js",
+      "result": "PASS: normalization, duplicate/occupied rejection, partial-install rollback, registration ownership, suspended-state behavior, config non-mutation and persistence-failure rollback."
+    },
+    {
+      "id": "E-004",
+      "path": "node app/main/pet-actions-v5-config.unit.test.js",
+      "result": "PASS: legacy screenshot hotkey defaults to Alt+A and existing config remains preserved."
+    },
+    {
+      "id": "E-005",
+      "path": "node app/main/pet-actions-v5-settings.e2e.test.js",
+      "result": "PASS: production settings renderer/preload/config IPC; screenshot hotkey and multimodal settings persist across save, close/reopen, and fresh Electron process for default and legacy profiles. No provider calls."
+    },
+    {
+      "id": "E-006",
+      "path": "node app/main/pet-action-workflow.unit.test.js; node app/main/voice-delivery-ipc.unit.test.js; node app/main/input-dirty-guard.unit.test.js; node app/main/pet-action-renderer-epoch.unit.test.js",
+      "result": "PASS: focused voice delivery, operation isolation, input guard, and renderer epoch regression checks."
+    },
+    {
+      "id": "E-007",
+      "path": "git diff --check 73fa033..86d7100cab3f22f50adb4fb242a4f21e38d24693",
+      "result": "PASS."
+    }
+  ],
+  "findings": [],
+  "next_cycle_brief": {
+    "objective": "Establish P3 frozen-screen regional capture behavior, lifecycle cleanup, and screenshot clipboard output under VB-P3.",
+    "allowed_changes": ["P3 implementation and evidence-supported repairs within P3 scope"],
+    "checks": ["Run focused capture lifecycle, cancel/zero-area/failure/reentry, and clipboard image checks; exercise available display/DPI fixtures and record hardware limits."],
+    "prohibited": ["Do not treat the P2 placeholder callback as completed screenshot behavior; do not claim untested hardware coverage."],
+    "carry_forward": ["VB-P3; P2 audit PASS"]
+  }
+}

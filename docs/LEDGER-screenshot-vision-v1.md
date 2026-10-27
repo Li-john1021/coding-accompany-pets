@@ -16,3 +16,5 @@ Provider policy is frozen in the Spec. No model calls or credential reads yet. S
 
 - VB-P1: clean Luna audit 2 PASS for candidate 5acb293; audit SHA256 5D4AA5F843799F1ACA7220B919F4F6C6992457FB10A453CFE77819C66E732EF2. Prior failure 1 retained; delayed-recorder callback repair verified. No provider calls. Next P2.
 - P2 implemented on base `73fa033bc3303bda493ca185b5ea3dc9d417f030`: extracted an adapter-driven transactional dual-hotkey manager, preserved the existing voice callback, added a screenshot-only not-ready callback, and routed save/recorder-close/shutdown through owned registrations. Registration failures leave the config and persistence untouched; settings saves that change hotkeys while capture is suspended are rejected. Focused evidence and checks are in `docs/evidence/screenshot-vision-p2.txt`. P2 candidate awaits fresh Luna audit before P3. No provider calls or credential reads.
+
+- VB-P2: clean Luna audit PASS for 86d7100; audit SHA256 E1559B3D839EC0734877033CC6702577807CEC6DF4FC1EF036FD6C396EE72BDA. Focused dual-hotkey, settings, voice and renderer checks pass. No provider calls. Next P3.
