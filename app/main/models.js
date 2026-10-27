@@ -61,6 +61,18 @@ async function transcribeImage(provider, pngBuffer, opts = {}) {
   const url = joinUrl(provider.baseUrl, '/chat/completions');
   const timeoutMs = Number.isFinite(opts.timeoutMs) ? Math.max(1, opts.timeoutMs) : 120_000;
   const request = requestSignal(timeoutMs, opts.signal);
+  const body = {
+    model: provider.model,
+    messages: [{ role: 'user', content: [
+      { type: 'text', text: IMAGE_TRANSCRIPTION_PROMPT },
+      { type: 'image_url', image_url: { url: `data:image/png;base64,${pngBuffer.toString('base64')}` } }
+    ] }],
+    stream: false
+  };
+  if (shouldDisableThinking(provider)) {
+    body.thinking = { type: 'disabled' };
+    body.reasoning_effort = 'none';
+  }
   try {
     const resp = await (opts.fetchImpl || fetch)(url, {
       method: 'POST',
@@ -68,17 +80,7 @@ async function transcribeImage(provider, pngBuffer, opts = {}) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${provider.apiKey}`
       },
-      body: JSON.stringify({
-        model: provider.model,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'text', text: IMAGE_TRANSCRIPTION_PROMPT },
-            { type: 'image_url', image_url: { url: `data:image/png;base64,${pngBuffer.toString('base64')}` } }
-          ]
-        }],
-        stream: false
-      }),
+      body: JSON.stringify(body),
       signal: request.signal
     });
     if (!resp.ok) throw new Error(`视觉转写失败 HTTP ${resp.status}: ${(await resp.text()).slice(0, 300)}`);

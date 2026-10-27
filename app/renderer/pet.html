@@ -85,7 +85,7 @@
       height: 34px;
       margin-top: 6px;
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 6px;
       flex: 0 0 34px;
     }
@@ -142,7 +142,8 @@
   <div id="action-row" aria-label="文本操作">
     <button class="pet-action" type="button" data-mode="structure" title="结构化" aria-label="结构化"><span class="icon" aria-hidden="true">≡</span><span>结构化</span></button>
     <button class="pet-action" type="button" data-mode="optimize" title="优化" aria-label="优化"><span class="icon" aria-hidden="true">✦</span><span>优化</span></button>
-    <button class="pet-action" type="button" data-mode="image_recognition" disabled title="识图（暂未开放）" aria-label="识图"><span class="icon" aria-hidden="true">▧</span><span>识图</span></button>
+    <button class="pet-action" type="button" data-mode="screenshot" title="截图" aria-label="截图"><span class="icon" aria-hidden="true">⌖</span><span>截图</span></button>
+    <button class="pet-action" type="button" data-mode="image_recognition" disabled title="识图" aria-label="识图"><span class="icon" aria-hidden="true">▧</span><span>识图</span></button>
   </div>
   <script src="lib/live2dcubismcore.min.js"></script>
   <script>window.live2dcubismcore = window.live2dcubismcore || window.Live2DCubismCore;</script>

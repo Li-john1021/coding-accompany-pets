@@ -1,0 +1,2 @@
+PASS production Electron image gating, settings image validation, transcription and clipboard-only delivery
+EVIDENCE {"ok":true,"requestCount":4,"validationPngBytes":1552,"recognizedPngBytes":92,"failurePreservedImage":true,"deferredSnapshotModel":"synthetic-vision-a","screenshotCancelPreservedClipboard":true}

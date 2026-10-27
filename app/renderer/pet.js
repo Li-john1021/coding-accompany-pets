@@ -20,6 +20,7 @@ const STATUS_TEXT = {
   optimizing: '✨ 优化提示词中…',
   polishing: '✨ 整理优化中…',
   inserting: '📋 写入光标…',
+  processing: '正在处理…',
   done: '✅ 完成',
   error: '❌ 出错了'
 };
@@ -73,13 +74,17 @@ function scheduleIdle(delayMs) {
 }
 
 let activePetAction = null;
+let imageState = null;
+let imageUiEpoch = 0;
 function updateActionButtons() {
   const voiceBusy = voiceUiBusy();
+  const imageBusy = !!(imageState && imageState.busy);
   for (const button of actionButtons) {
     const mode = button.dataset.mode;
     button.classList.toggle('active', mode === activePetAction);
-    button.disabled = mode === 'image_recognition' || mode === 'image' ||
-      voiceBusy || (!!activePetAction && mode !== activePetAction);
+    button.disabled = voiceBusy || imageBusy || (!!activePetAction && mode !== activePetAction) ||
+      (mode === 'screenshot' && imageState && imageState.canScreenshot === false) ||
+      (mode === 'image_recognition' && (!imageState || !imageState.eligible));
     if (mode === activePetAction) button.setAttribute('aria-busy', 'true');
     else button.removeAttribute('aria-busy');
   }
@@ -96,6 +101,29 @@ for (const button of actionButtons) {
   button.addEventListener('click', async () => {
     if (activePetAction || ['listening', 'transcribing'].includes(curStage) || isRecording || starting) return;
     const mode = button.dataset.mode;
+    if (mode === 'screenshot' || mode === 'image_recognition') {
+      const operation = ++imageUiEpoch;
+      activePetAction = mode;
+      updateActionButtons();
+      if (mode === 'image_recognition') { setState('processing'); statusEl.textContent = '识图中…'; }
+      try {
+        const result = mode === 'screenshot' ? await window.v2p.screenshot() : await window.v2p.recognizeImage();
+        if (operation !== imageUiEpoch || voiceUiBusy()) return;
+        if (mode === 'screenshot') {
+          if (result && result.ok) { say(`截图已复制（${result.width}×${result.height}）`, 3500); }
+          else if (result && !['cancelled', 'zero-area'].includes(result.reason)) { say(result.error || '截图失败，请重试', 4500); setState('error'); scheduleIdle(4500); }
+        } else if (result && result.ok) {
+          say('识图完成，文字已复制', 4500); setState('done'); scheduleIdle(4000);
+        } else {
+          say((result && result.error) || '识图失败，请重试', 5000); setState('error'); scheduleIdle(5000);
+        }
+      } catch (error) {
+        if (operation === imageUiEpoch) { say(error.message || '操作失败，请重试', 4500); setState('error'); scheduleIdle(4500); }
+      } finally {
+        if (operation === imageUiEpoch) { activePetAction = null; updateActionButtons(); }
+      }
+      return;
+    }
     if (mode !== 'structure' && mode !== 'optimize') return;
     activePetAction = mode;
     setState(mode === 'structure' ? 'structuring' : 'optimizing');
@@ -409,6 +437,19 @@ window.v2p.onToast((text) => { say(text, 5000); setState('error'); scheduleIdle(
 window.v2p.onHotkeyStart(startRecording);
 window.v2p.onHotkeyStop(stopRecording);
 window.v2p.onPetImageChanged((dataUrl) => { if (dataUrl) petImg.src = dataUrl; });
+window.v2p.onImageState((state) => {
+  imageState = state;
+  const recognize = actionButtons.find((button) => button.dataset.mode === 'image_recognition');
+  if (recognize) recognize.title = state.error || (state.eligible ? '识图' : state.busy ? '识图中' : '需要剪贴板图片和已启用多模态模型');
+  if (state.busy && !voiceUiBusy()) {
+    if (curStage !== 'processing') setState('processing');
+    statusEl.textContent = state.stage === 'capturing' ? '截图中…' : '识图中…';
+  } else if (!state.busy && curStage === 'processing') {
+    setState('idle');
+  }
+  updateActionButtons();
+});
+window.v2p.getImageState().then((state) => { imageState = state; updateActionButtons(); }).catch(() => {});
 
 // 交互方式：初始读取配置，设置页改动后实时切换；待命提示语随模式变化
 function applyTriggerMode(mode) {

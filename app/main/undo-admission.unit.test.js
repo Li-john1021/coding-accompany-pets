@@ -11,12 +11,13 @@ function productionUndo(context) {
   return (token) => handler(null, token);
 }
 (async () => {
-  for (const phase of ['capture', 'model', 'recording', 'voice', 'preview']) {
+  for (const phase of ['capture', 'model', 'recording', 'voice', 'preview', 'image']) {
     let token; const writes = [];
     const delivery = createResultDelivery({ platform: 'win32', writeClipboard: async (text) => writes.push(text), onShow: (p) => { token = p.token; } });
     await delivery.deliver({ original: 'old source', text: 'old result', insertMode: 'clipboard' });
     const flags = { petActionCapture: { busy: phase === 'capture' }, petActionWorkflow: { busy: phase === 'model' },
-      recordingActive: phase === 'recording', voiceSubmissionActive: phase === 'voice', pendingPreview: phase === 'preview' ? {} : null, resultDelivery: delivery };
+      recordingActive: phase === 'recording', voiceSubmissionActive: phase === 'voice', pendingPreview: phase === 'preview' ? {} : null,
+      imageWorkflow: { busy: phase === 'image' }, resultDelivery: delivery };
     assert.equal((await productionUndo(flags)(token)).ok, false);
     assert.deepEqual(writes, ['old result'], 'busy Undo must make zero clipboard writes');
     assert.equal((await delivery.undo(token)).ok, true, 'busy rejection must not consume the existing token');
@@ -36,12 +37,12 @@ function productionUndo(context) {
     const workflow = createPetActionWorkflow({ capture, isVoiceBusy: () => false,
       processText: async (text) => { modelCalls++; assert.equal(text, 'NEW SELECTED TEXT'); return { text: 'NEW RESULT' }; },
       deliver: (payload) => delivery.deliver({ ...payload, insertMode: 'clipboard' }), onCaptureResult: (capture) => ({ ok: false, capture }) });
-    const undo = productionUndo({ resultDelivery: delivery, petActionCapture: capture, petActionWorkflow: workflow, recordingActive: false, voiceSubmissionActive: false, pendingPreview: null });
+    const undo = productionUndo({ resultDelivery: delivery, petActionCapture: capture, petActionWorkflow: workflow, recordingActive: false, voiceSubmissionActive: false, pendingPreview: null, imageWorkflow: { busy: false } });
     const action = workflow.run('structure'); while (!copied) await Promise.resolve();
     const count = writes.length;
     assert.equal((await undo(token)).ok, false); assert.equal(writes.length, count); assert.equal(clip, 'NEW SELECTED TEXT');
     release(); assert.equal((await action).ok, true); assert.equal(modelCalls, 1); assert.equal(clip, 'NEW RESULT');
     delivery.clear();
   }
-  console.log('PASS production Undo admission rejects capture/model/voice/preview/recording with zero writes or token consumption; pending fresh-copy capture survives old dirty Undo');
+  console.log('PASS production Undo admission rejects capture/model/voice/preview/recording/image work with zero writes or token consumption; pending fresh-copy capture survives old dirty Undo');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

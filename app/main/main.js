@@ -18,6 +18,7 @@ const { nativeInputSession } = require('./native-input-session');
 const { createInputDirtyGuard } = require('./input-dirty-guard');
 const { createGlobalHotkeyManager, applyConfigPatchTransaction } = require('./global-hotkeys');
 const { createScreenshotController } = require('./screenshot');
+const { createImageWorkflow } = require('./image-workflow');
 const screenshotGeometry = require('./screenshot-geometry');
 const { getPhysicalMonitorBounds, mapDisplaysToPhysical, captureWindowsDisplay } = require('./screenshot-native-capture');
 const resultDelivery = createResultDelivery({
@@ -94,6 +95,8 @@ let recordingActive = false; // 全局热键触发录音时的状态标记
 let voiceSubmissionActive = false;
 let voiceTargetPromise = null;
 let voiceDeliveryEpoch = 0;
+let imageWorkflow = null;
+let imageStateTimer = null;
 
 function noteVoiceStart(captureTarget = true) {
   resultDelivery.markDirty();
@@ -123,6 +126,7 @@ function handleVoiceHotkey() {
     recordingActive = false;
     petBroadcast('v2p:hotkey-stop');
   } else {
+    if (imageWorkflow?.busy) return;
     if (resultDelivery.busy) { resultDelivery.markDirty(); return; }
     recordingActive = true;
     noteVoiceStart();
@@ -131,8 +135,8 @@ function handleVoiceHotkey() {
 }
 
 function handleScreenshotHotkey() {
-  if (!screenshotController) return;
-  screenshotController.capture().then((result) => {
+  if (!imageWorkflow) return;
+  imageWorkflow.runScreenshot().then((result) => {
     if (!result.ok && result.reason !== 'cancelled' && result.reason !== 'zero-area') {
       petBroadcast('v2p:toast', { text: result.error || '截图失败，请重试' });
     }
@@ -190,6 +194,25 @@ function initializeScreenshotController() {
     },
     writeImage: (dataUrl) => clipboard.writeImage(nativeImage.createFromDataURL(dataUrl))
   });
+  imageWorkflow = createImageWorkflow({
+    capture: (opts) => screenshotController.capture(opts),
+    getProvider: () => {
+      try { return pipeline.findProvider('llm'); } catch { return null; }
+    },
+    getProviderStatus: () => {
+      const cfg = config.load();
+      const provider = cfg.llmProviders.find((entry) => entry.id === cfg.activeLlmId);
+      return provider ? { baseUrl: provider.baseUrl, model: provider.model, multimodal: provider.multimodal === true } : null;
+    },
+    hasImage: () => { try { return !clipboard.readImage().isEmpty(); } catch { return false; } },
+    readImage: () => { const image = clipboard.readImage(); return image.isEmpty() ? null : image.toPNG(); },
+    transcribeImage: (provider, png, opts) => models.transcribeImage(provider, png, opts),
+    writeText: (text) => clipboard.writeText(text),
+    isConflicting: () => recordingActive || voiceSubmissionActive || petActionWorkflow.busy || petActionCapture.busy || !!pendingPreview || resultDelivery.busy,
+    onState: (state) => petBroadcast('v2p:image-state', state)
+  });
+  if (imageStateTimer) clearInterval(imageStateTimer);
+  imageStateTimer = setInterval(() => imageWorkflow?.refresh(), 500);
 }
 
 let hotkeyManager = null;
@@ -366,10 +389,13 @@ function currentPetImageDataUrl() {
 
 // ---------------- IPC ----------------
 function registerIpc() {
+  const fromPetMainFrame = (event) => !!petWin && !petWin.isDestroyed() && event.sender === petWin.webContents && event.senderFrame === event.sender.mainFrame && event.senderFrame.url.startsWith('file:') && event.senderFrame.url.endsWith('/pet.html');
   ipcMain.handle('v2p:screenshot', (event) => {
-    if (!petWin || event.sender !== petWin.webContents || !screenshotController) return { ok: false, reason: 'unauthorized' };
-    return screenshotController.capture();
+    if (!fromPetMainFrame(event) || !imageWorkflow) return { ok: false, reason: 'unauthorized' };
+    return imageWorkflow.runScreenshot();
   });
+  ipcMain.handle('v2p:get-image-state', (event) => fromPetMainFrame(event) && imageWorkflow ? imageWorkflow.state() : { eligible: false, hasImage: false, providerReady: false, multimodal: false, busy: false, stage: 'idle', error: '' });
+  ipcMain.handle('v2p:recognize-image', (event) => fromPetMainFrame(event) && imageWorkflow ? imageWorkflow.recognize() : { ok: false, error: 'unauthorized' });
   ipcMain.on('v2p:screenshot:pointer', (event, payload) => screenshotController?.pointer(event, payload));
   ipcMain.on('v2p:screenshot:cancel', (event, payload) => screenshotController?.cancel(event, payload));
   ipcMain.on('v2p:screenshot:composed', (event, payload) => screenshotController?.composed(event, payload));
@@ -391,6 +417,7 @@ function registerIpc() {
     setMouseRecordHook();
     if (modelChanged) petBroadcast('v2p:pet-model-changed', { name: cfg.petModel });
     if (triggerChanged) petBroadcast('v2p:trigger-mode-changed', { mode: cfg.triggerMode });
+    imageWorkflow?.refresh();
     return { ok: true };
   });
 
@@ -414,7 +441,7 @@ function registerIpc() {
 
   // 宠物窗提交录音结果，跑完整管线
   ipcMain.handle('v2p:submit', async (_e, { audio, mime, options }) => {
-    if (voiceSubmissionActive || petActionWorkflow.busy || resultDelivery.busy) return { ok: false, error: '已有操作正在进行' };
+    if (voiceSubmissionActive || petActionWorkflow.busy || resultDelivery.busy || imageWorkflow?.busy) return { ok: false, error: '已有操作正在进行' };
     voiceSubmissionActive = true;
     noteVoiceStart(false);
     const operationVoiceEpoch = voiceDeliveryEpoch;
@@ -464,7 +491,7 @@ function registerIpc() {
 
   // 纯文本整理（选区浮条 / 预览卡共用）
   ipcMain.handle('v2p:process-text', async (_e, { text, mode }) => {
-    if (voiceSubmissionActive || recordingActive || petActionWorkflow.busy || resultDelivery.busy) return { ok: false, error: '已有操作正在进行' };
+    if (voiceSubmissionActive || recordingActive || petActionWorkflow.busy || resultDelivery.busy || imageWorkflow?.busy) return { ok: false, error: '已有操作正在进行' };
     const session = pendingPreview;
     voiceSubmissionActive = true;
     try {
@@ -475,6 +502,7 @@ function registerIpc() {
   });
 
   ipcMain.handle('v2p:recording-flag', (_e, active) => {
+    if (active && imageWorkflow?.busy) return { ok: false, error: '截图或识图处理中，请稍后重试' };
     if (active && resultDelivery.busy) {
       resultDelivery.markDirty();
       return { ok: false, error: '结果正在写入，请稍后重试' };
@@ -487,7 +515,7 @@ function registerIpc() {
   });
 
   ipcMain.handle('v2p:pet-action', async (_e, mode) => {
-    if (resultDelivery.busy) return { ok: false, error: '结果正在写入，请稍后重试' };
+    if (resultDelivery.busy || imageWorkflow?.busy) return { ok: false, error: '已有操作正在进行' };
     return petActionWorkflow.run(mode);
   });
 
@@ -1055,7 +1083,7 @@ function showUndoToast(payload) {
   else show();
 }
 ipcMain.handle('v2p:undo', async (_e, token) => {
-  if (petActionWorkflow.busy || petActionCapture.busy || recordingActive || voiceSubmissionActive || pendingPreview || resultDelivery.busy) {
+  if (petActionWorkflow.busy || petActionCapture.busy || recordingActive || voiceSubmissionActive || pendingPreview || resultDelivery.busy || imageWorkflow?.busy) {
     return { ok: false, note: '已有操作正在进行，请完成后再回退' };
   }
   const result = await resultDelivery.undo(token);
@@ -1109,7 +1137,7 @@ function showPreviewWindow(raw, options = {}) {
 }
 
 ipcMain.handle('v2p:preview-insert', async (_e, { text, copyOnly }) => {
-  if (!pendingPreview || pendingPreview.delivered || voiceSubmissionActive || petActionWorkflow.busy || resultDelivery.busy) return { ok: false, error: '预览已失效或正在处理' };
+  if (!pendingPreview || pendingPreview.delivered || voiceSubmissionActive || petActionWorkflow.busy || resultDelivery.busy || imageWorkflow?.busy) return { ok: false, error: '预览已失效或正在处理' };
   const session = pendingPreview;
   if (previewWin && !previewWin.isDestroyed()) previewWin.hide();
   voiceSubmissionActive = true;
@@ -1122,7 +1150,7 @@ ipcMain.handle('v2p:preview-insert', async (_e, { text, copyOnly }) => {
 });
 
 ipcMain.handle('v2p:preview-close', (_e, payload) => {
-  if (!pendingPreview || voiceSubmissionActive || recordingActive) return { ok: false, error: '预览已失效或正在处理' };
+  if (!pendingPreview || voiceSubmissionActive || recordingActive || imageWorkflow?.busy) return { ok: false, error: '预览已失效或正在处理' };
   if (previewWin && !previewWin.isDestroyed()) previewWin.hide();
   if (payload && payload.ok) {
     petBroadcast('v2p:result', {
@@ -1167,7 +1195,7 @@ function setMouseRecordHook() {
               recordingActive = false;
               petBroadcast('v2p:hotkey-stop');
             } else {
-              if (resultDelivery.busy) { resultDelivery.markDirty(); return; }
+              if (resultDelivery.busy || imageWorkflow?.busy) { if (resultDelivery.busy) resultDelivery.markDirty(); return; }
               recordingActive = true;
               noteVoiceStart();
               petBroadcast('v2p:hotkey-start');
@@ -1192,6 +1220,9 @@ function stopMouseRecordHook() {
 }
 
 app.on('will-quit', () => {
+  if (imageStateTimer) clearInterval(imageStateTimer);
+  imageStateTimer = null;
+  imageWorkflow?.dispose();
   screenshotController?.dispose();
   if (hotkeyManager) hotkeyManager.dispose();
   stopMouseRecordHook();

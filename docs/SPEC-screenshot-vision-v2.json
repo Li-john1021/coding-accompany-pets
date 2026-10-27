@@ -1,0 +1,405 @@
+{
+  "spec_version": "2",
+  "goal": "截图复制图片，并以当前多模态文字模型将图片转写到剪贴板，保持既有语音与文字行为",
+  "source": {
+    "plan_ref": "docs/PLAN-screenshot-vision-v1.md",
+    "plan_version": "v1 / 2026-10-27",
+    "approval_evidence": "User authorized stepwise Luna implementation, fresh Luna audits, repairs, tests and computer use in this chat on 2026-10-27. The same user instruction authorizes evidence-supported repairs and finite retesting; planner compiles this access-policy revision from unchanged approved Plan section6."
+  },
+  "requirements": [
+    {
+      "id": "R01",
+      "statement": "默认 Alt+A、自定义截图全局热键、冲突回滚及全路径恢复，录音热键独立",
+      "source_refs": [
+        "Plan §1.1",
+        "§2 热键和配置"
+      ]
+    },
+    {
+      "id": "R02",
+      "statement": "每条文字模型独立 multimodal，旧值 false，配置持久化及主动图片校验",
+      "source_refs": [
+        "Plan §1.2",
+        "§2 热键和配置"
+      ]
+    },
+    {
+      "id": "R03",
+      "statement": "按钮和热键共用框选截图入口，成功复制 PNG；取消、零面积、失败不写",
+      "source_refs": [
+        "Plan §2 截图"
+      ]
+    },
+    {
+      "id": "R04",
+      "statement": "负坐标、多屏混合 DPI 和跨屏裁剪合成；应用窗口可见性恢复",
+      "source_refs": [
+        "Plan §2 截图"
+      ]
+    },
+    {
+      "id": "R05",
+      "statement": "四按钮，模型能力与实际剪贴板图片共同控制识图，变化后刷新",
+      "source_refs": [
+        "Plan §2 识图及按钮"
+      ]
+    },
+    {
+      "id": "R06",
+      "statement": "MarkItDown 模式一次视觉调用，保留原文、代码、表格，图表客观描述，不执行图内指令",
+      "source_refs": [
+        "Plan §1.4-6",
+        "§3"
+      ]
+    },
+    {
+      "id": "R07",
+      "statement": "仅非空最终正文写剪贴板，不自动粘贴/优化/分析，无正文或失败不覆盖当前内容",
+      "source_refs": [
+        "Plan §2 识图及按钮",
+        "§3"
+      ]
+    },
+    {
+      "id": "R08",
+      "statement": "快照图片和模型，统一忙碌仲裁，重复触发和迟到状态不互相覆盖",
+      "source_refs": [
+        "Plan §2 识图及按钮"
+      ]
+    },
+    {
+      "id": "R09",
+      "statement": "请求有界超时和清理，退出后不得迟到写剪贴板，录音及文字操作无相关回归",
+      "source_refs": [
+        "Plan §3",
+        "§5 A09/A13/A14"
+      ]
+    },
+    {
+      "id": "R10",
+      "statement": "真实 Windows 截图剪贴板验证、有限真实视觉模型调用、证据报告及使用说明，未实测不宣称通过",
+      "source_refs": [
+        "Plan §6",
+        "§7"
+      ]
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "A01",
+      "proves": [
+        "R01"
+      ],
+      "check": "Windows foreground/background/tray default and custom hotkeys; unit transactional registration",
+      "evidence": "docs/TEST-REPORT-screenshot-vision-v1.md#A01"
+    },
+    {
+      "id": "A02",
+      "proves": [
+        "R01",
+        "R02"
+      ],
+      "check": "Settings save/reopen/restart and recorder close restoration",
+      "evidence": "docs/TEST-REPORT-screenshot-vision-v1.md#A02"
+    },
+    {
+      "id": "A03",
+      "proves": [
+        "R01"
+      ],
+      "check": "Duplicate and occupied registration rejects and restores old mapping",
+      "evidence": "docs/TEST-REPORT-screenshot-vision-v1.md#A03"
+    },
+    {
+      "id": "A04",
+      "proves": [
+        "R03",
+        "R09"
+      ],
+      "check": "Real capture/cancel and deterministic zero-area/failure/reentry cleanup",
+      "evidence": "docs/TEST-REPORT-screenshot-vision-v1.md#A04"
+    },
+    {
+      "id": "A05",
+      "proves": [
+        "R04"
+      ],
+      "check": "Deterministic mixed-DPI pixel fixture and physical screens available; record hardware limits",
+      "evidence": "docs/TEST-REPORT-screenshot-vision-v1.md#A05"
+    },
+    {
+      "id": "A06",
+      "proves": [
+        "R05"
+      ],
+      "check": "Real external image and text clipboard changes update UI",
+      "evidence": "docs/TEST-REPORT-screenshot-vision-v1.md#A06"
+    },
+    {
+      "id": "A07",
+      "proves": [
+        "R02",
+        "R05"
+      ],
+      "check": "Absent/incomplete/non-multimodal/switching providers gates both UI and IPC",
+      "evidence": "docs/TEST-REPORT-screenshot-vision-v1.md#A07"
+    },
+    {
+      "id": "A08",
+      "proves": [
+        "R08"
+      ],
+      "check": "Deferred request preserves input/provider snapshot under clipboard/config change",
+      "evidence": "docs/TEST-REPORT-screenshot-vision-v1.md#A08"
+    },
+    {
+      "id": "A09",
+      "proves": [
+        "R08",
+        "R09"
+      ],
+      "check": "Busy arbitration and voice/UI epoch regression checks",
+      "evidence": "docs/TEST-REPORT-screenshot-vision-v1.md#A09"
+    },
+    {
+      "id": "A10",
+      "proves": [
+        "R06",
+        "R07"
+      ],
+      "check": "PNG multimodal HTTP request and mocked final/empty/reasoning/error/timeout paths",
+      "evidence": "docs/TEST-REPORT-screenshot-vision-v1.md#A10"
+    },
+    {
+      "id": "A11",
+      "proves": [
+        "R06",
+        "R07",
+        "R10"
+      ],
+      "check": "Synthetic known Chinese/digits/code/table images through real provider when access gate passes",
+      "evidence": "docs/TEST-REPORT-screenshot-vision-v1.md#A11"
+    },
+    {
+      "id": "A12",
+      "proves": [
+        "R06",
+        "R10"
+      ],
+      "check": "Chart/no-text/instruction fixture behavior and scoped visual review",
+      "evidence": "docs/TEST-REPORT-screenshot-vision-v1.md#A12"
+    },
+    {
+      "id": "A13",
+      "proves": [
+        "R05",
+        "R07",
+        "R09"
+      ],
+      "check": "Four controls, scaling, gestures, insertMode both values; selected existing v5 regressions",
+      "evidence": "docs/TEST-REPORT-screenshot-vision-v1.md#A13"
+    },
+    {
+      "id": "A14",
+      "proves": [
+        "R09"
+      ],
+      "check": "Shutdown/cancel/error retry leaves no windows/timers/late writes",
+      "evidence": "docs/TEST-REPORT-screenshot-vision-v1.md#A14"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "D01",
+      "statement": "Electron 31 Windows app and existing Node dependencies",
+      "status": "verified"
+    },
+    {
+      "id": "D02",
+      "statement": "Existing text/voice interfaces and configuration",
+      "status": "verified"
+    },
+    {
+      "id": "D03",
+      "statement": "Synthetic fixture corpus and available user model supports vision",
+      "status": "assumed"
+    }
+  ],
+  "assumptions": [
+    {
+      "id": "S01",
+      "statement": "Physical monitor and provider coverage depends on local hardware/configuration",
+      "validation": "Inventory metadata and actual available screens; record untested combinations, never mock as real"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "I01",
+      "statement": "Preserve existing voice/text/undo behavior and user configuration"
+    },
+    {
+      "id": "I02",
+      "statement": "Only active declared multimodal provider accepts actual image data; snapshot before await"
+    },
+    {
+      "id": "I03",
+      "statement": "Reviewers are fresh Luna, read-only except their audit artifact; no code edits during audits"
+    }
+  ],
+  "forbidden_effects": [
+    {
+      "id": "F01",
+      "statement": "No automatic paste, answer, optimize or second model analysis for recognition"
+    },
+    {
+      "id": "F02",
+      "statement": "No Python/MCP/local OCR runtime added; no secrets or user image bytes committed"
+    },
+    {
+      "id": "F03",
+      "statement": "No historical frozen v5/v6 contract rewriting, audit deletion, or fake runtime/model claims"
+    }
+  ],
+  "implementation_units": [
+    {
+      "id": "P1",
+      "objective": "Config/settings persistence",
+      "depends_on": [
+        "D01",
+        "D02"
+      ],
+      "checks": [
+        "Focused deterministic checks and evidence"
+      ]
+    },
+    {
+      "id": "P2",
+      "objective": "Transactional dual global hotkeys",
+      "depends_on": [
+        "P1"
+      ],
+      "checks": [
+        "Focused deterministic checks and evidence"
+      ]
+    },
+    {
+      "id": "P3",
+      "objective": "Frozen screen regional capture",
+      "depends_on": [
+        "P2"
+      ],
+      "checks": [
+        "Focused deterministic checks and evidence"
+      ]
+    },
+    {
+      "id": "P4",
+      "objective": "Vision transcription and validation",
+      "depends_on": [
+        "P3"
+      ],
+      "checks": [
+        "Focused deterministic checks and evidence"
+      ]
+    },
+    {
+      "id": "P5",
+      "objective": "Image workflow and four-button integration",
+      "depends_on": [
+        "P4"
+      ],
+      "checks": [
+        "Focused deterministic checks and evidence"
+      ]
+    },
+    {
+      "id": "P6",
+      "objective": "Independent tests, Windows runtime, regression, delivery",
+      "depends_on": [
+        "P5"
+      ],
+      "checks": [
+        "Focused deterministic checks and evidence"
+      ]
+    }
+  ],
+  "validation_boundaries": [
+    {
+      "id": "VB-P1",
+      "trigger": "User explicitly requires clean Luna review after implementation; shared interfaces and state risk",
+      "scope": [
+        "P1"
+      ],
+      "evidence": "docs/audits/screenshot-vision-p1-*.json"
+    },
+    {
+      "id": "VB-P2",
+      "trigger": "User explicitly requires clean Luna review after implementation; shared interfaces and state risk",
+      "scope": [
+        "P2"
+      ],
+      "evidence": "docs/audits/screenshot-vision-p2-*.json"
+    },
+    {
+      "id": "VB-P3",
+      "trigger": "User explicitly requires clean Luna review after implementation; shared interfaces and state risk",
+      "scope": [
+        "P3"
+      ],
+      "evidence": "docs/audits/screenshot-vision-p3-*.json"
+    },
+    {
+      "id": "VB-P4",
+      "trigger": "User explicitly requires clean Luna review after implementation; shared interfaces and state risk",
+      "scope": [
+        "P4"
+      ],
+      "evidence": "docs/audits/screenshot-vision-p4-*.json"
+    },
+    {
+      "id": "VB-P5",
+      "trigger": "User explicitly requires clean Luna review after implementation; shared interfaces and state risk",
+      "scope": [
+        "P5"
+      ],
+      "evidence": "docs/audits/screenshot-vision-p5-*.json"
+    },
+    {
+      "id": "VB-P6",
+      "trigger": "User explicitly requires clean Luna review after implementation; shared interfaces and state risk",
+      "scope": [
+        "P6"
+      ],
+      "evidence": "docs/audits/screenshot-vision-p6-*.json"
+    }
+  ],
+  "provider_policy": {
+    "source": "Only project user's configured active text provider, never enumerate/expose credential values",
+    "fixtures": "Synthetic screenshots only, known text/code/table/chart/no-text/instruction content; no user screen bytes",
+    "candidate_set": "One configured active provider verified vision-capable by docs/actual image response; isolated test profile",
+    "budget": "At most 8 live image requests total: retained first round6 plus at most2 targeted repair checks (text-code and instruction), no automatic retries, no counter reset.",
+    "retry_classes": [],
+    "denominator": "All attempted requests reported including errors",
+    "gate": "Freeze fixture bytes and prompt/schema hash before calls. Missing compatible provider/credentials/network is a provider brake for live-model tests only; no calls and no credential read on failed preflight."
+  },
+  "final_acceptance": {
+    "proves": [
+      "R01",
+      "R02",
+      "R03",
+      "R04",
+      "R05",
+      "R06",
+      "R07",
+      "R08",
+      "R09",
+      "R10"
+    ],
+    "release_boundary": "Local feature delivery and locally built test artifact authorized by user; no public publishing. Main agent runs full audit and combined tests; hardware/provider limitations explicitly reported."
+  },
+  "revision": {
+    "supersedes": "SPEC-screenshot-vision-v1.json",
+    "scope": "Provider repair validation budget only; all requirements, acceptance checks and production scope unchanged",
+    "reason": "Round1 live evidence showed ignored existing noThinking setting and unnecessary descriptions on text/code screenshots; user explicitly authorized repairs and tests until full delivery."
+  }
+}

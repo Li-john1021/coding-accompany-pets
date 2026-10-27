@@ -63,6 +63,17 @@ async function test(name, fn) {
     await assert.rejects(pending, /external abort propagated/);
   });
 
+  await test('vision requests honor the existing provider thinking preference', async () => {
+    for (const disabled of [true, false]) {
+      await transcribeImage({ ...provider, noThinking: disabled }, png, { fetchImpl: async (_url, request) => {
+        const body = JSON.parse(request.body);
+        if (disabled) { assert.deepEqual(body.thinking, { type: 'disabled' }); assert.equal(body.reasoning_effort, 'none'); }
+        else { assert.equal(body.thinking, undefined); assert.equal(body.reasoning_effort, undefined); }
+        return okResponse('body');
+      } });
+    }
+  });
+
   await test('explicit image validator requires declared capability and visible token', async () => {
     assert.deepEqual(await validateImageVision({ ...provider, multimodal: false }, { fetchImpl: async () => { throw new Error('must not call'); } }), { ok: false, error: '请先声明此模型支持多模态图片输入' });
     assert.deepEqual(await validateImageVision(provider, { pngBuffer: png, fetchImpl: async () => okResponse(`Detected ${IMAGE_VALIDATION_TOKEN}`) }), { ok: true });

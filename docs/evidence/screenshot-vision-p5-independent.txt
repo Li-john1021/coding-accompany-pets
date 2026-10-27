@@ -1,0 +1,16 @@
+P5 independent integration checks
+Date: 2026-10-27
+
+Test file: app/main/screenshot-vision-p5.e2e.test.js
+Scope: temporary Electron profile, production main/preload/settings/pet renderers, real system clipboard with restoration of available formats, and a loopback-only mock OpenAI-compatible image endpoint. Synthetic PNG fixtures and API tokens only; no external provider, live credential, user profile, or desktop input.
+
+Planned assertions: the active model's saved multimodal checkbox and actual image clipboard jointly gate the pet button; external text/image clipboard changes refresh the gate; the settings validation action sends a tiny PNG and verifies the returned validation token; recognition sends one PNG request with the snapshotted active model and copies the exact final body with leading code indentation even when automatic paste is configured; HTTP failure leaves the image intact; while a response is deferred, changing model and clipboard does not change the in-flight request, and success publishes its text and disables recognition.
+
+Execution status: prepared alongside P5 implementation; run after the P5 renderer/preload/workflow integration is ready. No live model requests are part of this test.
+Parent completion note (2026-10-27): the independent Luna test author's stream
+disconnected. Parent completed wait-result assertions and screenshot visibility
+fixtures, then ran the production Electron test successfully. Four localhost
+requests; image validation, final-body clipboard delivery, HTTP failure,
+deferred snapshot and screenshot-button cancellation passed. No external model
+calls or real user configuration/keys are used by this integration fixture.
+

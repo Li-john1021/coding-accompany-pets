@@ -32,13 +32,15 @@ function createRendererHarness(options = {}) {
   const status = makeElement('status');
   const bubble = makeElement('bubble');
   const actionRow = makeElement('action-row');
-  const buttons = ['structure', 'optimize', 'image_recognition'].map((mode) => {
+  const buttons = ['structure', 'optimize', 'screenshot', 'image_recognition'].map((mode) => {
     const button = makeElement(`button-${mode}`);
     button.dataset.mode = mode;
     return button;
   });
   const v2p = {
     petAction: async (mode) => ({ ok: true, capture: { kind: 'authorized' }, note: '', mode }),
+    screenshot: async () => ({ ok: true, width: 10, height: 10 }),
+    recognizeImage: async () => ({ ok: false }), getImageState: async () => ({ eligible: false, busy: false }), onImageState(callback) { listeners.set('imageState', callback); },
     setRecordingFlag() { return { ok: !options.denyRecording, error: '结果正在写入' }; },
     onState(callback) { listeners.set('state', callback); },
     onLoudness() {}, onProbe() {}, onResult(callback) { listeners.set('result', callback); },

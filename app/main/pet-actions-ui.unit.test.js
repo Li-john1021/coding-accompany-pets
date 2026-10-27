@@ -22,10 +22,10 @@ assert.strictEqual(legacy.hotkey, 'Control+Space', 'other user configuration sur
 assert.strictEqual(migrateLegacyPalette(legacy), false, 'migration is idempotent');
 
 const buttons = [...html.matchAll(/class="pet-action"[^>]*>/g)].map((m) => m[0]);
-assert.strictEqual(buttons.length, 3, 'three pet action controls render');
-assert.deepStrictEqual(buttons.map((button) => (button.match(/data-mode="([^"]+)"/) || [])[1]), ['structure', 'optimize', 'image_recognition']);
-assert.match(html, /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/, 'action row uses equal columns');
-assert.match(buttons[2], /disabled/, 'image recognition is disabled');
+assert.strictEqual(buttons.length, 4, 'four pet action controls render');
+assert.deepStrictEqual(buttons.map((button) => (button.match(/data-mode="([^"]+)"/) || [])[1]), ['structure', 'optimize', 'screenshot', 'image_recognition']);
+assert.match(html, /grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/, 'action row uses equal columns');
+assert.match(buttons[3], /disabled/, 'image recognition starts disabled pending main-process state');
 assert.match(js, /eventName of \['pointerdown', 'mousedown', 'click', 'dblclick', 'contextmenu', 'wheel'\]/, 'button presses do not reach pet gestures');
 assert.match(js, /actionRow\.addEventListener\('wheel'/, 'scrolling in the action row does not scale the pet');
 assert.match(js, /releaseAction === 'stop-recording'[\s\S]*?stopRecording\(\)/, 'release disposition stops recording');
@@ -40,7 +40,7 @@ assert.match(settings, /mouse-record/);
 assert.doesNotMatch(settings, /启用选中浮条|palette-enabled/, 'obsolete palette setting is removed');
 assert.doesNotMatch(settingsJs, /palette-enabled|paletteEnabled:/, 'settings cannot re-enable the old palette');
 assert.match(main, /if \(!inputDirtyGuard\) inputDirtyGuard = createInputDirtyGuard/, 'v5 registers one shared dirty/side-key guard');
-assert.match(main, /Object\.assign\(cfg, patch\);\s*cfg\.paletteEnabled = false;/, 'saving settings cannot re-enable the legacy palette');
+assert.match(main, /applyConfigPatchTransaction\(\{ configObject: cfg, patch, save: \(\) => config\.save\(\), hotkeys: hotkeyManager \}\)/, 'settings save through the validated configuration transaction');
 assert.match(main, /v2p:pet-action'[\s\S]*?petActionWorkflow\.run\(mode\)/, 'pet action IPC delegates capture authorization and model processing to the workflow');
 
 assert.strictEqual(resolveMouseUp({ button: 0, bodyGestureActive: true, targetInActionRow: true, triggerMode: 'hold', recording: true, dragging: false, elapsedMs: 400 }), 'stop-recording', 'hold gesture release over row gap stops recording');

@@ -1,0 +1,50 @@
+P5 image workflow and integration candidate
+Date: 2026-10-27
+Base: af9e127 (P4 audit retained)
+
+Luna implemented the image workflow, main/preload bridge, four controls and
+existing busy/voice/undo test-harness extensions. Its stream disconnected before
+final checks. Another Luna authored the localhost Electron integration test;
+its stream also disconnected. Parent finished their tests and reconciliation.
+
+Parent reconciliation:
+- Workflow owns cloned provider and PNG snapshots, not borrowed objects.
+- Clipboard/status-observer/capture exceptions cannot strand the busy lock.
+- Screenshot button eligibility also reflects conflicting non-image work.
+- Fixed independent test wait helpers returning booleans where values were
+  asserted; screenshot window suppression now checks URL at show time rather
+  than permanently suppressing newly constructed selectors before load.
+- Real settings/clipboard/request/error/snapshot/cancel paths pass with four
+  localhost requests and fake keys; see p5-runtime.txt.
+- Existing real provider noThinking=true was not applied in vision requests.
+  Vision now reuses existing thinking controls. Prompt disallows appearance
+  commentary on text/code images. Both targeted live repair checks pass.
+
+Frozen access-policy revision:
+SPEC-screenshot-vision-v1.json remains unchanged. SPEC-screenshot-vision-v2.json
+is compiled from the same user-approved Plan and repair-until-delivery
+authorization. Its only operational extension is a finite two-request targeted
+repair verification after the initial six synthetic requests; total8, no
+automatic retries or counter reset. Requirements and acceptance remain unchanged.
+Round1 and round2 model evidence are both retained; no user screenshots sent.
+
+Checks by parent (exit0):
+- All35 app/main/*.unit.test.js files, including legacy guards, prompt routes,
+  voice, target-input, paste/undo, thinking, screenshot and image-workflow tests.
+- models-vision-ipc.unit.test.js and new thinking preference cases.
+- screenshot-vision-p5.e2e.test.js: production renderer/preload/main + real OS
+  clipboard + local mock HTTP endpoint. Actual settings image validation, PNG
+  transport/auth, checkbox/image gating, clipboard-only indented output even
+  in paste mode, HTTP415 image preservation, deferred provider/image snapshots,
+  screenshot button Escape cancellation. No external model calls in this test.
+
+Live evidence: round1 includes one validation and five fixtures, all HTTP200 and
+all expected strings retained. Manual review found unnecessary text/code
+appearance commentary, then round2 verifies no extra description, preserved
+text/code/instruction and honored thinking-disabled. Same text/code sample:
+43.082s initial versus3.676s repair (one observation each, not a general speed
+benchmark). The instruction sample was transcribed rather than followed.
+
+No public release, real profile mutation or automatic second analysis call.
+P5/repair candidate awaits fresh Luna audit; P6 combined runtime and packaging
+remain before local delivery.

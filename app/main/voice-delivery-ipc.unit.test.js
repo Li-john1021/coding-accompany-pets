@@ -6,6 +6,7 @@ function fixture() {
   const context = {
     Buffer, Object, String, Number, recordingActive: false, voiceSubmissionActive: false, voiceDeliveryEpoch: 0,
     voiceTargetPromise: null, pendingPreview: null, previewWin: null,
+    imageWorkflow: { busy: false },
     config: { load: () => cfg }, resultDelivery: { busy: false, markDirty() {} },
     petActionCapture: { cancel() {} }, petActionWorkflow: { busy: false, run: async () => ({ ok: true }) },
     ipcMain: { handle: (name, fn) => { handlers[name] = fn; } },
@@ -80,6 +81,18 @@ function fixture() {
   {
     const f = fixture(); f.context.petActionWorkflow.busy = true;
     assert.equal((await f.call('submit', { audio: [1], options: {} })).ok, false); assert.equal(f.deliveries.length, 0);
+  }
+  {
+    const f = fixture(); f.context.imageWorkflow.busy = true;
+    assert.equal((await f.call('submit', { audio: [1], options: {} })).ok, false);
+    assert.equal((await f.call('process-text', { text: 'blocked', mode: 'structure' })).ok, false);
+    assert.equal((await f.call('pet-action', 'structure')).ok, false);
+    f.context.pendingPreview = { initialRaw: 'preview' };
+    assert.equal((await f.call('preview-insert', { text: 'blocked' })).ok, false);
+    assert.equal((await f.call('preview-close', { ok: true })).ok, false);
+    assert.equal((await f.call('recording-flag', true)).ok, false);
+    assert.equal(f.context.recordingActive, false);
+    assert.equal(f.deliveries.length, 0, 'image busy admission prevents voice/text delivery');
   }
   console.log('PASS v5 production voice IPC: deferred one delivery, immutable preview ASR, short/raw routes, duplicate and concurrency/epoch guards');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
