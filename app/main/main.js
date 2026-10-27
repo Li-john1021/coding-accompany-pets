@@ -1,6 +1,6 @@
 // main.js — 应用入口：托盘常驻 + 设置窗口 + 宠物悬浮窗 + 全局热键 + IPC
 const {
-  app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, globalShortcut, dialog, shell, protocol, net
+  app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, globalShortcut, dialog, shell, protocol, net, desktopCapturer, screen, clipboard
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -17,6 +17,9 @@ const { sendTargetChord } = require('./target-keys');
 const { nativeInputSession } = require('./native-input-session');
 const { createInputDirtyGuard } = require('./input-dirty-guard');
 const { createGlobalHotkeyManager, applyConfigPatchTransaction } = require('./global-hotkeys');
+const { createScreenshotController } = require('./screenshot');
+const screenshotGeometry = require('./screenshot-geometry');
+const { getPhysicalMonitorBounds, mapDisplaysToPhysical, captureWindowsDisplay } = require('./screenshot-native-capture');
 const resultDelivery = createResultDelivery({
   platform: process.platform,
   snapshot: () => getWindowsSnapshot(false, true),
@@ -86,6 +89,7 @@ let tray = null;
 let settingsWin = null;
 let petWin = null;
 let paintWin = null;
+let screenshotController = null;
 let recordingActive = false; // 全局热键触发录音时的状态标记
 let voiceSubmissionActive = false;
 let voiceTargetPromise = null;
@@ -127,7 +131,65 @@ function handleVoiceHotkey() {
 }
 
 function handleScreenshotHotkey() {
-  petBroadcast('v2p:toast', { text: '截图入口尚未就绪' });
+  if (!screenshotController) return;
+  screenshotController.capture().then((result) => {
+    if (!result.ok && result.reason !== 'cancelled' && result.reason !== 'zero-area') {
+      petBroadcast('v2p:toast', { text: result.error || '截图失败，请重试' });
+    }
+  });
+}
+
+function initializeScreenshotController() {
+  screenshotController = createScreenshotController({
+    getAppWindows: () => BrowserWindow.getAllWindows().filter((win) => !win.webContents.getURL().endsWith('/screenshot.html')),
+    getDisplays: () => screen.getAllDisplays(),
+    captureScreens: async (displays) => {
+      const max = { width: Math.max(...displays.map((d) => d.pixelWidth)), height: Math.max(...displays.map((d) => d.pixelHeight)) };
+      const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: max });
+      const matched = displays.map((display) => sources.find((entry) => String(entry.display_id) === display.id));
+      if (matched.every((source) => source && !source.thumbnail.isEmpty())) {
+        return displays.map((display, index) => {
+          const source = matched[index];
+          const size = source.thumbnail.getSize();
+          return { id: display.id, dataUrl: source.thumbnail.toDataURL(), pixelWidth: size.width, pixelHeight: size.height };
+        });
+      }
+      if (process.platform !== 'win32') throw new Error('屏幕捕获源未提供可验证的显示器标识');
+      const displaysWithPhysicalBounds = displays.map((display) => ({
+        ...display, nativeBounds: screen.dipToScreenRect(null, display.bounds)
+      }));
+      const physical = mapDisplaysToPhysical(displaysWithPhysicalBounds, await getPhysicalMonitorBounds());
+      const captured = [];
+      for (const display of physical) {
+        const dataUrl = await captureWindowsDisplay({ x: display.x, y: display.y, width: display.width, height: display.height });
+        const image = nativeImage.createFromDataURL(dataUrl);
+        const size = image.getSize();
+        if (image.isEmpty() || size.width !== display.width || size.height !== display.height) {
+          throw new Error(`屏幕 ${display.id} 的捕获尺寸与物理边界不符`);
+        }
+        captured.push({ id: display.id, dataUrl, pixelWidth: size.width, pixelHeight: size.height });
+      }
+      return captured;
+    },
+    createSelector: async ({ token, screen: current, screens }) => {
+      const win = new BrowserWindow({
+        ...current.bounds, frame: false, transparent: false, resizable: false, movable: false,
+        skipTaskbar: true, alwaysOnTop: true, show: false, backgroundColor: '#000000',
+        webPreferences: { preload: path.join(__dirname, 'screenshot-preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
+      });
+      win.setAlwaysOnTop(true, 'screen-saver');
+      win.webContents.once('render-process-gone', () => { if (!win.isDestroyed()) win.close(); });
+      try {
+        await win.loadFile(path.join(__dirname, '..', 'renderer', 'screenshot.html'));
+        win.webContents.send('v2p:screenshot:init', { token, screen: current, screens });
+        return win;
+      } catch (error) {
+        if (!win.isDestroyed()) win.destroy();
+        throw error;
+      }
+    },
+    writeImage: (dataUrl) => clipboard.writeImage(nativeImage.createFromDataURL(dataUrl))
+  });
 }
 
 let hotkeyManager = null;
@@ -304,6 +366,14 @@ function currentPetImageDataUrl() {
 
 // ---------------- IPC ----------------
 function registerIpc() {
+  ipcMain.handle('v2p:screenshot', (event) => {
+    if (!petWin || event.sender !== petWin.webContents || !screenshotController) return { ok: false, reason: 'unauthorized' };
+    return screenshotController.capture();
+  });
+  ipcMain.on('v2p:screenshot:pointer', (event, payload) => screenshotController?.pointer(event, payload));
+  ipcMain.on('v2p:screenshot:cancel', (event, payload) => screenshotController?.cancel(event, payload));
+  ipcMain.on('v2p:screenshot:composed', (event, payload) => screenshotController?.composed(event, payload));
+
   ipcMain.handle('v2p:get-config', () => {
     const cfg = { ...config.load() };
     // 下发给设置页时解码 apiKey，便于编辑；保存时渲染层重新编码回传
@@ -643,6 +713,7 @@ app.whenReady().then(() => {
 
   config.load();
   initializeHotkeyManager();
+  initializeScreenshotController();
   registerIpc();
   paint.register();
   createTray();
@@ -1119,6 +1190,7 @@ function stopMouseRecordHook() {
 }
 
 app.on('will-quit', () => {
+  screenshotController?.dispose();
   if (hotkeyManager) hotkeyManager.dispose();
   stopMouseRecordHook();
 });

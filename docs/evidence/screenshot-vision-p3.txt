@@ -1,0 +1,49 @@
+P3 capture candidate and parent reconciliation
+Date: 2026-10-27
+Base: 187560c (P2 independent audit retained)
+
+Luna authored screenshot controller, geometry, isolated selector renderer/preload,
+native Windows fallback, production IPC/hotkey entry and initial tests. After a
+subagent connection failure and slow recovery, parent resumed runtime debugging.
+
+Windows source identity: both desktopCapturer sources have blank display_id on
+this host. Source ordinal is not used. Exact-ID capture is the fast path; the
+Windows fallback enumerates DPI-aware physical monitor rectangles, matches by
+size and unique physical overlap and captures explicit native rectangles.
+Current OS reports two logical monitors, scales 1 and 1.25. Initial inventory
+earlier in the session had one; no system display settings were changed by us.
+
+Parent repairs before candidate:
+- Preserve legacy unmodified function-key accelerators (F8/F12); behavior test
+  covers registration/callback routing and duplicate rejection. P2 audit remains
+  retained; this additional R01 regression is re-reviewed with this candidate.
+- Pre-aborted screenshot requests have no capture side effects; abort after
+  selector creation exits before showing windows.
+- Cross-screen rectangles may include virtual desktop gaps; the compositor
+  explicitly fills gaps black and copies the actual visible source regions.
+- Renderer crashes close their selector to settle cancellation.
+- Runtime fixture restores common clipboard formats after testing.
+
+Checks run by parent (exit 0):
+node --check app/main/screenshot-native-capture.js
+node --check app/main/main.js
+node --check app/renderer/screenshot-compose.js
+node app/main/screenshot-geometry.unit.test.js
+node app/main/screenshot-controller.unit.test.js
+node app/main/screenshot-independent.unit.test.js
+node app/main/screenshot-p3.runtime.test.js
+node app/main/global-hotkeys.unit.test.js
+node app/main/pet-actions-v5-settings.e2e.test.js
+node app/main/pet-action-renderer-epoch.unit.test.js
+node app/main/voice-delivery-ipc.unit.test.js
+git diff --check
+
+Runtime details: screenshot-vision-p3-runtime.txt. A real captured 40x30 PNG has
+the expected external magenta target center pixel [255,0,255,255]. Esc preserves
+the cancellation sentinel and selector cleanup restores the previously visible
+pet window. Actual canvas composition confirms red/green pixels across mixed
+scales and black gap pixels in a staggered layout.
+
+Mixed-DPI compositor/negative origins/cross-selector routing have deterministic
+coverage. Physical cross-monitor mouse dragging has not yet been exercised by
+Computer Use. No provider calls, user profile reads or credentials used.

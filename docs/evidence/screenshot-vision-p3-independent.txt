@@ -1,0 +1,11 @@
+P3 independent checks
+Date: 2026-10-27
+
+Test file: app/main/screenshot-independent.unit.test.js
+Scope: screenshot controller abort/cancel/dispose/reentry/selector-close/load-error cleanup; production selector renderer coordinate forwarding across monitor windows; staggered monitor composition geometry; equal-resolution physical display identity.
+
+Result: PASS with `node app/main/screenshot-independent.unit.test.js`. The controller test verifies external abort during capture, pre-abort with no capture side effects, reentry joining one session, selector-close cancellation, dispose cleanup, load rejection cleanup, and cross-monitor pointer forwarding. The staggered selection includes the virtual gap and still sends both screen parts to composition. Equal-resolution display mapping remains correct when Electron and Windows monitor enumeration orders differ.
+
+Runtime evidence is recorded by the separate parent run of app/main/screenshot-p3.runtime.test.js. It used a synthetic magenta native window and observed clipboard center pixel [255,0,255,255]. Its production canvas composition check observed the expected red/green source pixels at mixed scale. No provider or credential access was performed by these independent checks.
+
+The runtime check additionally verified the staggered virtual gap pixel as black [0,0,0,255], between red and green monitor pixels. No provider, credential, or desktop input access was performed by these independent checks.

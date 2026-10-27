@@ -30,6 +30,13 @@ function fixture() {
 }
 
 const f = fixture();
+assert.deepStrictEqual(normalizeAccelerator('F8'), { accelerator: 'F8', canonical: 'f8' }, 'legacy unmodified function keys remain valid');
+const singleKey = fixture();
+assert.equal(singleKey.manager.apply({ voice: 'F8', screenshot: 'F12' }).ok, true);
+singleKey.registrations.get('F8')();
+singleKey.registrations.get('F12')();
+assert.deepStrictEqual(singleKey.calls, { voice: 1, screenshot: 1 });
+assert.equal(singleKey.manager.apply({ voice: 'F8', screenshot: 'f8' }).ok, false, 'unmodified duplicate keys are still rejected');
 assert.deepStrictEqual(normalizeAccelerator(' alt + shift + a '), { accelerator: 'Alt+Shift+A', canonical: 'Alt+Shift+a' });
 assert.deepStrictEqual(normalizeAccelerator('CommandOrControl+Alt+A'), normalizeAccelerator('Control+Alt+A'), 'Windows modifier aliases normalize to the same accelerator');
 assert.deepStrictEqual(f.manager.apply({ voice: 'Control+Shift+Space', screenshot: 'Alt+A' }), {

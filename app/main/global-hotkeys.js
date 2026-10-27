@@ -24,7 +24,7 @@ function normalizeAccelerator(value, { allowBlank = false } = {}) {
       key = /^[a-z]$/i.test(part) ? part.toUpperCase() : part;
     }
   }
-  if (!key || !modifiers.length) throw new Error(`快捷键格式无效：${raw}`);
+  if (!key) throw new Error(`快捷键格式无效：${raw}`);
   const ordered = MODIFIER_ORDER.filter((modifier) => modifiers.includes(modifier));
   return { accelerator: [...ordered, key].join('+'), canonical: [...ordered, key.toLowerCase()].join('+') };
 }
