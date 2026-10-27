@@ -1,0 +1,74 @@
+{
+  "audit_id": "VB-P4-1",
+  "verdict": "PASS",
+  "route": "none",
+  "candidate": {
+    "base": "28fcdf5a54761cf75e613d8647ad86dd823d5f38",
+    "head": "57d33cb3c48077795a06cdea6252db259756aa5c",
+    "scope": ["P4", "R06", "R07", "R09", "R02 active image validation"]
+  },
+  "contract_precheck": {
+    "status": "clean",
+    "plan_sha256": "93AD032E4D9715800B9CDE713DBF305FDB06C6554DE9A5656568EA684DAFAE67",
+    "spec_sha256": "05355AD48521BA5B2F622A6FF0A769BB77EFBB434AFE2A0C32BB9281FFF21BEC",
+    "notes": "Scoped requirements have Plan source references and observable acceptance checks. Assumed live-provider compatibility is explicitly constrained by Spec R10 and provider_policy; live calls were not required for this boundary audit."
+  },
+  "evidence": [
+    {
+      "id": "E-001",
+      "path": "docs/PLAN-screenshot-vision-v1.md",
+      "hash": "93AD032E4D9715800B9CDE713DBF305FDB06C6554DE9A5656568EA684DAFAE67",
+      "detail": "Frozen source plan verified."
+    },
+    {
+      "id": "E-002",
+      "path": "docs/SPEC-screenshot-vision-v1.json",
+      "hash": "05355AD48521BA5B2F622A6FF0A769BB77EFBB434AFE2A0C32BB9281FFF21BEC",
+      "detail": "Frozen compiled contract verified."
+    },
+    {
+      "id": "E-003",
+      "path": "docs/evidence/screenshot-vision-p4.txt",
+      "hash": "E78A32333D88BE39DAF92A79583A7B1F3B41D938D6ED710525A2425CF04FC4E0",
+      "detail": "Implementation check record reviewed; this audit independently reran the listed checks and additional vision IPC test."
+    },
+    {
+      "id": "E-004",
+      "path": "docs/evidence/screenshot-vision-p4-routing.txt",
+      "hash": "DAB536A63EDEC32A463CC77DC58B8A7B81F0EEB6AAD93C83BC391E60D1ED8486",
+      "detail": "Matches supplied routing evidence hash; filename in candidate includes screenshot-vision prefix."
+    },
+    {
+      "id": "E-005",
+      "path": "command output: scoped deterministic checks",
+      "detail": "Passed models-vision.unit.test.js, models-vision-ipc.unit.test.js, models-thinking.unit.test.js, pet-actions-v5-config.unit.test.js, pet-actions-v5-settings.e2e.test.js, node --check for changed JS modules, and git diff --check over candidate range."
+    },
+    {
+      "id": "E-006",
+      "path": "app/main/models.js:7",
+      "detail": "Timeout and external abort are wired to request signal; finally cleanup clears timer and removes listener. Image request sends one PNG data URI and returns only final textual content after nonblank validation (lines 59-90)."
+    },
+    {
+      "id": "E-007",
+      "path": "app/main/vision-prompts.js:1",
+      "detail": "Prompt preserves source wording/language, numbers, code indentation and table relationships; marks unclear text, declines image instructions/questions, and requests objective visual description."
+    },
+    {
+      "id": "E-008",
+      "path": "app/main/main.js:404",
+      "detail": "Existing model validation IPC routes declared multimodal LLMs to explicit image validation while preserving ASR and text validation paths; behavioral unit test covers all routes."
+    }
+  ],
+  "findings": [],
+  "limitations": [
+    "No live provider request or key/profile read was performed. Synthetic fixture checks and mocked HTTP behavior do not establish compatibility or transcription quality for any provider; Spec R10 remains for later acceptance.",
+    "P5 workflow, button state, clipboard publication, and integration are outside this audit boundary."
+  ],
+  "next_cycle_brief": {
+    "objective": "Implement and verify P5 image workflow and button integration against the frozen contract, preserving the P4 provider method and validation route.",
+    "allowed_changes": ["P5 implementation changes supported by requirements and integration evidence"],
+    "checks": ["Cover clipboard image and model capability gating, frozen provider/image snapshot, operation arbitration, successful text clipboard publication, failure non-publication, and renderer state refresh."],
+    "prohibited": ["Changing frozen thresholds or contract", "Deleting or rewriting this audit", "Expanding into unrelated behavior"],
+    "carry_forward": ["R10 live provider compatibility and quality remains unverified until its preflight and fixture gate passes", "P5 is not implemented or audited here"]
+  }
+}
