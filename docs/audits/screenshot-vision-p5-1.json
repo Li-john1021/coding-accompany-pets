@@ -1,0 +1,78 @@
+{
+  "verdict": "PASS",
+  "route": "none",
+  "candidate": "af9e1274508642fec6bfb733cbe068e22fc29d84..93cd412da2071b12916fed4e1c92f1776f7af0a5",
+  "scope": ["VB-P5", "R05", "R07", "R08", "R09", "P4 request preference/prompt repair"],
+  "precheck": {
+    "result": "clean",
+    "plan_sha256": "93AD032E4D9715800B9CDE713DBF305FDB06C6554DE9A5656568EA684DAFAE67",
+    "active_spec": "docs/SPEC-screenshot-vision-v2.json",
+    "active_spec_sha256": "F80E2BC4F779A3D18FC8BD2EA492121BFED05C86541A189C563018DA41A26B67",
+    "frozen_v1_requirements_acceptance_invariants_unchanged": true,
+    "note": "The only compiled revision is the bounded provider verification policy: two targeted repair calls after six initial calls, maximum eight total, no retries or counter reset. Requirements and production scope are unchanged."
+  },
+  "evidence": [
+    {
+      "id": "E-001",
+      "path": "docs/PLAN-screenshot-vision-v1.md and docs/SPEC-screenshot-vision-v2.json",
+      "hash": "Plan SHA-256 93AD032E4D9715800B9CDE713DBF305FDB06C6554DE9A5656568EA684DAFAE67; Spec SHA-256 F80E2BC4F779A3D18FC8BD2EA492121BFED05C86541A189C563018DA41A26B67",
+      "result": "Plan source references, proving acceptance items and dependencies are observable; v1 requirements, acceptance and invariants compare equal to v2."
+    },
+    {
+      "id": "E-002",
+      "path": "app/main/image-workflow.js, app/main/main.js, app/preload.js, app/renderer/pet.js, app/renderer/pet.html",
+      "hash": "Candidate commit 93cd412da2071b12916fed4e1c92f1776f7af0a5",
+      "result": "One main-process workflow owns screenshot/recognition admission. UI state gates recognition on a configured multimodal provider and actual clipboard image; IPC rechecks admission. Provider fields and PNG bytes are copied before awaiting. Completion publishes text directly to clipboard without calling paste, text processing, optimization or result-delivery routes."
+    },
+    {
+      "id": "E-003",
+      "path": "app/main/image-workflow.unit.test.js and app/main/image-workflow-resilience.unit.test.js",
+      "hash": "Candidate commit 93cd412da2071b12916fed4e1c92f1776f7af0a5",
+      "result": "Admission/mutual exclusion, snapshots, empty-output rejection, disposal, abort, and recovery after clipboard, observer and capture exceptions pass."
+    },
+    {
+      "id": "E-004",
+      "path": "app/main/screenshot-vision-p5.e2e.test.js and docs/evidence/screenshot-vision-p5-runtime.txt",
+      "hash": "runtime evidence SHA-256 8EDF11CCA9120B6B3A82D3B7198874846BD0CA268A5233FC9C1FE0C4CE327027",
+      "result": "Production Electron main/preload/renderers, real OS clipboard and localhost mock endpoint pass. Evidence records four requests, provider/image snapshots, image validation, exact clipboard delivery, failed-request image preservation, and screenshot Escape cancellation."
+    },
+    {
+      "id": "E-005",
+      "path": "docs/evidence/screenshot-vision-p5.txt",
+      "hash": "SHA-256 11E8B4D2531C32804A36547E3901C8994D6F762EFB0190FCAC87BE68AC73DE94",
+      "result": "Parent reconciliation and test scope documented; P6 runtime/package acceptance remains pending."
+    },
+    {
+      "id": "E-006",
+      "path": "docs/evidence/screenshot-vision-p5-independent.txt",
+      "hash": "SHA-256 CE87351C19D109198F0CFD04395EDEDD6BF85268879703532DE0B04A286A83DB",
+      "result": "Independent integration test intent and parent completion note retained; it uses synthetic PNGs, temporary Electron profile, and a loopback-only mock endpoint."
+    },
+    {
+      "id": "E-007",
+      "path": "docs/evidence/screenshot-vision-live-round1.json and docs/evidence/screenshot-vision-live-round2.json",
+      "hash": "round1 SHA-256 0D1E197CC41C223C1B4582CC06BF465912F18D43E5416B26164A598D6677294C; round2 SHA-256 2DED0B69C6C6C898982D1FB627B37AE0788BBAA4DB755C4F923B159C8F060362",
+      "result": "Retained evidence reports six initial and two bounded targeted synthetic-image requests, no retries, and no user profile modification. Round2 reports text/code and instruction transcription with no extra appearance description and disabled thinking honored."
+    },
+    {
+      "id": "E-008",
+      "path": "node --test --test-concurrency=1 app/main/image-workflow.unit.test.js app/main/image-workflow-resilience.unit.test.js app/main/models-vision.unit.test.js app/main/models-vision-ipc.unit.test.js app/main/models-thinking.unit.test.js app/main/pet-actions-ui.unit.test.js app/main/pet-action-renderer-epoch.unit.test.js app/main/pet-window-layout.unit.test.js app/main/screenshot-controller.unit.test.js app/main/screenshot-geometry.unit.test.js app/main/screenshot-independent.unit.test.js app/main/voice-delivery-ipc.unit.test.js app/main/undo-admission.unit.test.js app/main/screenshot-vision-p5.e2e.test.js",
+      "hash": "Command output from this audit; 14 tests passed, 0 failed",
+      "result": "Focused image, resilience, vision, IPC, UI, screenshot, voice, undo and Electron integration checks pass serially."
+    },
+    {
+      "id": "E-009",
+      "path": "node --test app/main/*unit.test.js app/main/screenshot-vision-p5.e2e.test.js",
+      "hash": "Command output from this audit; 34 passed, 2 failed",
+      "result": "Broad concurrent run also failed native-input-session.unit.test.js and powershell-file.unit.test.js with assertions that temporary PowerShell process files had not yet been cleaned at assertion time. Both are outside P5; the P5-focused serial rerun passed."
+    }
+  ],
+  "findings": [],
+  "next_cycle_brief": {
+    "objective": "Complete P6 combined acceptance and local delivery, including Windows runtime coverage, regression report and packaged-resource verification.",
+    "allowed_changes": ["Evidence-supported P6 fixes within the approved Plan and active Spec"],
+    "checks": ["Run combined final acceptance for R01-R10 and A01-A14", "Record actual Windows/Electron/screen environment and tested model", "Verify package manifest includes main-process and screenshot renderer resources", "Report hardware/provider limits without claiming unrun acceptance"],
+    "prohibited": ["Threshold lowering", "Audit or evidence deletion", "Public publishing", "Credential or user-image disclosure"],
+    "carry_forward": ["E-009 broad-run failures are unrelated to P5 but should be rechecked if the full P6 suite is run concurrently", "P6 physical runtime and packaging remain unverified"]
+  }
+}
