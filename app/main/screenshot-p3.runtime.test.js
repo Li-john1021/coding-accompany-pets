@@ -39,6 +39,10 @@ async function fixture() {
     const desktopSources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 3200, height: 1800 } });
     const physicalMonitors = await getPhysicalMonitorBounds();
     const identityMap = mapDisplaysToPhysical(displays, physicalMonitors, (display) => display.nativeBounds);
+    const leftMonitor = identityMap.find((monitor) => monitor.primary);
+    const rightMonitor = leftMonitor && identityMap.find((monitor) => monitor.x === leftMonitor.x + leftMonitor.width &&
+      Math.min(monitor.y + monitor.height, leftMonitor.y + leftMonitor.height) - Math.max(monitor.y, leftMonitor.y) > 80);
+    const crossRect = rightMonitor ? { x: rightMonitor.x - 40, y: Math.max(leftMonitor.y, rightMonitor.y) + 40, width: 80, height: 30 } : null;
 
     const compositor = new BrowserWindow({ width: 500, height: 300, show: false, webPreferences: {
       preload: path.join(__dirname, 'screenshot-preload.js'), contextIsolation: true, nodeIntegration: false
@@ -87,8 +91,9 @@ async function fixture() {
     assert.equal(clipboard.readText(), 'screenshot cancel sentinel', 'cancel leaves clipboard untouched');
     await waitFor(() => !BrowserWindow.getAllWindows().some((win) => win.webContents.getURL().endsWith('/screenshot.html')), 'cancel selector cleanup');
 
+    const crossMarkers = crossRect ? `$left=Marker ${crossRect.x} ${crossRect.y} Magenta; $right=Marker ${rightMonitor.x} ${crossRect.y} Lime;` : '';
     markerProcess = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-Command',
-      "Add-Type -AssemblyName System.Windows.Forms; $form=New-Object System.Windows.Forms.Form; $form.FormBorderStyle='None'; $form.StartPosition='Manual'; $form.Location=New-Object System.Drawing.Point(60,60); $form.ClientSize=New-Object System.Drawing.Size(40,30); $form.BackColor=[System.Drawing.Color]::Magenta; $form.TopMost=$true; $form.Show(); [Console]::Out.WriteLine('MARKER_READY'); Start-Sleep -Seconds 60"],
+      'Add-Type -TypeDefinition \'using System;using System.Runtime.InteropServices;public class MarkerDpi{[DllImport("user32.dll")]public static extern bool SetProcessDpiAwarenessContext(IntPtr value);}\'; [void][MarkerDpi]::SetProcessDpiAwarenessContext([IntPtr](-4)); Add-Type -AssemblyName System.Windows.Forms; function Marker($x,$y,$color){$f=New-Object System.Windows.Forms.Form;$f.FormBorderStyle="None";$f.StartPosition="Manual";$f.Location=New-Object System.Drawing.Point($x,$y);$f.ClientSize=New-Object System.Drawing.Size(40,30);$f.BackColor=[System.Drawing.Color]::FromName($color);$f.TopMost=$true;$f.Show();$f.Refresh();return $f}; $form=Marker 60 60 Magenta; '+crossMarkers+' [System.Windows.Forms.Application]::DoEvents(); [Console]::Out.WriteLine("MARKER_READY"); Start-Sleep -Seconds 60'],
     { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('marker window did not start')), 8000);
@@ -115,10 +120,29 @@ async function fixture() {
     assert.deepStrictEqual(centerPixel, [255, 0, 255, 255], 'real screenshot crop contains the external magenta target pixels');
     await waitFor(() => !BrowserWindow.getAllWindows().some((win) => win.webContents.getURL().endsWith('/screenshot.html')), 'capture selector cleanup');
     assert.equal(pet.isVisible(), true, 'previously visible pet window is restored');
+    let crossMonitorPixels = null;
+    if (crossRect) {
+      await pet.webContents.executeJavaScript('void window.v2p.screenshot().then(result => window.__crossShot = result)');
+      const overlayFor = (monitor) => BrowserWindow.getAllWindows().find((win) => win.webContents.getURL().endsWith('/screenshot.html') && win.isVisible() && Math.abs(win.getBounds().x - displays.find(d => String(d.id) === monitor.id).bounds.x) < 2);
+      const leftOverlay = await waitFor(() => overlayFor(leftMonitor), 'left cross selector');
+      const rightOverlay = await waitFor(() => overlayFor(rightMonitor), 'right cross selector');
+      const dispatch = (win, monitor, type, x, y) => win.webContents.executeJavaScript(`document.dispatchEvent(new MouseEvent(${JSON.stringify(type)},{bubbles:true,button:0,clientX:(${x}-${monitor.x})/${monitor.width}*innerWidth,clientY:(${y}-${monitor.y})/${monitor.height}*innerHeight}))`);
+      await dispatch(leftOverlay, leftMonitor, 'mousedown', crossRect.x, crossRect.y);
+      await dispatch(rightOverlay, rightMonitor, 'mousemove', crossRect.x+crossRect.width, crossRect.y+crossRect.height);
+      await dispatch(rightOverlay, rightMonitor, 'mouseup', crossRect.x+crossRect.width, crossRect.y+crossRect.height);
+      const crossResult = await waitFor(() => pet.webContents.executeJavaScript('window.__crossShot || null'), 'cross-screen image');
+      assert.equal(crossResult.ok, true, JSON.stringify(crossResult));
+      assert.deepStrictEqual({width:crossResult.width,height:crossResult.height},{width:80,height:30});
+      const bitmap=clipboard.readImage().getBitmap();
+      const pixel=(x,y)=>[...bitmap.subarray((y*80+x)*4,(y*80+x)*4+4)];
+      crossMonitorPixels={rect:crossRect,left:pixel(20,15),right:pixel(60,15),input:'production renderer events across two real OS captures'};
+      assert.deepStrictEqual(crossMonitorPixels.left,[255,0,255,255]);
+      assert.deepStrictEqual(crossMonitorPixels.right,[0,255,0,255]);
+    }
     console.log(PREFIX + JSON.stringify({ ok: true, displays,
       desktopSources: desktopSources.map((source) => ({ id: source.id, name: source.name, display_id: source.display_id, thumbnailSize: source.thumbnail.getSize() })),
       physicalMonitors, identityMap: identityMap.map(({ id, name, x, y, width, height }) => ({ id, name, x, y, width, height })),
-      capture: captured, cancelClipboardPreserved: true, centerPixel, compositionPixels: pixelResult, gapPixels }));
+      capture: captured, cancelClipboardPreserved: true, centerPixel, compositionPixels: pixelResult, gapPixels, crossMonitorPixels }));
   } catch (error) {
     console.error(PREFIX + JSON.stringify({ ok: false, error: error.stack }));
     process.exitCode = 1;

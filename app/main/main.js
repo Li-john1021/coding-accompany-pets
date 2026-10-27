@@ -144,17 +144,16 @@ function initializeScreenshotController() {
     getAppWindows: () => BrowserWindow.getAllWindows().filter((win) => !win.webContents.getURL().endsWith('/screenshot.html')),
     getDisplays: () => screen.getAllDisplays(),
     captureScreens: async (displays) => {
-      const max = { width: Math.max(...displays.map((d) => d.pixelWidth)), height: Math.max(...displays.map((d) => d.pixelHeight)) };
-      const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: max });
-      const matched = displays.map((display) => sources.find((entry) => String(entry.display_id) === display.id));
-      if (matched.every((source) => source && !source.thumbnail.isEmpty())) {
-        return displays.map((display, index) => {
-          const source = matched[index];
+      if (process.platform !== 'win32') {
+        const max = { width: Math.max(...displays.map((d) => d.pixelWidth)), height: Math.max(...displays.map((d) => d.pixelHeight)) };
+        const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: max });
+        return displays.map((display) => {
+          const source = sources.find((entry) => String(entry.display_id) === display.id);
+          if (!source || source.thumbnail.isEmpty()) throw new Error('屏幕捕获源未提供可验证的显示器标识');
           const size = source.thumbnail.getSize();
           return { id: display.id, dataUrl: source.thumbnail.toDataURL(), pixelWidth: size.width, pixelHeight: size.height };
         });
       }
-      if (process.platform !== 'win32') throw new Error('屏幕捕获源未提供可验证的显示器标识');
       const displaysWithPhysicalBounds = displays.map((display) => ({
         ...display, nativeBounds: screen.dipToScreenRect(null, display.bounds)
       }));
@@ -167,14 +166,15 @@ function initializeScreenshotController() {
         if (image.isEmpty() || size.width !== display.width || size.height !== display.height) {
           throw new Error(`屏幕 ${display.id} 的捕获尺寸与物理边界不符`);
         }
-        captured.push({ id: display.id, dataUrl, pixelWidth: size.width, pixelHeight: size.height });
+        captured.push({ id: display.id, selectionBounds: { x: display.x, y: display.y, width: display.width, height: display.height }, dataUrl, pixelWidth: size.width, pixelHeight: size.height });
       }
       return captured;
     },
     createSelector: async ({ token, screen: current, screens }) => {
       const win = new BrowserWindow({
-        ...current.bounds, frame: false, transparent: false, resizable: false, movable: false,
-        skipTaskbar: true, alwaysOnTop: true, show: false, backgroundColor: '#000000',
+        ...current.bounds, frame: false, transparent: false, resizable: true, movable: false,
+        skipTaskbar: true, alwaysOnTop: true, show: false, fullscreen: true, fullscreenable: true,
+        title: `Voice2Prompt 截图 ${current.id}`, backgroundColor: '#000000',
         webPreferences: { preload: path.join(__dirname, 'screenshot-preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
       });
       win.setAlwaysOnTop(true, 'screen-saver');

@@ -1,0 +1,44 @@
+P3 supplemental physical display and Computer Use validation
+Date: 2026-10-27
+Prior failed audit: docs/audits/screenshot-vision-p3-1.json (retained).
+
+Computer Use: @oai/sky via node_repl. Default Alt+A opened production selectors.
+Observation found Windows clamps non-resizable fullscreen windows to the work
+area (primary 2560x1392 rather than 2560x1440), distorting the preview. A focused
+Electron probe reproduced it; resizable fullscreen corrected the viewport to
+2560x1440. Production selectors now use that fullscreen behavior.
+
+Selection coordinates on Windows now use actual native physical monitor
+rectangles and renderer viewport scaling, so dragging between different DPI
+windows has one physical pixel coordinate system. Logical display bounds only
+position the selector windows; they no longer distort native selection geometry.
+Windows capture uses explicitly mapped native monitor rectangles rather than
+unverified desktopCapturer ordinals. Other platforms retain exact-ID capture.
+
+Actual @oai/sky primary-screen drag from (600,400) to (800,500) completed:
+copied PNG 200x100, 3119 bytes, SHA256
+0709581475f42e7cbf77e552aab44369319c396c91c76871308717e3e1e8a242.
+The two selector windows were destroyed and the pet was restored.
+The PNG contains desktop content, remains local/ignored and is not committed
+or sent to a model. Only metadata is retained here.
+
+Cross-monitor physical capture proof is in screenshot-vision-p3-runtime-physical.txt:
+two real OS monitor captures, scales 1 and 1.25, native primary and secondary
+rectangles; external native markers placed on both sides of their boundary.
+Production left-window mousedown and right-window move/up events traverse real
+preload/IPC/controller/canvas/clipboard. The 80x30 result has magenta on the left
+and green on the right. The assertions check exact output dimensions and both
+sampled pixels, not just nonempty images. Staggered gaps are explicitly black.
+
+Coverage limit: sky.drag is bounded to one target window. An attempted physical
+cross-window drag was rejected by the tool with:
+point (2800, 650) is outside window bounds { originX: 0, originY: 0, width: 2560, height: 1392 }
+This was a tool coordinate restriction, not an approval rejection. No unsupported
+input API or custom Windows input automation was used to bypass it. Therefore
+OS-level cross-window cursor dragging is not claimed as tested; cross-window
+production event routing plus actual dual-monitor source pixels and native
+within-window Computer Use dragging are the available evidence for A05/S01.
+
+Focused geometry, controller, independent behavioral and global-hotkey checks
+pass. The production Electron runtime including both physical source markers
+passes. Provider calls remain zero; no credentials or real model profiles read.

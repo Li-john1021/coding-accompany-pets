@@ -1,0 +1,56 @@
+{
+  "verdict": "FAIL",
+  "route": "repair",
+  "candidate": "187560c0d7418868412a92dd2902235232eed3c1..80a15a36209b0e051c3b35acd3222a58260c2cec",
+  "evidence": [
+    {
+      "id": "E-001",
+      "path": "docs/PLAN-screenshot-vision-v1.md",
+      "hash": "93AD032E4D9715800B9CDE713DBF305FDB06C6554DE9A5656568EA684DAFAE67"
+    },
+    {
+      "id": "E-002",
+      "path": "docs/SPEC-screenshot-vision-v1.json",
+      "hash": "05355AD48521BA5B2F622A6FF0A769BB77EFBB434AFE2A0C32BB9281FFF21BEC"
+    },
+    {
+      "id": "E-003",
+      "path": "docs/evidence/screenshot-vision-p3.txt",
+      "hash": "832D27B48B58D15996330CFDC10A0B6FFCF5AB30CE27FB66BAC1A444F9385949"
+    },
+    {
+      "id": "E-004",
+      "path": "docs/evidence/screenshot-vision-p3-runtime.txt",
+      "hash": "C0958F20F149AAE5E16B9F3EADB859296445C1473BC89CEA967938B3CA11132D"
+    },
+    {
+      "id": "E-005",
+      "path": "docs/evidence/screenshot-vision-p3-independent.txt",
+      "hash": "E36EB6DFFFDC03AD0F508364667A9E684FEDEFF4805C6EE900ECEF84A3DD7CDA"
+    },
+    {
+      "id": "E-006",
+      "path": "command: node app/main/screenshot-geometry.unit.test.js; node app/main/screenshot-controller.unit.test.js; node app/main/screenshot-independent.unit.test.js; node app/main/global-hotkeys.unit.test.js; node app/main/screenshot-p3.runtime.test.js; git diff --check",
+      "hash": null,
+      "result": "PASS; production Electron runtime returned a real 40x30 clipboard image with expected magenta target pixel, cancellation preserved clipboard, mixed-scale production canvas pixels matched, and staggered gap pixel was black."
+    }
+  ],
+  "findings": [
+    {
+      "id": "F-001",
+      "requirement_refs": ["R04"],
+      "statement": "A05's physical cross-monitor selection path is not demonstrated. The evidence verifies two physical displays, actual single-monitor capture/cancel, selector routing in deterministic tests, mixed-scale composition pixels, and staggered gap composition, but explicitly says a physical cross-monitor pointer drag was not exercised. Because the available setup has two monitors, the acceptance condition for cross-screen selection position and pixels remains open.",
+      "root_cause_assumptions": ["S01"],
+      "confidence": "high",
+      "impact": "boundary",
+      "route": "repair"
+    }
+  ],
+  "next_cycle_brief": {
+    "objective": "Close the P3 A05 evidence gap by exercising an actual cross-monitor selection on the available mixed-DPI Windows setup and verifying selected monitor pixels and placement in the copied PNG.",
+    "allowed_changes": ["Evidence-supported P3 repair only if the physical interaction exposes a defect; otherwise add the runtime evidence and update the P3 report."],
+    "checks": ["Run a cross-monitor drag through the production selector windows; inspect output image dimensions and sampled pixels from both monitors and across any virtual gap; confirm cleanup and clipboard behavior."],
+    "prohibited": ["Threshold lowering", "audit deletion", "unrelated P4/P5 scope", "provider or credential access", "user-profile reads"],
+    "carry_forward": ["F-001", "E-004", "E-005"]
+  }
+}

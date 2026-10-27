@@ -52,12 +52,13 @@ function createScreenshotController(adapters) {
       const screens = displays.map((display) => {
         const capture = byId.get(display.id);
         if (!capture || !capture.dataUrl || !capture.pixelWidth || !capture.pixelHeight) throw new Error(`屏幕 ${display.id} 捕获失败`);
-        return { ...display, pixelWidth: capture.pixelWidth, pixelHeight: capture.pixelHeight, dataUrl: capture.dataUrl };
+        return { ...display, selectionBounds: capture.selectionBounds || null,
+          pixelWidth: capture.pixelWidth, pixelHeight: capture.pixelHeight, dataUrl: capture.dataUrl };
       });
       session.screens = screens;
       session.done = new Promise((resolve) => { session.resolve = resolve; });
       for (const screen of screens) {
-        const win = await adapters.createSelector({ token: session.token, screen, screens: screens.map(({ id, bounds, pixelWidth, pixelHeight, dataUrl }) => ({ id, bounds, pixelWidth, pixelHeight, dataUrl })) });
+        const win = await adapters.createSelector({ token: session.token, screen, screens: screens.map(({ id, bounds, selectionBounds, pixelWidth, pixelHeight, dataUrl }) => ({ id, bounds, selectionBounds, pixelWidth, pixelHeight, dataUrl })) });
         session.windows.push(win);
         session.senderIds.add(win.webContents.id);
         if (session.abortController.signal.aborted) return { ok: false, reason: 'cancelled' };
@@ -106,11 +107,12 @@ function createScreenshotController(adapters) {
     } else if (payload.type === 'up' && active.anchor && Number.isFinite(payload.x) && Number.isFinite(payload.y)) {
       const selection = geometry.normalizeRect(active.anchor, payload);
       active.anchor = null;
-      if (!selection || !geometry.isSelectionWithinDisplays(selection, active.screens)) {
+      const geometryScreens = active.screens.map((screen) => ({ ...screen, bounds: screen.selectionBounds || screen.bounds }));
+      if (!selection || !geometry.isSelectionWithinDisplays(selection, geometryScreens)) {
         active.resolve?.({ ok: false, reason: 'zero-area' });
         return true;
       }
-      const plan = geometry.planComposition(selection, active.screens);
+      const plan = geometry.planComposition(selection, geometryScreens);
       if (!plan || plan.width > 16384 || plan.height > 16384 || plan.width * plan.height > 100000000) {
         active.resolve?.({ ok: false, reason: 'selection-too-large' });
         return true;
