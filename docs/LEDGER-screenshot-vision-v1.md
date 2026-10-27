@@ -26,3 +26,5 @@ Provider policy is frozen in the Spec. No model calls or credential reads yet. S
 - VB-P3/R01 audit 2 PASS for 896c305; audit SHA256 31B47BB6333CBA6E5B01DAA70206B973EBBD3C1DF65D098E4401F77178CFC5D3. Physical dual-monitor source/cross-selector pixel proof and native primary drag verified; cross-window OS drag limitation explicitly retained under A05/S01. Next P4. Provider calls still zero.
 
 - P4 candidate: added a single-call PNG vision transcription method with strict final-content extraction, timeout/abort support, dedicated extraction prompt, and explicit synthetic-token image validation. Existing text ping and ASR paths remain unchanged. Focused model, thinking, config and Electron settings tests pass; details in `docs/evidence/screenshot-vision-p4.txt`. No provider/network calls or real key/profile reads. Candidate awaits fresh independent Luna audit.
+
+- P4 parent reconciliation: existing llm settings validation now dispatches to vision probe when multimodal is checked; new behavioral IPC route test passes alongside model vision/thinking and production settings tests. No provider calls. Candidate awaits clean P4 audit.

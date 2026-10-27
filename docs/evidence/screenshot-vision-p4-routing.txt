@@ -1,0 +1,10 @@
+P4 parent validation wiring reconciliation
+Date: 2026-10-27
+Candidate parent: 045d00d
+
+The existing settings row sends kind=llm and the collected multimodal flag.
+Parent inspection found that a new image-vision-only IPC branch was otherwise
+not reached from that existing button. Main now routes checked LLM validation
+to validateImageVision while retaining ASR and unchecked text ping behavior.
+New behavior test models-vision-ipc.unit.test.js exercises all routes with stub
+validators and zero provider requests. No production settings UX change needed.

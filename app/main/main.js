@@ -405,7 +405,7 @@ function registerIpc() {
     // 注意：渲染层传来的 apiKey 已是明文（get-config 时解码过），此处不得再 unmask
     try {
       if (kind === 'asr') return await models.validateAsr(provider);
-      if (kind === 'image-vision') return await models.validateImageVision(provider);
+      if (kind === 'image-vision' || (kind === 'llm' && provider?.multimodal === true)) return await models.validateImageVision(provider);
       return await models.validateLlm(provider);
     } catch (err) {
       return { ok: false, error: String(err.message || err).slice(0, 200) };
