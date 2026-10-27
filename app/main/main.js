@@ -404,7 +404,9 @@ function registerIpc() {
   ipcMain.handle('v2p:validate-model', async (_e, { kind, provider }) => {
     // 注意：渲染层传来的 apiKey 已是明文（get-config 时解码过），此处不得再 unmask
     try {
-      return kind === 'asr' ? await models.validateAsr(provider) : await models.validateLlm(provider);
+      if (kind === 'asr') return await models.validateAsr(provider);
+      if (kind === 'image-vision') return await models.validateImageVision(provider);
+      return await models.validateLlm(provider);
     } catch (err) {
       return { ok: false, error: String(err.message || err).slice(0, 200) };
     }

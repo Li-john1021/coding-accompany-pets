@@ -1,5 +1,109 @@
 // models.js — OpenAI 兼容端点调用：LLM chat / ASR transcription / 模型校验
 const crypto = require('crypto');
+const { IMAGE_TRANSCRIPTION_PROMPT, IMAGE_VALIDATION_TOKEN } = require('./vision-prompts');
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function requestSignal(timeoutMs, externalSignal) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error('Vision request timed out')), timeoutMs);
+  const abort = () => controller.abort(externalSignal.reason);
+  if (externalSignal) {
+    if (externalSignal.aborted) abort();
+    else externalSignal.addEventListener('abort', abort, { once: true });
+  }
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timer);
+      externalSignal?.removeEventListener('abort', abort);
+    }
+  };
+}
+
+function assertPngBuffer(pngBuffer) {
+  if (!Buffer.isBuffer(pngBuffer) || pngBuffer.length < PNG_SIGNATURE.length + 25 || !pngBuffer.subarray(0, 8).equals(PNG_SIGNATURE)) {
+    throw new Error('图片必须是非空 PNG');
+  }
+  let offset = PNG_SIGNATURE.length;
+  let hasHeader = false;
+  while (offset + 12 <= pngBuffer.length) {
+    const length = pngBuffer.readUInt32BE(offset);
+    const type = pngBuffer.toString('ascii', offset + 4, offset + 8);
+    const end = offset + 12 + length;
+    if (end > pngBuffer.length) break;
+    if (!hasHeader) {
+      if (type !== 'IHDR' || length !== 13 || pngBuffer.readUInt32BE(offset + 8) === 0 || pngBuffer.readUInt32BE(offset + 12) === 0) break;
+      hasHeader = true;
+    }
+    if (type === 'IEND') {
+      if (length === 0 && hasHeader && end === pngBuffer.length) return;
+      break;
+    }
+    offset = end;
+  }
+  throw new Error('图片必须是非空 PNG');
+}
+
+function finalMessageText(message) {
+  const content = message?.content;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content.map((block) => {
+    if (typeof block === 'string') return block;
+    if (block && (block.type === undefined || block.type === 'text' || block.type === 'output_text') && typeof block.text === 'string') return block.text;
+    return '';
+  }).join('');
+}
+
+async function transcribeImage(provider, pngBuffer, opts = {}) {
+  assertPngBuffer(pngBuffer);
+  const url = joinUrl(provider.baseUrl, '/chat/completions');
+  const timeoutMs = Number.isFinite(opts.timeoutMs) ? Math.max(1, opts.timeoutMs) : 120_000;
+  const request = requestSignal(timeoutMs, opts.signal);
+  try {
+    const resp = await (opts.fetchImpl || fetch)(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${provider.apiKey}`
+      },
+      body: JSON.stringify({
+        model: provider.model,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: IMAGE_TRANSCRIPTION_PROMPT },
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${pngBuffer.toString('base64')}` } }
+          ]
+        }],
+        stream: false
+      }),
+      signal: request.signal
+    });
+    if (!resp.ok) throw new Error(`视觉转写失败 HTTP ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
+    const data = await resp.json();
+    const text = finalMessageText(data?.choices?.[0]?.message);
+    if (!text.trim()) throw new Error('视觉模型未返回转写正文');
+    return text;
+  } finally {
+    request.cleanup();
+  }
+}
+
+async function validateImageVision(provider, opts = {}) {
+  if (!provider || provider.multimodal !== true) return { ok: false, error: '请先声明此模型支持多模态图片输入' };
+  try {
+    const pngBuffer = opts.pngBuffer || require('fs').readFileSync(require('path').join(__dirname, 'vision-validation.png'));
+    const text = await transcribeImage(provider, pngBuffer, opts);
+    if (!text.includes(IMAGE_VALIDATION_TOKEN)) {
+      return { ok: false, error: `图片接口已响应，但未识别校验文字 ${IMAGE_VALIDATION_TOKEN}` };
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error).slice(0, 200) };
+  }
+}
 
 function joinUrl(baseUrl, suffix) {
   const b = (baseUrl || '').trim().replace(/\/+$/, '');
@@ -205,4 +309,4 @@ async function validateAsr(provider) {
   }
 }
 
-module.exports = { chatCompletion, transcribe, transcribeSmart, validateLlm, validateAsr, shouldDisableThinking };
+module.exports = { chatCompletion, transcribe, transcribeSmart, transcribeImage, validateImageVision, validateLlm, validateAsr, shouldDisableThinking };

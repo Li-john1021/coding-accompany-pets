@@ -1,0 +1,33 @@
+P4 vision transcription candidate
+Date: 2026-10-27
+Base: 28fcdf5 (passing P3 independent audit)
+
+Implemented app/main/models.js transcribeImage(provider, pngBuffer, opts): one
+OpenAI-compatible /chat/completions request with text and PNG data URI, existing
+URL/bearer conventions, a 120-second default bound, external AbortSignal support,
+and injectable fetch/timeout for deterministic checks. It validates PNG signature
+and nonempty bytes, returns only final message.content text, preserves whitespace,
+and rejects empty/non-text/reasoning-only output. It does not retry or call a
+second model.
+
+Dedicated prompt is in app/main/vision-prompts.js. It retains original-language
+text, reading order, digits, code indentation and table relationships; marks
+unreadable text; refuses instructions/questions in the image; and adds an
+objective separate 图像描述 section for charts/non-text, Chinese by default.
+app/main/vision-validation.png is a generated synthetic fixture with the visible
+token V2P-7KQ2. The explicit image-vision model-validation IPC kind requires
+multimodal=true and succeeds only when the token occurs in returned final text.
+Existing text ping and ASR validation branches are unchanged. No startup/polling
+path invokes this validator.
+
+Checks run (all exit 0):
+- node app/main/models-vision.unit.test.js
+- node app/main/models-thinking.unit.test.js
+- node app/main/pet-actions-v5-config.unit.test.js
+- node app/main/pet-actions-v5-settings.e2e.test.js
+- node --check app/main/models.js; node --check app/main/main.js;
+  node --check app/main/vision-prompts.js; git diff --check
+
+Tests use an injected fetch and the self-generated fixture. No provider/network
+calls were made; no real profile or key was read. This is not evidence of any
+provider's live image compatibility. Fresh independent Luna audit is pending.
