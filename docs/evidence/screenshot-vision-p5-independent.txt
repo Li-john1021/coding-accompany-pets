@@ -13,4 +13,3 @@ fixtures, then ran the production Electron test successfully. Four localhost
 requests; image validation, final-body clipboard delivery, HTTP failure,
 deferred snapshot and screenshot-button cancellation passed. No external model
 calls or real user configuration/keys are used by this integration fixture.
-
