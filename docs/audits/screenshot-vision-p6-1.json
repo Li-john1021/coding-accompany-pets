@@ -1,0 +1,98 @@
+{
+  "verdict": "PASS",
+  "route": "release_boundary",
+  "candidate": "10b6045caa05dc45dbf83b9188bdf0e9187d6510..203706fc9893b500d5d643be3162eaf892615e15",
+  "evidence": [
+    {
+      "id": "E-001",
+      "path": "docs/PLAN-screenshot-vision-v1.md",
+      "hash": "93AD032E4D9715800B9CDE713DBF305FDB06C6554DE9A5656568EA684DAFAE67"
+    },
+    {
+      "id": "E-002",
+      "path": "docs/SPEC-screenshot-vision-v2.json",
+      "hash": "F80E2BC4F779A3D18FC8BD2EA492121BFED05C86541A189C563018DA41A26B67"
+    },
+    {
+      "id": "E-003",
+      "path": "docs/SPEC-screenshot-vision-v1.json",
+      "hash": "05355AD48521BA5B2F622A6FF0A769BB77EFBB434AFE2A0C32BB9281FFF21BEC"
+    },
+    {
+      "id": "E-004",
+      "path": "docs/TEST-REPORT-screenshot-vision-v1.md",
+      "hash": "9F29447CA36A518A827A7CA803F030CFF0273331C6145C2C156FB344922DA44F"
+    },
+    {
+      "id": "E-005",
+      "path": "docs/evidence/screenshot-vision-p6-package.txt",
+      "hash": "179263E6F64BCF132349B0CEA62B131E8E8B1A6F0580EFFC37D317440282522B"
+    },
+    {
+      "id": "E-006",
+      "path": "docs/evidence/screenshot-vision-p6-regression.txt",
+      "hash": "15E00D492E14F2A730C471512F3DC5930F902F19911D4C4485BA99AD8A440CD8"
+    },
+    {
+      "id": "E-007",
+      "path": "docs/evidence/screenshot-vision-live-round1.json",
+      "hash": "0D1E197CC41C223C1B4582CC06BF465912F18D43E5416B26164A598D6677294C"
+    },
+    {
+      "id": "E-008",
+      "path": "docs/evidence/screenshot-vision-live-round2.json",
+      "hash": "2DED0B69C6C6C898982D1FB627B37AE0788BBAA4DB755C4F923B159C8F060362"
+    },
+    {
+      "id": "E-009",
+      "path": "app/dist-exe/Voice2Prompt-Screenshot-Vision.exe",
+      "hash": "A23730FDB0E109D8749C2FB49FFC58F465AB7D211A8B61229FF3C4271CDC5B73"
+    },
+    {
+      "id": "E-010",
+      "path": "command: git diff --check 10b6045caa05dc45dbf83b9188bdf0e9187d6510 203706fc9893b500d5d643be3162eaf892615e15",
+      "hash": ""
+    },
+    {
+      "id": "E-011",
+      "path": "command: node app/main/*.unit.test.js, each file run serially",
+      "hash": ""
+    },
+    {
+      "id": "E-012",
+      "path": "commands: node app/main/pet-actions-v5-settings.e2e.test.js; node app/main/screenshot-p3.runtime.test.js; node app/main/screenshot-vision-p5.e2e.test.js; node app/main/pet-actions-v5.e2e.test.js, serial",
+      "hash": ""
+    },
+    {
+      "id": "E-013",
+      "path": "command: @electron/asar listPackage app/dist-exe/win-unpacked/resources/app.asar, Windows path separators normalized; all 11 required resources present",
+      "hash": ""
+    },
+    {
+      "id": "E-014",
+      "path": "command: Spec precheck; 10 requirements mapped by 14 acceptance items, no missing source references or evidence paths",
+      "hash": ""
+    }
+  ],
+  "findings": [],
+  "next_cycle_brief": {
+    "objective": "P6 final local acceptance is complete; retain the audited candidate and keep distribution decisions at the explicitly authorized local boundary.",
+    "allowed_changes": [],
+    "checks": [
+      "No additional implementation check is required for this candidate.",
+      "Any later source change requires a new candidate audit and relevant regression checks."
+    ],
+    "prohibited": [
+      "Do not publish or distribute publicly under this audit.",
+      "Do not exceed the eight-request live provider budget or repeat calls.",
+      "Do not claim physical negative-origin screens, OS pointer drag across screens, third-party hotkey occupation, or general provider/image accuracy were tested.",
+      "Do not lower thresholds, delete prior audits, or edit frozen v5/v6 contracts."
+    ],
+    "carry_forward": [
+      "R04/A05: actual mixed-DPI pixel fixture and earlier physical dual-display evidence are retained; this audit machine exposed one physical display, with physical negative-origin and OS cross-window drag untested.",
+      "A03: occupied-hotkey behavior was verified through adapter tests, not a third-party native key grab.",
+      "R10: eight synthetic live model calls were consumed and all are recorded; no further calls are authorized by the current budget.",
+      "P6 package log contains an initial no-runtime note followed by the parent’s appended isolated native portable smoke evidence in the regression log; the final report reflects the latter."
+    ]
+  }
+}
