@@ -1,0 +1,37 @@
+Screenshot/Vision P6 local packaging evidence
+Date: 2026-10-27
+Branch: codex/screenshot-vision-v1
+
+Requested command form (electron-builder 26.15.3):
+  app/node_modules/.bin/electron-builder.cmd --win portable -c.portable.artifactName=Voice2Prompt-Screenshot-Vision.exe
+Result: failed before packaging because this CLI parsed the short -c dotted form as a config-file path (`.portable.artifactName=...`). No source or dependency files were changed to address this CLI syntax issue.
+
+First corrected CLI invocation:
+  app/node_modules/.bin/electron-builder.cmd --win portable --config.portable.artifactName=Voice2Prompt-Screenshot-Vision.exe
+Result: resolved package dependencies and reached packaging, then timed out connecting to 20.205.243.166:443 while resolving a builder auxiliary download. The Electron 31.7.7 runtime was already present locally.
+
+Successful local-runtime invocation:
+  app/node_modules/.bin/electron-builder.cmd --win portable --config.portable.artifactName=Voice2Prompt-Screenshot-Vision.exe --config.electronDist=app/node_modules/electron/dist --config.win.signAndEditExecutable=false
+Result: exit 0; Windows x64 portable target produced. Runtime came from the existing Electron 31.7.7 install. Executable resource editing was skipped to avoid the unavailable auxiliary download; the packaged application ASAR was generated normally. No public publishing or GUI launch occurred.
+
+Artifact:
+  app/dist-exe/Voice2Prompt-Screenshot-Vision.exe
+  Size: 74,941,171 bytes
+  SHA-256: A23730FDB0E109D8749C2FB49FFC58F465AB7D211A8B61229FF3C4271CDC5B73
+  ASAR: app/dist-exe/win-unpacked/resources/app.asar (27,378,255 bytes)
+
+ASAR listing verified these resources are present:
+  main/screenshot.js
+  main/image-workflow.js
+  main/models.js
+  main/vision-prompts.js
+  main/vision-validation.png
+  preload.js
+  renderer/screenshot.html
+  renderer/screenshot.js
+  renderer/screenshot-compose.js
+  renderer/lib/live2dcubismcore.min.js
+
+This is packaging-content verification only. No packaged GUI/runtime test was run in this task; native desktop checks are owned by the parent agent.
+Parent native portable smoke: launched exact portable artifact with isolated --user-data-dir and isolated APPDATA, fake loopback-only model. Actual pet four controls and Live2D rendered from app.asar. Native recognition clicked once; mock captured /v1/chat/completions, model packaged-synthetic-vision, exact synthetic PNG true. Clipboard exact text with four/six leading spaces; recognize disabled after success; independent external textarea remained Original synthetic target unchanged with insertMode=paste. Native Alt+A issued in separate process opened packaged screenshot selector with correct preload/renderer. Additional ASAR checks include main/screenshot-preload.js, main/screenshot-native-capture.js and renderer/screenshot-compose.js; paths normalized for Windows listPackage output. No external model request, profile/credential read, or public release.
+Packaged native crop: drag (940,510)->(1540,570) on synthetic fixture heading produced actual clipboard image 600x60; no extra model call (mock requests still 1). Pet restored and selector gone. Portable process then explicitly stopped after idle smoke; this is not a claim of native tray-menu Quit validation.
