@@ -157,6 +157,7 @@ async function run() {
   try {
     const gateConfig = JSON.parse(JSON.stringify(realConfig));
     const gateProvider = gateConfig.llmProviders.find((provider) => provider.id === gateConfig.activeLlmId);
+    gateProvider.apiKey = '';
     gateProvider.multimodal = false;
     writeJson(path.join(gateProfile, 'config.json'), gateConfig);
     const gate = await runScenario('gate', gateProfile, validationPath);
@@ -174,6 +175,11 @@ async function run() {
     assert.ok(mock.state.requests[0].prompt.includes('Transcribe the visible content'));
     assert.deepStrictEqual([mock.state.requests[0].width, mock.state.requests[0].height], [260, 72]);
     assert.equal(mocked.clipboardMatches, true);
+
+    if (process.env.V2P_ALLOW_REAL_CONFIG !== '1') {
+      console.log('PASS image recognition gate and local request shape (real config step skipped; set V2P_ALLOW_REAL_CONFIG=1 to enable one real vision call)');
+      return;
+    }
 
     realBackup = `${realConfigPath}.bak-vision-${Date.now()}`;
     fs.copyFileSync(realConfigPath, realBackup);

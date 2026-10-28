@@ -90,6 +90,10 @@ async function fixture() {
 }
 
 async function run() {
+  if (process.env.V2P_ALLOW_REAL_ASR !== '1') {
+    console.log('SKIP real ASR validation (set V2P_ALLOW_REAL_ASR=1 to spend up to four real ASR calls)');
+    return;
+  }
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'v2p-asr-live-'));
   try {
     const wavPath = await generateFixture(directory);

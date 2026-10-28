@@ -19,3 +19,11 @@ Automated deterministic validation (local mocks; no external provider calls):
 - `node --check` on touched JS modules and `git diff --check`: pass.
 
 Remaining integration evidence: main/preload IPC wiring and native Electron microphone/background-throttling smoke are owned by the parent; no real microphone/provider calls have been made.
+
+Final integrated evidence (2026-10-28):
+- `node app/main/audio-capture.runtime.test.js`: PASS. Real Electron `getUserMedia` + AudioWorklet in a hidden window with Chromium fake audio; 181.23s captured over 182.36s wall clock. First/middle/end tone regions at 4.5s, 89.5s, 169.5s; zero-crossing ordering 786.7 < 1698 > 402.5; silence window RMS 0. Forced worklet+fallback failure stopped all microphone tracks and cleared the main-process recording flag (`canScreenshot:true`).
+- `node app/main/asr-e2e.runtime.test.js`: PASS. 3-minute WAV -> 6 bounded chunks, all source PCM bytes preserved (SHA-256 match), clipboard gets `segment-1..6`, recovery cleared. 35-second real recording -> middle-chunk HTTP 503 and `finish_reason=length` both reject the whole transcript; clipboard sentinel remains untouched; recovery panel appears; retry after server recovery writes `segment-1\nsegment-2` only then, hides the panel, and clears recovery. Retry sends byte-identical recovered chunks.
+- `node app/main/asr-live.runtime.test.js`: PASS against real `mimo-v2.5-asr`. 97.22s Windows SAPI TTS WAV -> 4 chunks; 4 real ASR requests in 10.35s; merged text contains First/Second/Third markers and order code. See `docs/evidence/feedback-asr-live.txt`.
+- `audio-chunks.unit.test.js` now also verifies that after worklet flush no further frames are captured, repeated flush is ignored, all-silent chunks raise `没有识别到语音内容`, and recovery storage failure throws instead of claiming success.
+- `pipeline-recovery.unit.test.js`: PASS. Recovery save failure continues transcription with `recoveryError`; ASR failure attaches `recoveryId` and retains recovery; cleanup failure does not turn a delivered result into an error; deferred delivery retains recovery.
+- `voice-delivery-ipc.unit.test.js`: PASS. Successful delivery clears recovery; cleanup failure still returns `ok:true`; preview/concurrency/epoch guards preserved.

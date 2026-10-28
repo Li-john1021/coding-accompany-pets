@@ -238,7 +238,9 @@ async function fixture() {
 
 async function run() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'v2p-native-'));
-  const evidence = path.join(__dirname, '..', '..', 'docs', 'evidence', 'feedback-recovery-panel.png');
+  const evidence = process.env.V2P_EVIDENCE_DIR
+    ? path.join(process.env.V2P_EVIDENCE_DIR, 'feedback-recovery-panel.png')
+    : path.join(directory, 'feedback-recovery-panel.png');
   const recoveryId = '11111111-1111-1111-1111-111111111111';
   fs.mkdirSync(path.join(directory, 'audio-recovery'), { recursive: true });
   fs.writeFileSync(path.join(directory, 'audio-recovery', `${recoveryId}.wav`), encodePcmWav(Buffer.alloc(16000 * 2), 16000));
