@@ -377,3 +377,73 @@ node app/main/screenshot-vision-p5.e2e.test.js
 - 发布：`release/README.md`、`release/SHA256SUMS.txt`、`release/*.exe`
 - 现有状态/证据：`docs/STATE-feedback-v2-final-2026-10-28.md`、`docs/evidence/*`、`docs/TEST-REPORT-feedback-v2.md`
 - 本存档：`docs/STATE-coding-accompany-pets-pre-compaction-2026-10-29.md`
+
+---
+
+## 11. 完成记录（2026-10-29，改名/图标/README/发布已完成）
+
+### 11.1 代码与产物
+
+- 产品名：`coding-accompany-pets`，版本 `1.1.0`，appId `com.codingaccompanypets.app`。
+- 用户数据：`app/main/main.js` 在加载配置前把默认 userData 映射到
+  `%APPDATA%\Voice2Prompt`；仅当当前路径仍是默认的新名字目录时才映射，
+  测试/便携 profile 不受影响。
+- 图标：
+  - `app/build/icon.ico`（16/24/32/48/64/128/256）
+  - `app/build/icon.png`（256）
+  - `app/assets/tray.png`（32，圆形裁切）
+  - `docs/assets/coding-accompany-pets.png`（README 原图）
+  - `docs/assets/icon.png`（512）
+  - `docs/assets/banner.png`（README 主视觉）
+- README：重写为下载优先的中文页面，包含安装版/便携版表格、30 秒上手、
+  模型配置、截图识图流程、隐私、FAQ、开发构建、Credits。
+- 发布产物（已入库并上传 GitHub Release）：
+  - `coding-accompany-pets-1.1.0-Portable.exe` — 74,347,051 bytes —
+    SHA-256 `93a1600df0f0f9c48e0c1b954ae53ffdd0b2f9954d54fbebb541b2df793cae61`
+  - `coding-accompany-pets-Setup-1.1.0.exe` — 74,696,207 bytes —
+    SHA-256 `d682d5dabb700073133d99ef79681c2b17fb9eb5ea25535cd7ef230127ced05c`
+- 旧 V2.3 两个 exe 已从工作树移除（仍在 Git 历史中），避免工作树继续膨胀。
+
+### 11.2 验证
+
+- 单元测试 43/43 通过。
+- 关键 runtime 全通过：
+  - `screenshot-library.runtime.test.js`
+  - `pet-restore-ui.runtime.test.js`（含识图气泡与剪贴板结果）
+  - `pet-actions-v5-settings.e2e.test.js`
+  - `screenshot-vision-p5.e2e.test.js`
+  - `vision-e2e.runtime.test.js`
+- 打包内容：`resources/app` 无 `node_modules`，vendor 与两个 win32-x64 `.node` 均在。
+- 便携版与安装版均用 Electron 主进程 inspector 验证：
+  - `app name = coding-accompany-pets`
+  - `version = 1.1.0`
+  - `userData = C:\Users\17084\AppData\Roaming\Voice2Prompt`
+- 安装版静默安装到 `D:\v2p\coding-accompany-pets-test`，退出码 0，启动正常；
+  已静默卸载并删除测试目录，原 `D:\v2p\Voice2Prompt` 未动。
+
+### 11.3 GitHub
+
+- 远端已改名为 `https://github.com/Li-john1021/coding-accompany-pets`。
+- main 已推送：`4d387ac feat: rename to coding-accompany-pets with new icon and download-focused README`。
+- 标签 `v1.1.0` 已推送；Release 已创建：
+  `https://github.com/Li-john1021/coding-accompany-pets/releases/tag/v1.1.0`
+  - release id `427034427`
+  - 两个资产均已 `uploaded`，大小与本地一致。
+- 仓库描述与 topics 已补充。
+- 网络注意：本机 DNS 把 `github.com` 解析到 `20.205.243.166`，该 IP 当时不可达；
+  本次推送使用：
+  ```bash
+  git -c http.curloptResolve=github.com:443:140.82.112.3 push ...
+  git -c http.curloptResolve=github.com:443:140.82.112.3 ls-remote ...
+  ```
+  上传资产使用 `uploads.github.com:443:20.205.243.161`。
+  该参数只用于单次命令，未写入 git config。以后推送若再超时，可换用
+  `140.82.113.3` / `140.82.114.3` 等 GitHub 边缘 IP 重试。
+
+### 11.4 仍需注意
+
+- Live2D Cubism Core 仍是专有组件：源码不提交，release 二进制包含本机构建的副本；
+  公开再分发前需自行确认 Live2D 条款。
+- 图标插画版权归原作者；README 已注明仅用于本项目展示，单独复用需授权。
+- 应用未签名，Windows SmartScreen 可能提示“未知发布者”。
+- 本机旧安装 `D:\v2p\Voice2Prompt` 仍在，未被替换；需要时可手动卸载或用新安装版覆盖安装。
