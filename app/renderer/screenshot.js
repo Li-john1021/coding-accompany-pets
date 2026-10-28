@@ -5,6 +5,7 @@
   const editor = document.getElementById('editor');
   const canvas = document.getElementById('preview');
   const context = canvas.getContext('2d');
+  const toolbar = document.getElementById('toolbar');
   const textInput = document.getElementById('annotation-text');
   const tools = {
     pen: document.getElementById('pen-tool'), text: document.getElementById('text-tool'),
@@ -49,6 +50,24 @@
     };
   }
 
+  function positionToolbar(rect) {
+    const margin = 8;
+    toolbar.style.visibility = 'hidden';
+    toolbar.style.left = '0px';
+    toolbar.style.top = '0px';
+    const box = toolbar.getBoundingClientRect();
+    let left = rect.left;
+    if (left + box.width > window.innerWidth - margin) left = window.innerWidth - box.width - margin;
+    if (left < margin) left = margin;
+    let top = rect.top + rect.height + margin;
+    if (top + box.height > window.innerHeight - margin) top = rect.top - box.height - margin;
+    if (top < margin) top = Math.min(window.innerHeight - box.height - margin, rect.top + margin);
+    if (top < margin) top = margin;
+    toolbar.style.left = `${left}px`;
+    toolbar.style.top = `${top}px`;
+    toolbar.style.visibility = 'visible';
+  }
+
   function finish(ok) {
     if (!init || mode !== 'edit' || finalizing) return;
     finalizing = true;
@@ -72,6 +91,8 @@
     editor.classList.remove('open');
     document.body.classList.remove('editing');
     selectionNode.style.display = 'none';
+    canvas.style.left = ''; canvas.style.top = ''; canvas.style.width = ''; canvas.style.height = '';
+    toolbar.style.visibility = 'hidden';
     image.src = payload.screen.dataUrl;
     try {
       await image.decode();
@@ -93,7 +114,7 @@
     });
   });
 
-  bridge.onCompose(async ({ token: requestToken, plan }) => {
+  bridge.onCompose(async ({ token: requestToken, plan, selection }) => {
     if (!init || requestToken !== token || mode !== 'select') return;
     try {
       const dataUrl = await window.screenshotCompose.composeScreens(init.screens, plan);
@@ -103,12 +124,38 @@
       await baseImage.decode();
       canvas.width = plan.width;
       canvas.height = plan.height;
+      const local = init.screen.selectionBounds || init.screen.bounds;
+      const scaleX = init.screen.selectionBounds ? window.innerWidth / local.width : 1;
+      const scaleY = init.screen.selectionBounds ? window.innerHeight / local.height : 1;
+      const area = selection || { x: local.x, y: local.y, width: local.width, height: local.height };
+      const rect = {
+        left: (area.x - local.x) * scaleX,
+        top: (area.y - local.y) * scaleY,
+        width: area.width * scaleX,
+        height: area.height * scaleY
+      };
+      if (rect.left < 0 || rect.top < 0 || rect.left + rect.width > window.innerWidth || rect.top + rect.height > window.innerHeight) {
+        const maxWidth = Math.max(1, window.innerWidth - 32);
+        const maxHeight = Math.max(1, window.innerHeight - 96);
+        const fit = Math.min(1, maxWidth / rect.width, maxHeight / rect.height);
+        const width = rect.width * fit;
+        const height = rect.height * fit;
+        rect.left = Math.max(16, (window.innerWidth - width) / 2);
+        rect.top = Math.max(16, (window.innerHeight - height) / 2);
+        rect.width = width;
+        rect.height = height;
+      }
+      canvas.style.left = `${rect.left}px`;
+      canvas.style.top = `${rect.top}px`;
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
       annotations = [];
       mode = 'edit';
       document.body.classList.add('editing');
       editor.classList.add('open');
       setTool('pen');
       paint();
+      positionToolbar(rect);
     } catch {
       bridge.composed({ token: requestToken, ok: false });
     }

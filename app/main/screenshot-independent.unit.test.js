@@ -207,8 +207,9 @@ async function rendererCrossSelectorCase() {
     };
     const tools = { pen: button(), text: button(), undo: button(), cancel: button(), done: button() };
     const textInput = { value: '', addEventListener() {}, focus() {} };
+    const toolbar = { style: {}, getBoundingClientRect: () => ({ width: 320, height: 40 }) };
     const nodes = {
-      screen: screenNode, selection, editor, preview: canvas, 'annotation-text': textInput,
+      screen: screenNode, selection, editor, preview: canvas, 'annotation-text': textInput, toolbar,
       'pen-tool': tools.pen, 'text-tool': tools.text, 'undo-tool': tools.undo, 'cancel-tool': tools.cancel, 'done-tool': tools.done
     };
     const bridge = {
@@ -221,6 +222,7 @@ async function rendererCrossSelectorCase() {
     const windowObject = {
       screenshot: bridge,
       screenshotCompose: { composeScreens: async () => 'data:image/png;base64,renderer-fixture' },
+      innerWidth: 100, innerHeight: 80,
       addEventListener(type, callback) { listeners.set(type, callback); }
     };
     const sandbox = {
@@ -253,7 +255,7 @@ async function rendererCrossSelectorCase() {
     { token: 'renderer-token', type: 'up', x: 105, y: 30 }
   ], 'production selector renderer reports screen coordinates across selector windows');
 
-  await right.callbacks.compose({ token: 'renderer-token', plan: { width: 40, height: 30 } });
+  await right.callbacks.compose({ token: 'renderer-token', plan: { width: 40, height: 30 }, selection: { x: 0, y: 0, width: 40, height: 30 } });
   assert.equal(right.editor.classList.contains('open'), true, 'crop composition opens the annotation editor');
   assert.equal(right.body.classList.contains('editing'), true, 'editing hides the selector layer');
   assert.deepStrictEqual([right.canvas.width, right.canvas.height], [40, 30], 'annotation canvas uses source crop pixels');
@@ -275,7 +277,7 @@ async function rendererCrossSelectorCase() {
 
   const cancelRenderer = makeRenderer({ x: 0, y: 0 });
   await cancelRenderer.initPromise;
-  await cancelRenderer.callbacks.compose({ token: 'renderer-token', plan: { width: 40, height: 30 } });
+  await cancelRenderer.callbacks.compose({ token: 'renderer-token', plan: { width: 40, height: 30 }, selection: { x: 0, y: 0, width: 40, height: 30 } });
   cancelRenderer.tools.cancel.click();
   assert.deepStrictEqual(JSON.parse(JSON.stringify(cancelRenderer.cancelled)), [{ token: 'renderer-token' }], 'Cancel sends cancellation');
   assert.equal(cancelRenderer.composed.length, 0, 'Cancel never publishes an image');
@@ -320,6 +322,29 @@ async function geometryCases() {
   assert.deepStrictEqual(composed.payload.plan.parts.map((part) => part.id), ['primary', 'raised-secondary']);
   controller.dispose();
   assert.deepStrictEqual(await pending, { ok: false, reason: 'cancelled' });
+
+  const releaseWindows = [];
+  const releaseController = createScreenshotController({
+    getAppWindows: () => [],
+    getDisplays: () => staggered.map((screen) => ({ id: screen.id, bounds: screen.bounds, scaleFactor: 1 })),
+    captureScreens: async (items) => items.map((item) => ({ id: item.id, pixelWidth: item.pixelWidth, pixelHeight: item.pixelHeight, dataUrl: 'screen' })),
+    createSelector: async () => {
+      const win = selector(releaseWindows.length + 1);
+      releaseWindows.push(win);
+      return win;
+    },
+    writeImage: () => assert.fail('release-screen geometry must not publish before composition')
+  });
+  const releasePending = releaseController.capture();
+  await until(() => releaseWindows.length === 2 && releaseWindows.every((win) => win.shown), 'release-screen selectors ready');
+  const releaseEvent = (index) => ({ sender: releaseWindows[index].webContents, senderFrame: releaseWindows[index].webContents.mainFrame });
+  assert.equal(releaseController.pointer(releaseEvent(0), { token: releasePending.token, type: 'down', x: 80, y: 10 }), true);
+  assert.equal(releaseController.pointer(releaseEvent(0), { token: releasePending.token, type: 'up', x: 140, y: 50 }), true);
+  const releaseComposed = releaseWindows.map((win) => win.webContents.sent.find((item) => item.channel === 'v2p:screenshot:compose'));
+  assert.equal(releaseComposed[0], undefined, 'the drag-captured selector does not become the editor when the pointer is released on another screen');
+  assert.ok(releaseComposed[1], 'composition follows the physical release screen even when the drag-start selector receives the mouseup');
+  releaseController.dispose();
+  assert.deepStrictEqual(await releasePending, { ok: false, reason: 'cancelled' });
 
   const sameSizeElectron = [
     { id: 'electron-right', nativeBounds: { x: 1920, y: 0, width: 1920, height: 1080 } },
