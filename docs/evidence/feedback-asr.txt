@@ -1,0 +1,21 @@
+Feedback v2 U4 evidence (working implementation)
+Date: 2026-10-28
+
+Scope: deterministic local tests only. No user profile, credentials, microphone, or provider API calls.
+
+Implementation notes:
+- Renderer capture prefers AudioWorklet `v2p-pcm-capture`; the ScriptProcessor path remains as a compatibility fallback.
+- Worklet transfers captured PCM blocks to the renderer and responds to an explicit stop flush before audio context shutdown.
+- Main process splits validated mono PCM16 WAV samples into contiguous chunks no longer than 30 seconds. Boundaries search nearby low-energy windows and do not omit or duplicate samples.
+- ASR calls are sequential and bounded per chunk; any failed chunk rejects the full transcription. Chat completion `length` and `content_filter` finish reasons are rejected.
+- Pipeline saves the source WAV to the configured recovery directory before ASR. Recovery is retained on failure and removed after successful full processing. Recovery APIs support WAV and raw transcript retention.
+- The renderer's recovery action requires a click and retries transcription; it does not automatically paste recovered data.
+
+Automated deterministic validation (local mocks; no external provider calls):
+- `node app/main/audio-chunks.unit.test.js`: pass. Reconstructed all 4,800,000 source PCM samples from ten multipart WAV requests covering a synthetic five-minute recording; each chunk was <=30 seconds with valid length headers. Verified the AudioWorklet over 14,400,017 source frames at 48 kHz, including final partial-block flush and start/middle/end markers.
+- Same suite: pass for chat input_audio chunk ordering and byte reconstruction, malformed WAV rejection before fetch, `length`/`content_filter` refusal, HTTP 429, middle-chunk HTTP 503, empty chunk rejection, request timeout abort, and persisted recovery IDs/raw text/stale-ID/clear behavior.
+- `node app/main/pipeline-delivery.unit.test.js`: pass.
+- `node app/main/models-vision.unit.test.js`: pass.
+- `node --check` on touched JS modules and `git diff --check`: pass.
+
+Remaining integration evidence: main/preload IPC wiring and native Electron microphone/background-throttling smoke are owned by the parent; no real microphone/provider calls have been made.

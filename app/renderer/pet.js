@@ -5,6 +5,7 @@ const statusEl = document.getElementById('status');
 const bubble = document.getElementById('bubble');
 const actionRow = document.getElementById('action-row');
 const actionButtons = [...document.querySelectorAll('#action-row .pet-action')];
+const imageHelp = document.getElementById('image-help');
 
 // 进入监听时随机弹一句「在听」的表演反馈
 const LISTEN_LINES = [
@@ -81,6 +82,7 @@ function updateActionButtons() {
   const imageBusy = !!(imageState && imageState.busy);
   for (const button of actionButtons) {
     const mode = button.dataset.mode;
+    if (mode === 'image_recognition') button.title = imageState?.reason || '识别剪贴板图片并复制文字';
     button.classList.toggle('active', mode === activePetAction);
     button.disabled = voiceBusy || imageBusy || (!!activePetAction && mode !== activePetAction) ||
       (mode === 'screenshot' && imageState && imageState.canScreenshot === false) ||
@@ -88,7 +90,13 @@ function updateActionButtons() {
     if (mode === activePetAction) button.setAttribute('aria-busy', 'true');
     else button.removeAttribute('aria-busy');
   }
+  if (imageHelp) {
+    const needsSetup = imageState?.hasImage && !imageState.busy && !voiceBusy && (!imageState.providerReady || !imageState.multimodal);
+    imageHelp.style.display = needsSetup ? 'block' : 'none';
+    imageHelp.textContent = needsSetup ? `${imageState.reason}（点此设置）` : '';
+  }
 }
+if (imageHelp) imageHelp.addEventListener('click', (event) => { event.stopPropagation(); window.v2p.openSettings(); });
 
 function voiceUiBusy() {
   return ['listening', 'transcribing'].includes(curStage) || starting || isRecording;
@@ -110,7 +118,10 @@ for (const button of actionButtons) {
         const result = mode === 'screenshot' ? await window.v2p.screenshot() : await window.v2p.recognizeImage();
         if (operation !== imageUiEpoch || voiceUiBusy()) return;
         if (mode === 'screenshot') {
-          if (result && result.ok) { say(`截图已复制（${result.width}×${result.height}）`, 3500); }
+          if (result && result.ok) {
+            imageState = await window.v2p.getImageState();
+            say(imageState.eligible ? `截图已复制（${result.width}×${result.height}），可点击识图` : `截图已复制。${imageState.reason || ''}`, 6000);
+          }
           else if (result && !['cancelled', 'zero-area'].includes(result.reason)) { say(result.error || '截图失败，请重试', 4500); setState('error'); scheduleIdle(4500); }
         } else if (result && result.ok) {
           say('识图完成，文字已复制', 4500); setState('done'); scheduleIdle(4000);
@@ -173,16 +184,19 @@ for (const button of actionButtons) {
 }
 actionRow.addEventListener('wheel', (event) => event.stopPropagation());
 
-// ---------------- 录音（PCM 采集 + 前端编 WAV） ----------------
-// 说明：部分 ASR（如小米 MiMo）只收 wav/mp3，不收 webm，
-// 故弃用 MediaRecorder 的 webm 输出，改为 ScriptProcessor 采 PCM 直接编成 16k 单声道 WAV。
+// ---------------- 录音（AudioWorklet PCM + 前端编 WAV） ----------------
 let mediaStream = null;
 let audioCtx = null;
-let procNode = null;
+let captureNode = null;
+let captureSource = null;
+let captureGain = null;
 let pcmBuffers = [];
 let isRecording = false;
 let starting = false;   // 堆塞 getUserMedia 挂起期间的双启动竞态
 let cancelled = false;  // 拖拽取消录音时，不提交半截音频
+let captureFailed = false;
+let captureMode = 'worklet';
+let captureFlushResolve = null;
 
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -266,17 +280,37 @@ async function startRecording() {
   starting = false;
   pcmBuffers = [];
   cancelled = false;
+  captureFailed = false;
   audioCtx = new AudioContext();
   const source = audioCtx.createMediaStreamSource(mediaStream);
-  procNode = audioCtx.createScriptProcessor(4096, 1, 1);
-  procNode.onaudioprocess = (e) => {
-    const data = e.inputBuffer.getChannelData(0);
-    pcmBuffers.push(downsample(data.slice(), audioCtx.sampleRate, TARGET_SAMPLE_RATE));
-    reportLoudness(data);
-  };
-  source.connect(procNode);
-  procNode.connect(audioCtx.destination);
+  captureSource = source;
+  try {
+    await audioCtx.audioWorklet.addModule('audio-capture-worklet.js');
+    captureNode = new AudioWorkletNode(audioCtx, 'v2p-pcm-capture', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    captureMode = 'worklet';
+    captureNode.addEventListener('processorerror', () => { captureFailed = true; if (isRecording) stopRecording(); });
+    captureNode.port.onmessage = (event) => {
+      if (event.data?.type === 'pcm') pcmBuffers.push(event.data.samples);
+      else if (event.data?.type === 'level') reportLoudness(Float32Array.of(event.data.rms));
+      else if (event.data?.type === 'flushed' && captureFlushResolve) { captureFlushResolve(); captureFlushResolve = null; }
+    };
+    captureSource.connect(captureNode);
+    captureGain = audioCtx.createGain();
+    captureGain.gain.value = 0;
+    captureNode.connect(captureGain).connect(audioCtx.destination);
+  } catch (error) {
+    captureMode = 'script-processor-fallback';
+    captureNode = audioCtx.createScriptProcessor(4096, 1, 1);
+    captureNode.onaudioprocess = (event) => {
+      const data = event.inputBuffer.getChannelData(0);
+      pcmBuffers.push(downsample(data.slice(), audioCtx.sampleRate, TARGET_SAMPLE_RATE));
+      reportLoudness(data);
+    };
+    captureSource.connect(captureNode);
+    captureNode.connect(audioCtx.destination);
+  }
   isRecording = true;
+  for (const track of mediaStream.getAudioTracks()) track.addEventListener('ended', () => { if (isRecording) { captureFailed = true; stopRecording(); } }, { once: true });
   setState('listening');
   updateActionButtons();
 }
@@ -286,7 +320,19 @@ async function stopRecording() {
   isRecording = false;
   if (window.petLive2d) window.petLive2d.setLoudness(0);
   try {
-    if (procNode) { procNode.disconnect(); procNode = null; }
+    if (captureMode === 'worklet' && captureNode) {
+      const flushed = new Promise((resolve) => {
+        const timer = setTimeout(() => { captureFailed = true; captureFlushResolve = null; resolve(); }, 1500);
+        captureFlushResolve = () => { clearTimeout(timer); resolve(); };
+      });
+      captureNode.port.postMessage('flush');
+      await flushed;
+    } else if (captureMode === 'script-processor-fallback' && audioCtx) {
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+    if (captureSource) { try { captureSource.disconnect(); } catch {} captureSource = null; }
+    if (captureNode) { try { captureNode.disconnect(); } catch {} captureNode = null; }
+    if (captureGain) { try { captureGain.disconnect(); } catch {} captureGain = null; }
     if (audioCtx) { await audioCtx.close(); audioCtx = null; }
     mediaStream.getTracks().forEach((t) => t.stop());
     mediaStream = null;
@@ -298,6 +344,22 @@ async function stopRecording() {
     setState('idle');
     say('已取消');
     window.v2p.setRecordingFlag(false);
+    return;
+  }
+  if (captureFailed) {
+    try {
+      const total = pcmBuffers.reduce((n, block) => n + block.length, 0);
+      const merged = new Float32Array(total);
+      let offset = 0;
+      for (const block of pcmBuffers) { merged.set(block, offset); offset += block.length; }
+      if (merged.length) await window.v2p.audioRecoverySave(encodeWav(merged, TARGET_SAMPLE_RATE));
+    } catch { /* retain the capture failure state even if recovery storage is unavailable */ }
+    pcmBuffers = [];
+    setState('error');
+    say('录音采集中断，请检查并恢复已采集内容', 7000);
+    showAudioRecovery();
+    window.v2p.setRecordingFlag(false);
+    updateActionButtons();
     return;
   }
   try {
@@ -314,17 +376,88 @@ async function stopRecording() {
     if (!res.ok) {
       setState('error');
       say(res.error || '处理失败', 6000);
+      showAudioRecovery();
       scheduleIdle(4000);
+    } else {
+      hideAudioRecovery();
     }
   } catch (e) {
     setState('error');
     say('提交失败：' + (e.message || e), 6000);
+    showAudioRecovery();
     scheduleIdle(4000);
   } finally {
     window.v2p.setRecordingFlag(false);
     updateActionButtons();
   }
 }
+
+const recoveryButton = document.getElementById('retry-recording');
+const rawRecoveryButton = document.getElementById('copy-recording-text');
+const recoveryPanel = document.getElementById('audio-recovery');
+function showAudioRecovery() {
+  if (!recoveryPanel) return;
+  window.v2p.audioRecoveryGet().then((saved) => {
+    recoveryPanel.style.display = saved?.wav || saved?.raw ? 'flex' : 'none';
+    rawRecoveryButton.style.display = saved?.raw ? 'block' : 'none';
+  }).catch(() => {});
+}
+function hideAudioRecovery() { if (recoveryPanel) recoveryPanel.style.display = 'none'; }
+if (recoveryButton && rawRecoveryButton) {
+recoveryButton.type = 'button';
+recoveryButton.textContent = '恢复上次录音';
+recoveryButton.title = '重新识别上次失败的录音';
+recoveryButton.style.cssText = 'display:none;margin:5px auto 0;padding:5px 10px;border:1px solid #fff;border-radius:6px;background:#fff;color:#263238;font:600 12px Segoe UI,Microsoft YaHei,sans-serif;cursor:pointer;';
+rawRecoveryButton.type = 'button';
+rawRecoveryButton.textContent = '复制已识别原文';
+rawRecoveryButton.title = '复制上次失败处理的原始转写';
+rawRecoveryButton.style.cssText = recoveryButton.style.cssText;
+rawRecoveryButton.style.display = 'none';
+recoveryButton.style.display = 'block';
+for (const node of [recoveryButton, rawRecoveryButton]) {
+  for (const eventName of ['pointerdown', 'mousedown', 'mouseup', 'dblclick', 'wheel']) node.addEventListener(eventName, (event) => event.stopPropagation());
+}
+recoveryButton.addEventListener('click', async () => {
+  if (voiceUiBusy() || activePetAction || imageState?.busy) return;
+  recoveryButton.disabled = true;
+  try {
+    const recovered = await window.v2p.audioRecoveryGet();
+    if (!recovered?.ok || !recovered.wav) throw new Error(recovered?.error || '没有可恢复录音');
+    setState('transcribing');
+    say('正在重新识别录音…', 30000);
+    const result = await window.v2p.submit(new Uint8Array(recovered.wav), 'audio/wav', { recoveryCopyOnly: true, mode: 'none' });
+    if (!result?.ok) throw new Error(result?.error || '重新识别失败');
+    hideAudioRecovery();
+    say('恢复完成，结果已复制', 5000);
+    setState('done');
+    scheduleIdle(5000);
+  } catch (error) {
+    say(`恢复失败：${error.message || error}`, 6000);
+    setState('error');
+  } finally {
+    recoveryButton.disabled = false;
+  }
+});
+showAudioRecovery();
+rawRecoveryButton.addEventListener('click', async () => {
+  if (voiceUiBusy() || activePetAction || imageState?.busy) return;
+  rawRecoveryButton.disabled = true;
+  try {
+    const recovered = await window.v2p.audioRecoveryGet();
+    if (!recovered?.id || !recovered.raw) throw new Error('没有可复制的识别原文');
+    const result = await window.v2p.audioRecoveryText(recovered.id);
+    if (!result?.ok) throw new Error(result?.error || '复制原文失败');
+    say('已复制识别原文', 4000);
+  } catch (error) {
+    say(`复制失败：${error.message || error}`, 5000);
+  } finally {
+    rawRecoveryButton.disabled = false;
+  }
+});
+}
+if (window.v2p.onAsrProgress) window.v2p.onAsrProgress((progress) => {
+  if (curStage === 'transcribing' && progress.total > 1) statusEl.textContent = `👂 转录 ${Math.min(progress.completed + 1, progress.total)}/${progress.total} 段…`;
+});
 
 // ---------------- 鼠标交互：拖动=移动；录音触发方式由设置切换 ----------------
 // hold（默认）：长按=录音，松开结束，拖动取消；单击=打开设置

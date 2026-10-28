@@ -109,6 +109,32 @@ async function fixture() {
       document.dispatchEvent(new MouseEvent('mousemove',{...options,clientX:100,clientY:90}));
       document.dispatchEvent(new MouseEvent('mouseup',{...options,clientX:100,clientY:90}));
     })()`);
+    const editorOverlay = await waitFor(() => BrowserWindow.getAllWindows().find((win) => win.webContents.getURL().endsWith('/screenshot.html') && win.isVisible() && win.webContents.id === captureOverlay.webContents.id), 'crop editor');
+    await waitFor(() => editorOverlay.webContents.executeJavaScript("document.getElementById('editor').classList.contains('open')"), 'crop preview rendered');
+    await editorOverlay.webContents.executeJavaScript(`(() => {
+      const canvas=document.getElementById('preview');
+      const box=canvas.getBoundingClientRect();
+      const point=(x,y)=>({bubbles:true,button:0,pointerId:1,clientX:box.left+x*box.width/canvas.width,clientY:box.top+y*box.height/canvas.height});
+      canvas.dispatchEvent(new PointerEvent('pointerdown',point(5,5)));
+      canvas.dispatchEvent(new PointerEvent('pointermove',point(14,14)));
+      canvas.dispatchEvent(new PointerEvent('pointerup',point(14,14)));
+      document.getElementById('text-tool').click();
+      document.getElementById('annotation-text').value='A';
+      canvas.dispatchEvent(new PointerEvent('pointerdown',point(20,5)));
+      const ctx=canvas.getContext('2d');
+      const before=ctx.getImageData(0,0,canvas.width,canvas.height).data.slice();
+      document.getElementById('undo-tool').click();
+      const after=ctx.getImageData(0,0,canvas.width,canvas.height).data.slice();
+      let changed=0; for(let i=0;i<before.length;i++) if(before[i]!==after[i]) changed++;
+      const pen=[...ctx.getImageData(10,10,1,1).data];
+      window.__annotationPixels={changed,pen,dimensions:[canvas.width,canvas.height]};
+    })()`);
+    const annotationPixels = await editorOverlay.webContents.executeJavaScript('window.__annotationPixels');
+    assert.deepStrictEqual(annotationPixels.dimensions, [40, 30], 'annotation backing canvas retains the source crop resolution');
+    assert.ok(annotationPixels.changed > 0, 'undo removes the latest text annotation pixels');
+    assert.notDeepStrictEqual(annotationPixels.pen, [255,0,255,255], 'pen stroke paints over the source crop');
+    assert.equal(clipboard.readText(), 'screenshot cancel sentinel', 'editing does not write the clipboard before Done');
+    await editorOverlay.webContents.executeJavaScript("document.getElementById('done-tool').click()");
     const captured = await waitFor(() => pet.webContents.executeJavaScript('window.__captureShot || null'), 'capture result');
     assert.equal(captured.ok, true, JSON.stringify(captured));
     assert.equal(captured.width, 40); assert.equal(captured.height, 30);
@@ -117,7 +143,23 @@ async function fixture() {
     assert.deepStrictEqual(image.getSize(), { width: 40, height: 30 });
     const pixels = image.getBitmap();
     const centerPixel = [...pixels.subarray((15 * 40 + 20) * 4, (15 * 40 + 20) * 4 + 4)];
-    assert.deepStrictEqual(centerPixel, [255, 0, 255, 255], 'real screenshot crop contains the external magenta target pixels');
+    assert.deepStrictEqual(centerPixel, [255, 0, 255, 255], 'unannotated crop pixels remain unchanged');
+    const penPixel = [...pixels.subarray((10 * 40 + 10) * 4, (10 * 40 + 10) * 4 + 4)];
+    assert.deepStrictEqual(penPixel, [53, 57, 229, 255], 'red pen stroke is present in the final copied PNG bitmap');
+    const completedBitmap = Buffer.from(pixels);
+    await pet.webContents.executeJavaScript('void window.v2p.screenshot().then(result => window.__editorCancelShot = result)');
+    const editorCancelWindow = await waitFor(() => BrowserWindow.getAllWindows().find((win) => win.webContents.getURL().endsWith('/screenshot.html') && win.isVisible()), 'second selector');
+    await editorCancelWindow.webContents.executeJavaScript(`(() => {
+      const options={bubbles:true,button:0,clientX:60,clientY:60};
+      document.dispatchEvent(new MouseEvent('mousedown',options));
+      document.dispatchEvent(new MouseEvent('mousemove',{...options,clientX:100,clientY:90}));
+      document.dispatchEvent(new MouseEvent('mouseup',{...options,clientX:100,clientY:90}));
+    })()`);
+    await waitFor(() => editorCancelWindow.webContents.executeJavaScript("document.getElementById('editor').classList.contains('open')"), 'second crop editor');
+    await editorCancelWindow.webContents.executeJavaScript("document.getElementById('cancel-tool').click()");
+    const editorCancelled = await waitFor(() => pet.webContents.executeJavaScript('window.__editorCancelShot || null'), 'editor cancel result');
+    assert.deepStrictEqual(editorCancelled, { ok: false, reason: 'cancelled' });
+    assert.deepStrictEqual(Buffer.from(clipboard.readImage().getBitmap()), completedBitmap, 'canceling the editor leaves the clipboard image byte-for-byte unchanged');
     await waitFor(() => !BrowserWindow.getAllWindows().some((win) => win.webContents.getURL().endsWith('/screenshot.html')), 'capture selector cleanup');
     assert.equal(pet.isVisible(), true, 'previously visible pet window is restored');
     let crossMonitorPixels = null;
@@ -130,6 +172,8 @@ async function fixture() {
       await dispatch(leftOverlay, leftMonitor, 'mousedown', crossRect.x, crossRect.y);
       await dispatch(rightOverlay, rightMonitor, 'mousemove', crossRect.x+crossRect.width, crossRect.y+crossRect.height);
       await dispatch(rightOverlay, rightMonitor, 'mouseup', crossRect.x+crossRect.width, crossRect.y+crossRect.height);
+      const rightEditor = await waitFor(() => overlayFor(rightMonitor), 'cross-screen crop editor');
+      await rightEditor.webContents.executeJavaScript("document.getElementById('done-tool').click()");
       const crossResult = await waitFor(() => pet.webContents.executeJavaScript('window.__crossShot || null'), 'cross-screen image');
       assert.equal(crossResult.ok, true, JSON.stringify(crossResult));
       assert.deepStrictEqual({width:crossResult.width,height:crossResult.height},{width:80,height:30});
@@ -142,7 +186,7 @@ async function fixture() {
     console.log(PREFIX + JSON.stringify({ ok: true, displays,
       desktopSources: desktopSources.map((source) => ({ id: source.id, name: source.name, display_id: source.display_id, thumbnailSize: source.thumbnail.getSize() })),
       physicalMonitors, identityMap: identityMap.map(({ id, name, x, y, width, height }) => ({ id, name, x, y, width, height })),
-      capture: captured, cancelClipboardPreserved: true, centerPixel, compositionPixels: pixelResult, gapPixels, crossMonitorPixels }));
+      capture: captured, cancelClipboardPreserved: true, editorCancelledWithoutClipboardWrite: true, annotationPixels, centerPixel, penPixel, compositionPixels: pixelResult, gapPixels, crossMonitorPixels }));
   } catch (error) {
     console.error(PREFIX + JSON.stringify({ ok: false, error: error.stack }));
     process.exitCode = 1;

@@ -47,8 +47,10 @@ async function main() {
   assert.equal(controller.pointer(evt(0), { token: promise.token, type: 'down', x: 90, y: 20 }), true);
   assert.equal(controller.pointer(evt(1), { token: promise.token, type: 'move', x: 140, y: 50 }), true);
   assert.equal(controller.pointer(evt(1), { token: promise.token, type: 'up', x: 140, y: 50 }), true);
-  assert.equal(windows[0].win.webContents.sent.some((entry) => entry.channel === 'v2p:screenshot:compose'), true,
-    'an up event from the second selector completes a drag started in the first');
+  assert.equal(windows[0].win.webContents.sent.some((entry) => entry.channel === 'v2p:screenshot:compose'), false,
+    'cross-screen completion is delivered to the mouseup selector');
+  assert.equal(windows[1].win.webContents.sent.some((entry) => entry.channel === 'v2p:screenshot:compose'), true,
+    'an up event from the second selector opens its crop editor');
   assert.equal(controller.cancel(evt(1), { token: promise.token }), true);
   assert.deepStrictEqual(await promise, { ok: false, reason: 'cancelled' });
   assert.equal(windows.every(({ win }) => win.destroyed), true);

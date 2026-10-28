@@ -4,7 +4,8 @@ function fixture() {
   const handlers = {}; const deliveries = []; const states = [];
   const cfg = { insertMode: 'clipboard', previewEnabled: false, previewSkipChars: 12 };
   const context = {
-    Buffer, Object, String, Number, recordingActive: false, voiceSubmissionActive: false, voiceDeliveryEpoch: 0,
+    Buffer, Object, String, Number, AbortController, voiceAbortController: null, recordingActive: false, voiceSubmissionActive: false, voiceDeliveryEpoch: 0,
+    audioRecovery: { clear() {}, get: () => ({ id: null }) },
     voiceTargetPromise: null, pendingPreview: null, previewWin: null,
     imageWorkflow: { busy: false },
     config: { load: () => cfg }, resultDelivery: { busy: false, markDirty() {} },

@@ -1,6 +1,7 @@
 // models.js — OpenAI 兼容端点调用：LLM chat / ASR transcription / 模型校验
 const crypto = require('crypto');
 const { IMAGE_TRANSCRIPTION_PROMPT, IMAGE_VALIDATION_TOKEN } = require('./vision-prompts');
+const { splitPcmWav } = require('./audio-chunks');
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -176,7 +177,7 @@ async function chatCompletion(provider, systemPrompt, userText, opts) {
 }
 
 // ---------- ASR：OpenAI 兼容 /audio/transcriptions（multipart 手写，无第三方依赖） ----------
-async function transcribe(provider, audioBuffer, filename, mime) {
+async function transcribe(provider, audioBuffer, filename, mime, opts = {}) {
   const url = joinUrl(provider.baseUrl, '/audio/transcriptions');
   const boundary = '----v2p' + crypto.randomBytes(8).toString('hex');
   const head = Buffer.from(
@@ -186,56 +187,41 @@ async function transcribe(provider, audioBuffer, filename, mime) {
   );
   const tail = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
   const body = Buffer.concat([head, audioBuffer, tail]);
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': `multipart/form-data; boundary=${boundary}`,
-      Authorization: `Bearer ${provider.apiKey}`
-    },
-    body,
-    signal: AbortSignal.timeout(120_000)
-  });
-  if (!resp.ok) {
-    throw new Error(`ASR 调用失败 HTTP ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
-  }
-  const data = await resp.json();
-  if (!data?.text && data?.text !== '') throw new Error('ASR 返回为空');
+  const request = requestSignal(Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : 120_000, opts.signal);
+  let data;
+  try {
+    const resp = await (opts.fetchImpl || fetch)(url, {
+      method: 'POST', headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}`, Authorization: `Bearer ${provider.apiKey}` },
+      body, signal: request.signal
+    });
+    if (!resp.ok) throw new Error(`ASR 调用失败 HTTP ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
+    data = await resp.json();
+  } finally { request.cleanup(); }
+  const finishReason = data?.finish_reason || data?.choices?.[0]?.finish_reason;
+  if (finishReason === 'length' || finishReason === 'content_filter') throw new Error(`ASR 返回不完整内容 (${finishReason})`);
+  if (typeof data?.text !== 'string') throw new Error('ASR 返回为空');
   return data.text.trim();
 }
 
 // ---------- ASR 协议二：chat 多模态（小米 MiMo 等，音频走 /chat/completions 的 input_audio） ----------
-async function transcribeViaChat(provider, audioBuffer, mime) {
+async function transcribeViaChat(provider, audioBuffer, mime, opts = {}) {
   const url = joinUrl(provider.baseUrl, '/chat/completions');
   const b64 = audioBuffer.toString('base64');
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${provider.apiKey}`
-    },
-    body: JSON.stringify({
-      model: provider.model,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'input_audio',
-              input_audio: { data: `data:${mime};base64,${b64}` }
-            }
-          ]
-        }
-      ],
-      stream: false
-    }),
-    signal: AbortSignal.timeout(120_000)
-  });
-  if (!resp.ok) {
-    throw new Error(`ASR(chat) 调用失败 HTTP ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
-  }
-  const data = await resp.json();
+  const request = requestSignal(Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : 120_000, opts.signal);
+  let data;
+  try {
+    const resp = await (opts.fetchImpl || fetch)(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.apiKey}` },
+      body: JSON.stringify({ model: provider.model, messages: [{ role: 'user', content: [{ type: 'input_audio', input_audio: { data: `data:${mime};base64,${b64}` } }] }], stream: false }),
+      signal: request.signal
+    });
+    if (!resp.ok) throw new Error(`ASR(chat) 调用失败 HTTP ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
+    data = await resp.json();
+  } finally { request.cleanup(); }
+  const finishReason = data?.choices?.[0]?.finish_reason;
+  if (finishReason === 'length' || finishReason === 'content_filter') throw new Error(`ASR(chat) 返回不完整内容 (${finishReason})`);
   const text = data?.choices?.[0]?.message?.content;
-  if (!text && text !== '') throw new Error('ASR 返回为空');
+  if (typeof text !== 'string') throw new Error('ASR 返回为空');
   return String(text).trim();
 }
 
@@ -248,11 +234,23 @@ function effectiveAsrProtocol(provider) {
   return 'transcriptions';
 }
 
-async function transcribeSmart(provider, audioBuffer, filename, mime) {
-  if (effectiveAsrProtocol(provider) === 'chat') {
-    return transcribeViaChat(provider, audioBuffer, mime || 'audio/wav');
+async function transcribeSmart(provider, audioBuffer, filename, mime, opts = {}) {
+  const audioMime = mime || 'audio/wav';
+  const chunks = audioMime === 'audio/wav' ? splitPcmWav(audioBuffer, opts.chunking) : [{ index: 0, wav: audioBuffer }];
+  const parts = [];
+  for (let i = 0; i < chunks.length; i++) {
+    if (opts.signal?.aborted) throw opts.signal.reason || new Error('ASR 已取消');
+    const chunk = chunks[i];
+    opts.onProgress?.({ completed: i, total: chunks.length, index: i });
+    const callOptions = { ...opts, timeoutMs: opts.timeoutMs ?? 120_000 };
+    const text = effectiveAsrProtocol(provider) === 'chat'
+      ? await transcribeViaChat(provider, chunk.wav, audioMime, callOptions)
+      : await transcribe(provider, chunk.wav, chunks.length > 1 ? `part-${i + 1}.wav` : filename, audioMime, callOptions);
+    const part = String(text).trim();
+    if (part) parts.push(part); // A valid empty string can represent a silent segment.
+    opts.onProgress?.({ completed: i + 1, total: chunks.length, index: i });
   }
-  return transcribe(provider, audioBuffer, filename, mime);
+  return parts.join('\n').trim();
 }
 
 // ---------- 模型校验（防止配置了无法调用的模型） ----------

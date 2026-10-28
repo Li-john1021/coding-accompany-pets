@@ -62,9 +62,10 @@ function createScreenshotController(adapters) {
         session.windows.push(win);
         session.senderIds.add(win.webContents.id);
         if (session.abortController.signal.aborted) return { ok: false, reason: 'cancelled' };
-        win.on?.('closed', () => {
-          if (!session.settled) session.resolve?.({ ok: false, reason: 'cancelled' });
-        });
+        const onClosed = () => { if (!session.settled) session.resolve?.({ ok: false, reason: 'cancelled' }); };
+        session.closedHandlers ||= new Map();
+        session.closedHandlers.set(win, onClosed);
+        win.on?.('closed', onClosed);
       }
       for (const win of session.windows) { win.show(); win.focus(); }
       const result = await session.done;
@@ -85,7 +86,14 @@ function createScreenshotController(adapters) {
       return { ok: false, reason: 'capture-failed', error: String(error.message || error).slice(0, 200) };
     } finally {
       session.settled = true;
-      for (const win of session.windows) { try { if (!win.isDestroyed()) win.destroy(); } catch {} }
+      for (const win of session.windows) {
+        try {
+          const onClosed = session.closedHandlers?.get(win);
+          if (onClosed) win.removeListener?.('closed', onClosed);
+          if (adapters.releaseSelector) adapters.releaseSelector(win);
+          else if (!win.isDestroyed()) win.destroy();
+        } catch {}
+      }
       for (const win of session.visible) { try { if (!win.isDestroyed()) win.show(); } catch {} }
       session.resolve?.({ ok: false, reason: 'cancelled' });
       session.removeAbortListener?.();
@@ -100,6 +108,7 @@ function createScreenshotController(adapters) {
 
   function pointer(event, payload) {
     if (!isTrusted(event) || !payload || payload.token !== active.token) return false;
+    if (active.expectedSize) return false;
     if (payload.type === 'down' && Number.isFinite(payload.x) && Number.isFinite(payload.y)) active.anchor = { x: payload.x, y: payload.y };
     else if (payload.type === 'move' && active.anchor && Number.isFinite(payload.x) && Number.isFinite(payload.y)) {
       const rect = geometry.normalizeRect(active.anchor, payload);
@@ -118,8 +127,8 @@ function createScreenshotController(adapters) {
         return true;
       }
       active.expectedSize = { width: plan.width, height: plan.height };
-      const first = active.windows[0];
-      first.webContents.send('v2p:screenshot:compose', { token: active.token, selection, plan });
+      active.composingSenderId = event.sender.id;
+      event.sender.send('v2p:screenshot:compose', { token: active.token, selection, plan });
     }
     return true;
   }
@@ -132,7 +141,8 @@ function createScreenshotController(adapters) {
   }
 
   function composed(event, payload) {
-    if (!isTrusted(event) || payload?.token !== active.token || !active.resolve || !active.expectedSize) return false;
+    if (!isTrusted(event) || payload?.token !== active.token || !active.resolve || !active.expectedSize ||
+        event.sender.id !== active.composingSenderId) return false;
     if (payload?.ok && active.expectedSize && payload.dataUrl) {
       if (payload.dataUrl.length > 90 * 1024 * 1024) { active.resolve({ ok: false, reason: 'composition-failed' }); return true; }
       const match = PNG_DATA_URL.exec(payload.dataUrl);

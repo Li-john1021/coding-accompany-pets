@@ -139,6 +139,11 @@
     <div id="rec-dot"></div>
   </div>
   <div id="status">按住我说话</div>
+  <button id="image-help" type="button" title="打开模型设置" style="display:none;position:absolute;top:4px;left:8px;width:284px;max-height:45px;overflow:hidden;padding:5px;border:0;border-radius:8px;background:#fff5d6;color:#513b0b;font:11px 'Microsoft YaHei';cursor:pointer"></button>
+  <div id="audio-recovery" style="display:none;position:absolute;left:8px;right:8px;top:8px;z-index:20;justify-content:center;gap:5px;background:#fff5d6;padding:5px;border-radius:8px">
+    <button id="retry-recording" type="button">恢复上次录音</button>
+    <button id="copy-recording-text" type="button" style="display:none">复制已识别原文</button>
+  </div>
   <div id="action-row" aria-label="文本操作">
     <button class="pet-action" type="button" data-mode="structure" title="结构化" aria-label="结构化"><span class="icon" aria-hidden="true">≡</span><span>结构化</span></button>
     <button class="pet-action" type="button" data-mode="optimize" title="优化" aria-label="优化"><span class="icon" aria-hidden="true">✦</span><span>优化</span></button>

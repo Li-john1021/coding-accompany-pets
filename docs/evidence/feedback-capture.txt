@@ -1,0 +1,10 @@
+Feedback v2 U1 capture evidence
+Date: 2026-10-28
+
+Implementation: app/main/screenshot-capture-worker.js keeps one hidden PowerShell process resident, loads DPI/GDI+ once, accepts one line-delimited request for all monitor IDs/physical bounds, and returns PNGs in one response. app/main/main.js starts warmup during screenshot controller initialization and waits for a trusted renderer-ready event before returning each hidden selector to the controller for display.
+
+Privacy: this file records timing and monitor counts only. Captured PNG bytes and desktop content are not written to this evidence file.
+
+Deterministic injected-process checks: PASS (`node app/main/screenshot-capture-worker.unit.test.js`). Warm reuse, two-monitor one-command protocol, timeout and cancellation kill/restart, and disposal rejection.
+Local Windows Electron capture timing probe: PASS (`node app/main/screenshot-capture-worker.runtime.test.js`). 2 monitors; worker startup to ready 570 ms; first trigger to captured PNGs after warmup 473 ms; subsequent warm trigger to captured PNGs 354 ms; 0 image bytes saved; keyboard/clipboard unused. PNGs remain in memory for the duration of the probe.
+Windows native smoke / multi-monitor display topology: pending parent-run check.

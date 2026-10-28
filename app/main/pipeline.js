@@ -1,5 +1,6 @@
 // pipeline.js — 核心管线：音频 → ASR → 按需整理 → 写入；文本整理可被选区/预览共用
 const fs = require('fs');
+const audioRecovery = require('./audio-recovery');
 const os = require('os');
 const path = require('path');
 const config = require('./config');
@@ -179,15 +180,22 @@ async function run(audioBuffer, mime, onState, options = {}) {
   const cfg = config.load();
   const tmpFile = path.join(os.tmpdir(), `v2p-${Date.now()}.${extForMime(mime)}`);
   fs.writeFileSync(tmpFile, audioBuffer);
+  const recovery = audioRecovery.save(audioBuffer);
   try {
     onState('transcribing');
     const asr = findProvider('asr');
-    const raw = await transcribeSmart(asr, audioBuffer, path.basename(tmpFile), mime || 'audio/wav');
+    const raw = await transcribeSmart(asr, audioBuffer, path.basename(tmpFile), mime || 'audio/wav', {
+      signal: options.signal,
+      timeoutMs: options.asrTimeoutMs,
+      onProgress: (progress) => options.onProgress?.(progress)
+    });
     if (!raw) throw new Error('没有识别到语音内容');
+    audioRecovery.saveText(recovery.id, raw);
 
     // preview 模式：只返回转写，由预览卡决定后续 processText
     if (options.transcriptOnly) {
-      return { raw, polished: raw, mode: 'none', inserted: false, copiedOnly: true, preview: true };
+      if (!options.deferDelivery) audioRecovery.clear(recovery.id);
+      return { raw, polished: raw, mode: 'none', inserted: false, copiedOnly: true, preview: true, recoveryId: recovery.id };
     }
 
     const mode = resolveMode(options.mode, cfg);
@@ -196,6 +204,7 @@ async function run(audioBuffer, mime, onState, options = {}) {
     onState('inserting');
     const { inserted, copiedOnly } = options.deferDelivery ? { inserted: false, copiedOnly: true } : await insertText(result.text, cfg.insertMode);
     onState('done');
+    if (!options.deferDelivery) audioRecovery.clear(recovery.id);
     return {
       raw,
       polished: result.text,
@@ -203,7 +212,8 @@ async function run(audioBuffer, mime, onState, options = {}) {
       degraded: result.degraded,
       note: result.note,
       inserted,
-      copiedOnly
+      copiedOnly,
+      recoveryId: recovery.id
     };
   } finally {
     try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }

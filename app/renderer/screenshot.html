@@ -12,6 +12,18 @@
     #shade { position: absolute; inset: 0; background: rgba(0,0,0,.28); }
     #selection { position: absolute; display: none; border: 1px solid #fff; box-shadow: 0 0 0 1px #1677ff; background: rgba(22,119,255,.13); pointer-events: none; }
     #hint { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); color: white; background: rgba(20,24,31,.86); padding: 7px 12px; border-radius: 4px; pointer-events: none; }
+    #editor { position: fixed; inset: 0; z-index: 5; display: none; align-items: center; justify-content: center; padding: 16px; background: rgba(15,19,25,.82); cursor: default; }
+    #editor.open { display: flex; }
+    #editor-panel { max-width: 100%; max-height: 100%; display: flex; flex-direction: column; background: #20252c; color: #f4f6f8; border: 1px solid #68717c; box-shadow: 0 8px 32px rgba(0,0,0,.45); }
+    #toolbar { min-height: 48px; max-width: min(88vw, 1200px); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 10px; }
+    #toolbar button { height: 32px; padding: 0 12px; color: inherit; background: #353d47; border: 1px solid #66717f; border-radius: 3px; font: inherit; cursor: pointer; }
+    #toolbar button[aria-pressed="true"] { background: #1769aa; border-color: #65b7ff; }
+    #toolbar button.done { background: #16804a; border-color: #42c77f; }
+    #annotation-text { width: clamp(100px, 24vw, 180px); height: 32px; color: #fff; background: #171b20; border: 1px solid #66717f; padding: 4px 8px; font: inherit; user-select: text; }
+    #preview-wrap { max-width: min(88vw, 1200px); max-height: calc(88vh - 48px); overflow: auto; line-height: 0; }
+    #preview { display: block; max-width: 88vw; max-height: calc(88vh - 48px); width: auto; height: auto; touch-action: none; background: white; }
+    body.editing { cursor: default; }
+    body.editing #screen, body.editing #shade, body.editing #selection, body.editing #hint { display: none !important; }
   </style>
 </head>
 <body>
@@ -19,6 +31,20 @@
   <div id="shade"></div>
   <div id="selection"></div>
   <div id="hint">拖动鼠标框选，按 Esc 取消</div>
+  <section id="editor" aria-label="截图标注">
+    <div id="editor-panel">
+      <div id="toolbar">
+        <button id="pen-tool" type="button" aria-pressed="true">画笔</button>
+        <button id="text-tool" type="button" aria-pressed="false">文字</button>
+        <input id="annotation-text" type="text" maxlength="120" placeholder="输入标注文字" aria-label="标注文字">
+        <button id="undo-tool" type="button" title="撤销">撤销</button>
+        <button id="cancel-tool" type="button">取消</button>
+        <button id="done-tool" class="done" type="button">完成</button>
+      </div>
+      <div id="preview-wrap"><canvas id="preview"></canvas></div>
+    </div>
+  </section>
+  <script src="screenshot-annotation.js"></script>
   <script src="screenshot-compose.js"></script>
   <script src="screenshot.js"></script>
 </body>

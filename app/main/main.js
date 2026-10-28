@@ -9,6 +9,7 @@ const config = require('./config');
 const petWindowLayout = require('./pet-window-layout');
 const models = require('./models');
 const pipeline = require('./pipeline');
+const audioRecovery = require('./audio-recovery');
 const paint = require('./paint');
 const { createPetActionCapture, createWindowsAdapters, getWindowsSnapshot } = require('./pet-action-capture');
 const { createPetActionWorkflow } = require('./pet-action-workflow');
@@ -20,7 +21,9 @@ const { createGlobalHotkeyManager, applyConfigPatchTransaction } = require('./gl
 const { createScreenshotController } = require('./screenshot');
 const { createImageWorkflow } = require('./image-workflow');
 const screenshotGeometry = require('./screenshot-geometry');
-const { getPhysicalMonitorBounds, mapDisplaysToPhysical, captureWindowsDisplay } = require('./screenshot-native-capture');
+const { createScreenshotCaptureWorker } = require('./screenshot-capture-worker');
+const screenshotCaptureWorker = createScreenshotCaptureWorker();
+const screenshotReadyWaiters = new Map();
 const resultDelivery = createResultDelivery({
   platform: process.platform,
   snapshot: () => getWindowsSnapshot(false, true),
@@ -93,6 +96,7 @@ let paintWin = null;
 let screenshotController = null;
 let recordingActive = false; // 全局热键触发录音时的状态标记
 let voiceSubmissionActive = false;
+let voiceAbortController = null;
 let voiceTargetPromise = null;
 let voiceDeliveryEpoch = 0;
 let imageWorkflow = null;
@@ -137,6 +141,10 @@ function handleVoiceHotkey() {
 function handleScreenshotHotkey() {
   if (!imageWorkflow) return;
   imageWorkflow.runScreenshot().then((result) => {
+    if (result.ok) {
+      const state = imageWorkflow.state();
+      petBroadcast('v2p:toast', { text: state.eligible ? '截图已复制，可点击识图' : `截图已复制。${state.reason}` });
+    }
     if (!result.ok && result.reason !== 'cancelled' && result.reason !== 'zero-area') {
       petBroadcast('v2p:toast', { text: result.error || '截图失败，请重试' });
     }
@@ -144,6 +152,7 @@ function handleScreenshotHotkey() {
 }
 
 function initializeScreenshotController() {
+  screenshotCaptureWorker.warm();
   screenshotController = createScreenshotController({
     getAppWindows: () => BrowserWindow.getAllWindows().filter((win) => !win.webContents.getURL().endsWith('/screenshot.html')),
     getDisplays: () => screen.getAllDisplays(),
@@ -161,17 +170,18 @@ function initializeScreenshotController() {
       const displaysWithPhysicalBounds = displays.map((display) => ({
         ...display, nativeBounds: screen.dipToScreenRect(null, display.bounds)
       }));
-      const physical = mapDisplaysToPhysical(displaysWithPhysicalBounds, await getPhysicalMonitorBounds());
-      const captured = [];
-      for (const display of physical) {
-        const dataUrl = await captureWindowsDisplay({ x: display.x, y: display.y, width: display.width, height: display.height });
+      const captures = await screenshotCaptureWorker.capture(displaysWithPhysicalBounds.map((display) => ({
+        id: display.id, ...display.nativeBounds
+      })), { signal: screenshotController?.getSignal() });
+      const captured = captures.map((display) => {
+        const dataUrl = `data:image/png;base64,${display.png}`;
         const image = nativeImage.createFromDataURL(dataUrl);
         const size = image.getSize();
         if (image.isEmpty() || size.width !== display.width || size.height !== display.height) {
           throw new Error(`屏幕 ${display.id} 的捕获尺寸与物理边界不符`);
         }
-        captured.push({ id: display.id, selectionBounds: { x: display.x, y: display.y, width: display.width, height: display.height }, dataUrl, pixelWidth: size.width, pixelHeight: size.height });
-      }
+        return { id: display.id, selectionBounds: { x: display.x, y: display.y, width: display.width, height: display.height }, dataUrl, pixelWidth: size.width, pixelHeight: size.height };
+      });
       return captured;
     },
     createSelector: async ({ token, screen: current, screens }) => {
@@ -183,9 +193,23 @@ function initializeScreenshotController() {
       });
       win.setAlwaysOnTop(true, 'screen-saver');
       win.webContents.once('render-process-gone', () => { if (!win.isDestroyed()) win.close(); });
+      const senderId = win.webContents.id;
       try {
         await win.loadFile(path.join(__dirname, '..', 'renderer', 'screenshot.html'));
+        const ready = new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            screenshotReadyWaiters.delete(senderId);
+            reject(new Error('截图预览绘制就绪超时'));
+          }, 5000);
+          screenshotReadyWaiters.set(senderId, { token, win, resolve: () => { clearTimeout(timer); resolve(); } });
+          win.once('closed', () => {
+            clearTimeout(timer);
+            screenshotReadyWaiters.delete(senderId);
+            reject(new Error('截图窗口在绘制就绪前关闭'));
+          });
+        });
         win.webContents.send('v2p:screenshot:init', { token, screen: current, screens });
+        await ready;
         return win;
       } catch (error) {
         if (!win.isDestroyed()) win.destroy();
@@ -214,6 +238,15 @@ function initializeScreenshotController() {
   if (imageStateTimer) clearInterval(imageStateTimer);
   imageStateTimer = setInterval(() => imageWorkflow?.refresh(), 500);
 }
+
+ipcMain.on('v2p:screenshot:ready', (event, payload) => {
+  const waiter = screenshotReadyWaiters.get(event.sender?.id);
+  if (!waiter || waiter.token !== payload?.token || waiter.win.webContents !== event.sender ||
+      event.senderFrame !== event.sender.mainFrame || !event.senderFrame.url.startsWith('file:') ||
+      !event.senderFrame.url.endsWith('/screenshot.html')) return;
+  screenshotReadyWaiters.delete(event.sender.id);
+  waiter.resolve();
+});
 
 let hotkeyManager = null;
 
@@ -301,7 +334,7 @@ function createPetWindow() {
     hasShadow: false,
     // 关键：点击宠物不抢焦点，否则 SendKeys 的 Ctrl+V 会粘到宠物窗而非用户的编辑器
     focusable: false,
-    webPreferences: { preload: path.join(__dirname, '..', 'preload.js'), contextIsolation: true, nodeIntegration: false }
+    webPreferences: { preload: path.join(__dirname, '..', 'preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
   });
   petWindowLayout.applyInitialZoomAfterLoad(petWin, () => {
     const current = Number(config.load().petScale);
@@ -390,6 +423,31 @@ function currentPetImageDataUrl() {
 // ---------------- IPC ----------------
 function registerIpc() {
   const fromPetMainFrame = (event) => !!petWin && !petWin.isDestroyed() && event.sender === petWin.webContents && event.senderFrame === event.sender.mainFrame && event.senderFrame.url.startsWith('file:') && event.senderFrame.url.endsWith('/pet.html');
+  const recoveryBusy = () => voiceSubmissionActive || imageWorkflow?.busy || petActionWorkflow.busy || resultDelivery.busy;
+  ipcMain.handle('v2p:audio-recovery-get', (event) => {
+    if (!fromPetMainFrame(event)) return { ok: false, error: 'unauthorized' };
+    try { return audioRecovery.get(); } catch { return { ok: false, error: '恢复录音暂时不可读取' }; }
+  });
+  ipcMain.handle('v2p:audio-recovery-save', (event, wav) => {
+    if (!fromPetMainFrame(event) || recoveryBusy()) return { ok: false, error: '当前不可保存恢复录音' };
+    try {
+      const bytes = Buffer.from(wav);
+      if (bytes.length > 128 * 1024 * 1024) throw Error('录音超出恢复大小限制');
+      require('./audio-chunks').parsePcmWav(bytes);
+      return audioRecovery.save(bytes);
+    } catch (error) { return { ok: false, error: String(error.message || error) }; }
+  });
+  ipcMain.handle('v2p:audio-recovery-clear', (event, id) => {
+    if (!fromPetMainFrame(event) || recoveryBusy() || typeof id !== 'string') return { ok: false, error: '当前不可清除恢复录音' };
+    return audioRecovery.clear(id);
+  });
+  ipcMain.handle('v2p:audio-recovery-text', (event, id) => {
+    if (!fromPetMainFrame(event) || recoveryBusy() || recordingActive) return { ok: false, error: '已有操作正在进行' };
+    const saved = audioRecovery.get();
+    if (saved.id !== id || !saved.raw) return { ok: false, error: '没有可复制的识别原文' };
+    clipboard.writeText(saved.raw);
+    return { ok: true };
+  });
   ipcMain.handle('v2p:screenshot', (event) => {
     if (!fromPetMainFrame(event) || !imageWorkflow) return { ok: false, reason: 'unauthorized' };
     return imageWorkflow.runScreenshot();
@@ -443,6 +501,8 @@ function registerIpc() {
   ipcMain.handle('v2p:submit', async (_e, { audio, mime, options }) => {
     if (voiceSubmissionActive || petActionWorkflow.busy || resultDelivery.busy || imageWorkflow?.busy) return { ok: false, error: '已有操作正在进行' };
     voiceSubmissionActive = true;
+    const requestController = new AbortController();
+    voiceAbortController = requestController;
     noteVoiceStart(false);
     const operationVoiceEpoch = voiceDeliveryEpoch;
     const isCurrent = () => voiceDeliveryEpoch === operationVoiceEpoch;
@@ -450,32 +510,36 @@ function registerIpc() {
     voiceTargetPromise = null;
     try {
       const buf = Buffer.from(audio);
-      const opts = { ...(options || {}), deferDelivery: true };
+      const opts = { ...(options || {}), deferDelivery: true, signal: requestController.signal,
+        onProgress: (progress) => { if (isCurrent()) petBroadcast('v2p:asr-progress', progress); } };
       const capturedTarget = await targetPromise;
       const target = capturedTarget && capturedTarget.target;
-      if (config.load().previewEnabled && !opts.mode && !opts.transcriptOnly) {
+      if (config.load().previewEnabled && !opts.mode && !opts.transcriptOnly && !opts.recoveryCopyOnly) {
         // 预览卡：只转写，等用户选模式后再 process
         opts.transcriptOnly = true;
       }
       const result = await pipeline.run(buf, mime, (stage) => { if (isCurrent()) setState(stage); }, opts);
       if (!isCurrent()) return { ok: false, voiceSuperseded: true };
-      if (result.preview && config.load().previewEnabled) {
+      if (result.preview && config.load().previewEnabled && !opts.recoveryCopyOnly) {
         const skip = Number(config.load().previewSkipChars) || 12;
         if ((result.raw || '').trim().length < skip) {
           const r2 = await pipeline.processText(result.raw, 'default', setState);
           const ins = await deliverResult({ original: result.raw, text: r2.text, target, kind: 'voice', isCurrent });
           if (!isCurrent()) return { ok: false, voiceSuperseded: true };
+          if (!ins.cancelled && result.recoveryId) audioRecovery.clear(result.recoveryId);
           const out = { raw: result.raw, polished: r2.text, mode: r2.mode, note: r2.note, ...ins };
           setState('done');
           petBroadcast('v2p:result', out);
           return { ok: true, ...out };
         }
-        showPreviewWindow(result.raw, { target, initialRaw: result.raw });
+        showPreviewWindow(result.raw, { target, initialRaw: result.raw, recoveryId: result.recoveryId });
         petBroadcast('v2p:toast', { text: '请在预览卡中选择处理方式' });
         return { ok: true, ...result, preview: true };
       }
-      const delivery = await deliverResult({ original: result.raw, text: result.polished, target, kind: 'voice', isCurrent });
+      const delivery = await deliverResult({ original: result.raw, text: result.polished, target, kind: 'voice', isCurrent,
+        insertMode: opts.recoveryCopyOnly ? 'clipboard' : config.load().insertMode });
       if (!isCurrent()) return { ok: false, voiceSuperseded: true };
+      if (!delivery.cancelled && result.recoveryId) audioRecovery.clear(result.recoveryId);
       const out = { ...result, ...delivery, note: [result.note, delivery.note].filter(Boolean).join('；') };
       petBroadcast('v2p:result', out);
       return { ok: true, ...out };
@@ -483,9 +547,12 @@ function registerIpc() {
       setState('error');
       const msg = String(err.message || err);
       petBroadcast('v2p:toast', { text: msg.slice(0, 120) });
-      return { ok: false, error: msg };
+      let recoveryId = null;
+      try { recoveryId = audioRecovery.get().id; } catch { }
+      return { ok: false, error: msg, recoveryId };
     } finally {
       voiceSubmissionActive = false;
+      if (voiceAbortController === requestController) voiceAbortController = null;
     }
   });
 
@@ -689,6 +756,7 @@ async function recordFrames(stage, outDir) {
 
 // ---------------- 生命周期 ----------------
 app.whenReady().then(() => {
+  audioRecovery.initialize(path.join(app.getPath('userData'), 'audio-recovery'));
   if (!gotLock) return;   // 未拿到锁的二次实例直接退出
   // model://<模型名>/<相对路径> → 用户皮肤目录或内置 assets/models 下的同名目录
   protocol.handle('model', async (req) => {
@@ -1123,7 +1191,7 @@ function createPreviewWindow() {
 }
 
 function showPreviewWindow(raw, options = {}) {
-  pendingPreview = { raw, target: options.target };
+  pendingPreview = { raw, target: options.target, recoveryId: options.recoveryId };
   Object.defineProperty(pendingPreview, 'initialRaw', { value: options.initialRaw ?? raw, enumerable: true });
   const win = createPreviewWindow();
   if (!win) return;
@@ -1145,6 +1213,7 @@ ipcMain.handle('v2p:preview-insert', async (_e, { text, copyOnly }) => {
     const result = await deliverResult({ original: session.initialRaw, text: String(text || ''), target: session.target, kind: 'voice',
       insertMode: copyOnly ? 'clipboard' : config.load().insertMode });
     session.delivered = true;
+    if (!result.cancelled && session.recoveryId) audioRecovery.clear(session.recoveryId);
     return { ok: true, ...result };
   } finally { voiceSubmissionActive = false; }
 });
@@ -1220,10 +1289,13 @@ function stopMouseRecordHook() {
 }
 
 app.on('will-quit', () => {
+  voiceDeliveryEpoch++;
+  voiceAbortController?.abort();
   if (imageStateTimer) clearInterval(imageStateTimer);
   imageStateTimer = null;
   imageWorkflow?.dispose();
   screenshotController?.dispose();
+  screenshotCaptureWorker.dispose();
   if (hotkeyManager) hotkeyManager.dispose();
   stopMouseRecordHook();
 });
