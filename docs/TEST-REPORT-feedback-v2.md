@@ -87,3 +87,11 @@ V2P_ALLOW_REAL_CONFIG=1 node app/main/vision-e2e.runtime.test.js
 - “无黑闪”依据是默认库先捕获后显示窗口，以及回退路径 ready 握手后才 show 的代码路径；并非高速摄像观测。
 - 真实 provider 调用只使用合成 TTS/验证图；没有上传用户桌面、录音或真实剪贴板内容。用户配置备份 `config.json.bak-vision-1793184768201` 保留在用户 profile 目录。
 - 便携包已构建并实测：`app/dist-exe/Voice2Prompt-1.0.0-Portable.exe`（75,721,706 bytes，最终修复后重建）。为让 MIT 库的预构建 HTML/静态资源从 `file://` 正常加载，构建配置使用 `"asar": false`；资源在 `resources/app/node_modules/...`，native `node-screenshots` 与 `uiohook-napi` 均已包含；联网下载 Electron 不稳定时使用本地 `electronDist=app/node_modules/electron/dist` 离线打包。实测便携版：桌宠截图 → 冻结屏 → 500×300 选区 → 小浮条显示 → 保存点击不锁死 → 右键取消恢复桌宠。旧 v1 `Voice2Prompt-Screenshot-Vision.exe` 不得作为本轮交付包。
+## 后续 UI 修复（2026-10-28 用户真实测试反馈）
+
+用户真实测试报告两个问题，均已复现、修复并回归：
+
+1. **桌宠截图后拖动/交互失效**：原生 OS 输入探针确认，`focusable:false` 窗口 `hide()`→`show()` 后 Windows/Electron 不再投递 mousedown（mousemove/wheel/mouseup 正常）；真实改变一次窗口尺寸即可恢复，这正是用户“滚轮后就能拖”的原因。新增 `app/main/window-restore.js::showAndStabilize()`：show 后对非可聚焦窗口高度 +1px，160ms 后恢复，保留 settle 期间用户移动的位置，用户缩放则放弃恢复；接入 MIT 截图恢复、旧控制器恢复和托盘重新显示。单测 + `pet-restore-ui.runtime.test.js` 覆盖（截图前后拖拽均 60×40，down=1）。
+2. **识图点击无反馈/用不了**：识图链路本身正常（真实 `mimo-v2.6-flash` 对 900×560 合成图 3649ms 正确转写；本地 mock 端到端通过）。不可用的原因是未满足条件时按钮 disabled，点击没有任何反馈。现在不可用时仍可点击并弹原因气泡；可用时点击立即弹“正在读取图片中…”，成功后显示“识图完成，文字已复制”，失败显示真实错误。
+
+回归：单元 42/42 PASS；默认截图+识图 UI runtime PASS；旧控制器 p3/native runtime PASS。未改 ASR，未上传用户桌面/录音，视觉真实调用仅用合成图。证据：`docs/evidence/feedback-ui-fixes.txt`。

@@ -20,6 +20,7 @@ const { createInputDirtyGuard } = require('./input-dirty-guard');
 const { createGlobalHotkeyManager, applyConfigPatchTransaction } = require('./global-hotkeys');
 const { createScreenshotController } = require('./screenshot');
 const { createScreenshotLibrary } = require('./screenshot-library');
+const { showAndStabilize } = require('./window-restore');
 const { createImageWorkflow } = require('./image-workflow');
 const screenshotGeometry = require('./screenshot-geometry');
 const { createScreenshotCaptureWorker } = require('./screenshot-capture-worker');
@@ -406,7 +407,7 @@ function createTray() {
       type: 'checkbox',
       checked: true,
       click: (item) => {
-        if (item.checked) { if (!petWin) createPetWindow(); else petWin.show(); }
+        if (item.checked) { if (!petWin) createPetWindow(); else showAndStabilize(petWin); }
         else if (petWin) petWin.hide();
       }
     },

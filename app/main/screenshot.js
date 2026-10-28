@@ -1,4 +1,5 @@
 const geometry = require('./screenshot-geometry');
+const { showAndStabilize } = require('./window-restore');
 
 const PNG_DATA_URL = /^data:image\/png;base64,([A-Za-z0-9+/]+={0,2})$/;
 
@@ -103,7 +104,7 @@ function createScreenshotController(adapters) {
           else if (!win.isDestroyed()) win.destroy();
         } catch {}
       }
-      for (const win of session.visible) { try { if (!win.isDestroyed()) win.show(); } catch {} }
+      for (const win of session.visible) { try { if (!win.isDestroyed()) showAndStabilize(win); } catch {} }
       session.resolve?.({ ok: false, reason: 'cancelled' });
       session.removeAbortListener?.();
     }

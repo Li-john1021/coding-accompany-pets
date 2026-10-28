@@ -1,0 +1,54 @@
+# 用户真实测试反馈修复证据（2026-10-28 晚）
+
+## 1. 桌宠截图后丢失拖动/交互
+
+### 复现（原生 OS 输入，生产 main.js，临时 profile）
+
+| 场景 | mousedown | mouseup | mousemove | 窗口位移 |
+|---|---|---|---|---|
+| 基线（未 hide/show） | 1 | 1 | 5-6 | 60×40 |
+| hide() → show() | **0** | 1 | 2-3 | **0×0** |
+| hide/show + setBounds 同尺寸 | 0 | 1 | 2-3 | 0×0 |
+| hide/show + moveTop / showInactive / setFocusable / webContents.focus / setOpacity / 再次 hide-show | 0 | 1 | 2-3 | 0×0 |
+| hide/show + setResizable / setZoomFactor（值不变） | 0 | 1 | 2-3 | 0×0 |
+| hide/show + 真实改尺寸（宽或高 +1px，150-200ms 后恢复） | **1** | 1 | 5 | **60×40** |
+| 滚轮（触发 applyPetScale，真实改尺寸） | 1 | 1 | 5 | 60×40 |
+| 可聚焦普通窗口 hide/show | 1 | 1 | - | 正常 |
+
+结论：Windows/Electron 对 `focusable:false` 窗口执行 hide/show 后不再投递 mousedown（mousemove、wheel、mouseup 仍到达）；可聚焦窗口不受影响。桌宠为 `focusable:false`（避免抢焦点导致粘贴到宠物窗），因此每次截图后必现；真实改一次尺寸会让输入路由恢复，这也解释了用户“滚轮后就能拖”的现象。
+
+### 修复
+
+- 新增 `app/main/window-restore.js::showAndStabilize(win)`：`show()` 后仅对非可聚焦窗口把高度 +1px，160ms 后恢复；恢复时保留用户在此期间改变的窗口位置；若用户已缩放/改尺寸则放弃恢复；重复 show 会先结算上一次 nudge。
+- 接入默认 MIT 截图 `restore()`、旧控制器最终恢复、托盘“显示宠物”重新显示。
+- 单测 `app/main/window-restore.unit.test.js`：聚焦窗口不 nudge、非聚焦窗口 nudge 后恢复、settle 期间移动保留位置、用户缩放优先、缺少 API/已销毁容错、重复 show 不叠加。
+
+### 端到端回归
+
+`node app/main/pet-restore-ui.runtime.test.js`（生产 Electron + 真实 OS 输入 + 真实截图浮条 + 本地 mock 识图）：
+
+```
+EVIDENCE {"ok":true,"scaleFactor":1,
+ "baseline":{"stats":{"down":1,"up":1,"move":5},"moved":{"x":60,"y":40}},
+ "afterScreenshot":{"stats":{"down":1,"up":1,"move":6},"moved":{"x":60,"y":40}},
+ "bubbleDuring":"正在读取图片中…","bubbleAfter":"识图完成，文字已复制",
+ "clipboardText":"识图结果 OK","imageSize":{"width":400,"height":300},
+ "visionRequest":{"model":"fixture-llm","imageChars":9958}}
+```
+
+## 2. 识图交互
+
+- 实现链路确认：识图按钮 → `v2p:recognize-image` → `imageWorkflow.recognize()` → 读取剪贴板 PNG → 门控（provider baseUrl/model、`multimodal===true`、剪贴板有图、无冲突操作）→ `models.transcribeImage`（OpenAI 兼容 `image_url`）→ 结果写剪贴板。
+- 用户侧不可用的主要原因是**按钮不可识图时被 disabled，点击完全无反馈**，无法区分“没截图/没多模态/正在忙”。现在：
+  - 不可用时按钮保持可点击（`.is-disabled` 视觉 + `aria-disabled`），点击弹气泡说明原因（如“请先截图或复制图片”）。
+  - 可用时点击立即弹气泡 **“正在读取图片中…”**，状态条同步“识图中…”。
+  - 成功弹“识图完成，文字已复制”，失败展示真实错误。
+- 真实 API 合成图验证（900×560 PNG，仅合成文字，非用户桌面）：`mimo-v2.6-flash` 3649ms 返回正确五行中文/数字；请求与解析链路正常。
+- 本地 mock 端到端：请求体含 `image_url` data PNG，结果写入剪贴板，气泡从“正在读取图片中…”变为“识图完成，文字已复制”。
+
+## 3. 回归
+
+- 单元测试：42/42 PASS（新增 window-restore 单测）。
+- 默认 MIT 截图路径 + 识图 UI：`pet-restore-ui.runtime.test.js` PASS。
+- 旧控制器：`screenshot-p3.runtime.test.js`、`screenshot-native.runtime.test.js` PASS。
+- 未改动 ASR；未上传用户桌面/录音/真实剪贴板内容；识图真实调用仅使用合成图片。

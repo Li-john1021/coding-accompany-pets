@@ -85,8 +85,14 @@ function updateActionButtons() {
     if (mode === 'image_recognition') button.title = imageState?.reason || '识别剪贴板图片并复制文字';
     button.classList.toggle('active', mode === activePetAction);
     button.disabled = voiceBusy || imageBusy || (!!activePetAction && mode !== activePetAction) ||
-      (mode === 'screenshot' && imageState && imageState.canScreenshot === false) ||
-      (mode === 'image_recognition' && (!imageState || !imageState.eligible));
+      (mode === 'screenshot' && imageState && imageState.canScreenshot === false);
+    if (mode === 'image_recognition') {
+      // Keep the button clickable when recognition is unavailable so the click
+      // can explain why instead of silently doing nothing.
+      const blocked = !imageState || !imageState.eligible;
+      button.classList.toggle('is-disabled', blocked);
+      button.setAttribute('aria-disabled', blocked ? 'true' : 'false');
+    }
     if (mode === activePetAction) button.setAttribute('aria-busy', 'true');
     else button.removeAttribute('aria-busy');
   }
@@ -109,11 +115,19 @@ for (const button of actionButtons) {
   button.addEventListener('click', async () => {
     if (activePetAction || ['listening', 'transcribing'].includes(curStage) || isRecording || starting) return;
     const mode = button.dataset.mode;
+    if (mode === 'image_recognition' && (!imageState || !imageState.eligible)) {
+      say((imageState && imageState.reason) || '请先截图或复制图片', 4500);
+      return;
+    }
     if (mode === 'screenshot' || mode === 'image_recognition') {
       const operation = ++imageUiEpoch;
       activePetAction = mode;
       updateActionButtons();
-      if (mode === 'image_recognition') { setState('processing'); statusEl.textContent = '识图中…'; }
+      if (mode === 'image_recognition') {
+        setState('processing');
+        statusEl.textContent = '识图中…';
+        say('正在读取图片中…', 120000);
+      }
       try {
         const result = mode === 'screenshot' ? await window.v2p.screenshot() : await window.v2p.recognizeImage();
         if (operation !== imageUiEpoch || voiceUiBusy()) return;

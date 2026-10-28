@@ -16,6 +16,7 @@ const ZH_CN = {
 };
 
 const DEFAULT_CAPTURE_TIMEOUT_MS = 60000;
+const { showAndStabilize } = require('./window-restore');
 
 function createScreenshotLibrary(options = {}) {
   const electron = options.electron || require('electron');
@@ -31,7 +32,7 @@ function createScreenshotLibrary(options = {}) {
 
   function restore(state) {
     for (const win of state.visible) {
-      try { if (!win.isDestroyed()) win.show(); } catch { /* window may be gone */ }
+      try { if (!win.isDestroyed()) showAndStabilize(win); } catch { /* window may be gone */ }
     }
   }
 

@@ -105,8 +105,8 @@
       gap: 5px;
     }
     .pet-action .icon { font-size: 15px; line-height: 1; }
-    .pet-action:hover:not(:disabled) { background: #fff; }
-    .pet-action:disabled { opacity: .48; cursor: default; }
+    .pet-action:hover:not(:disabled):not(.is-disabled) { background: #fff; }
+    .pet-action:disabled, .pet-action.is-disabled { opacity: .48; cursor: default; }
     .pet-action[data-mode="structure"].active { background: #d8efff; border-color: #3498db; color: #17638a; }
     .pet-action[data-mode="optimize"].active { background: #f0e2f5; border-color: #9b59b6; color: #71388a; }
     #status .pulse {
