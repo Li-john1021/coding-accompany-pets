@@ -146,3 +146,28 @@ V2P_ALLOW_REAL_CONFIG=1 node app/main/vision-e2e.runtime.test.js
 - 报告/证据：`docs/TEST-REPORT-feedback-v2.md`、`docs/evidence/*`
 - 审查：`docs/audits/feedback-v2-1.json`、`docs/audits/feedback-v2-2.json`
 - 旧交接（历史）：`docs/HANDOFF-feedback-v2-2026-10-28.md`
+## 10. 用户真实测试后的增量修复（2026-10-28 晚）
+
+用户实际使用后报告两个问题，已修复并交付新便携包；本节覆盖前面的“无待办”结论。
+
+### 10.1 桌宠截图后拖不动/无法交互
+
+- 根因（原生 OS 输入探针复现）：`focusable:false` 的桌宠窗口在 `hide()`→`show()` 后，Windows/Electron 不再投递 **mousedown**（mousemove、mouseup、wheel 仍到达）。可聚焦窗口不受影响；真实改变一次窗口尺寸即可恢复，这解释了用户“滚轮后就能拖”。
+- 修复：`app/main/window-restore.js::showAndStabilize()`——show 后对非可聚焦窗口高度 +1px，160ms 后恢复；保留 settle 期间用户移动的位置；用户缩放/改尺寸则放弃恢复；重复 show 先结算上一次。接入 MIT 截图恢复、旧控制器恢复、托盘重新显示。
+- 回归：`app/main/window-restore.unit.test.js`；`app/main/pet-restore-ui.runtime.test.js`（生产 Electron + 真实 OS 拖拽 + 真实 MIT 截图 + mock 识图）截图前后拖拽均 60×40、down=1。
+
+### 10.2 识图不可用/无反馈
+
+- 链路确认正常：按钮 → `v2p:recognize-image` → `imageWorkflow.recognize()` → 剪贴板 PNG → 多模态门控 → `models.transcribeImage` → 结果写剪贴板。真实 `mimo-v2.6-flash` 对 900×560 合成图 3649ms 正确转写。
+- 用户侧无法使用的主要原因是不可识图时按钮 disabled，点击无任何反馈。现在：不可用时按钮可点击（`.is-disabled` 视觉 + `aria-disabled`）并弹原因气泡；可用时点击立即弹“正在读取图片中…”，成功“识图完成，文字已复制”，失败展示真实错误。
+- 回归：`pet-restore-ui.runtime.test.js` 校验气泡时序、mock 请求含 `image_url`、剪贴板结果。
+
+### 10.3 测试与交付
+
+- 单元 42/42 PASS；默认截图+识图 UI runtime PASS；旧控制器 p3/native runtime PASS。
+- 新便携包（主项目）：`app/dist-exe/Voice2Prompt-FeedbackV2.1-1.0.0-Portable.exe`
+  - 75,726,454 bytes
+  - SHA-256 `99ddc840d9f1cbb380164823f13377c33a074d425dd4fb4260c8d8983a0a3599`
+  - 已实际启动；旧 `Voice2Prompt-FeedbackV2-1.0.0-Portable.exe` 仍是上一版，勿混用。
+- 证据：`docs/evidence/feedback-ui-fixes.txt`；报告追加段落见 `docs/TEST-REPORT-feedback-v2.md`。
+- ASR 仍未改动。识图真实调用只用了合成图；未上传用户桌面/录音。
