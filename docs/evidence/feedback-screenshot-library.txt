@@ -1,0 +1,33 @@
+Feedback v2 screenshot library evidence
+Date: 2026-10-28
+Decision: use the MIT-licensed `electron-screenshots` stack as the default screenshot UI instead of maintaining the custom annotation editor. The user explicitly requested MIT reuse for text placement; single-screen is the accepted scope.
+
+Dependencies (app/package.json):
+- electron-screenshots 0.6.2 — MIT
+- react-screenshots 0.6.1 — MIT (prebuilt electron.html UI)
+- node-screenshots 0.2.8 — Apache-2.0 (Windows prebuilt node-screenshots-win32-x64-msvc)
+- React/React DOM transitives used by the prebuilt UI
+- Verified on Electron 31.7.7 Windows x64
+
+Active path:
+- `app/main/screenshot-library.js` wraps the library. It hides app windows before capture, lets the library show the frozen-screen selection + floating toolbar, prevents the library's automatic clipboard write, writes the captured image itself, restores app windows, and returns `{ok,width,height}`.
+- `app/main/main.js` uses the library by default and falls back to the previous controller only when the library capture fails. `V2P_SCREENSHOT_LEGACY=1` forces the fallback for its regression tests.
+
+Integration test: `node app/main/screenshot-library.runtime.test.js` PASS
+- Synthetic white form behind a 400x300 selection; no user desktop/audio uploaded.
+- Library window: title `screenshots`, bounds 2560x1440.
+- Trigger to visible window: 956 ms; trigger to UI root ready: 1044 ms.
+- Floating toolbar present with 矩形/椭圆/箭头/画笔/文字/马赛克/撤销/重做/保存/取消/完成.
+- Text tool clicked; textarea appeared at exactly left=300, top=300 — the click position — proving point placement. Filled value `Positioned`; text color rgb(238,81,38).
+- Final clipboard image: 400x300; 356 non-white text pixels in the region around the clicked point; screenshot promise returned `{ok:true,width:400,height:300}`.
+- Clipboard was untouched during editing (`library-screenshot-sentinel` preserved) and updated only on 完成.
+
+Fallback regression (not the active path):
+- `V2P_SCREENSHOT_LEGACY=1 node app/main/screenshot-p3.runtime.test.js` PASS: 40x30 crop, pen/text/undo pixels, cancel clipboard preservation, mixed-scale 80x30 cross-screen crop.
+- `V2P_SCREENSHOT_LEGACY=1 node app/main/screenshot-native.runtime.test.js` PASS: real OS input on one display, 80x30 crop, floating toolbar 438x44, pen/undo/text/done/cancel, recovery panel layout in 300x306.
+- Unit suite: 41/41 files pass, including `screenshot-library.unit.test.js` wrapper ok/cancel/failure/abort/pending semantics.
+
+Known limits:
+- electron-screenshots captures the display nearest the cursor (single display). This matches the user's current single-screen scope; the old cross-screen controller remains only as fallback.
+- `node-screenshots` is native; the portable build must include/unpack it. If the native capture fails, the library itself falls back to Electron desktopCapturer, and the app falls back to the old controller if the library UI fails.
+- The user deferred the MiMo ASR platform issue; no further ASR work in this round.

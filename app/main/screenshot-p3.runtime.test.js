@@ -215,7 +215,7 @@ async function run() {
   }));
   await new Promise((resolve, reject) => {
     const child = spawn(require('electron'), [__filename, ARG], { windowsHide: true,
-      env: { ...process.env, V2P_SCREENSHOT_PROFILE: directory }, stdio: ['ignore', 'pipe', 'pipe'] });
+      env: { ...process.env, V2P_SCREENSHOT_PROFILE: directory, V2P_SCREENSHOT_LEGACY: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     child.stdout.on('data', (chunk) => { output += chunk; });
     child.stderr.on('data', (chunk) => { output += chunk; });

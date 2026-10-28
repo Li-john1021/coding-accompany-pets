@@ -19,6 +19,7 @@ const { nativeInputSession } = require('./native-input-session');
 const { createInputDirtyGuard } = require('./input-dirty-guard');
 const { createGlobalHotkeyManager, applyConfigPatchTransaction } = require('./global-hotkeys');
 const { createScreenshotController } = require('./screenshot');
+const { createScreenshotLibrary } = require('./screenshot-library');
 const { createImageWorkflow } = require('./image-workflow');
 const screenshotGeometry = require('./screenshot-geometry');
 const { createScreenshotCaptureWorker } = require('./screenshot-capture-worker');
@@ -94,6 +95,7 @@ let settingsWin = null;
 let petWin = null;
 let paintWin = null;
 let screenshotController = null;
+let screenshotLibrary = null;
 let recordingActive = false; // 全局热键触发录音时的状态标记
 let voiceSubmissionActive = false;
 let voiceAbortController = null;
@@ -152,6 +154,7 @@ function handleScreenshotHotkey() {
 }
 
 function initializeScreenshotController() {
+  screenshotLibrary = createScreenshotLibrary();
   screenshotCaptureWorker.warm();
   screenshotController = createScreenshotController({
     getAppWindows: () => BrowserWindow.getAllWindows().filter((win) => !win.webContents.getURL().endsWith('/screenshot.html')),
@@ -221,8 +224,18 @@ function initializeScreenshotController() {
     },
     writeImage: (dataUrl) => clipboard.writeImage(nativeImage.createFromDataURL(dataUrl))
   });
+  const captureScreenshot = async (opts = {}) => {
+    if (process.env.V2P_SCREENSHOT_LEGACY === '1') return screenshotController.capture(opts);
+    try {
+      const result = await screenshotLibrary.capture(opts);
+      if (result.ok || result.reason === 'cancelled') return result;
+    } catch (error) {
+      if (/截图已在进行/.test(String(error.message || error))) return { ok: false, reason: 'busy', error: '已有操作正在进行' };
+    }
+    return screenshotController.capture(opts);
+  };
   imageWorkflow = createImageWorkflow({
-    capture: (opts) => screenshotController.capture(opts),
+    capture: captureScreenshot,
     getProvider: () => {
       try { return pipeline.findProvider('llm'); } catch { return null; }
     },
@@ -1305,6 +1318,7 @@ app.on('will-quit', () => {
   if (imageStateTimer) clearInterval(imageStateTimer);
   imageStateTimer = null;
   imageWorkflow?.dispose();
+  screenshotLibrary?.dispose();
   screenshotController?.dispose();
   screenshotCaptureWorker.dispose();
   if (hotkeyManager) hotkeyManager.dispose();

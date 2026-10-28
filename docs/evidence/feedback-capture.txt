@@ -15,3 +15,8 @@ Final integrated evidence (2026-10-28):
 - `node app/main/screenshot-native.runtime.test.js`: PASS with real OS mouse/keyboard on one display. Frozen selection 80x30; floating toolbar 438x44 at (100,138); pen/undo/text/done/cancel all driven by SendInput/SendKeys; final clipboard image 80x30 with red annotation pixels. The fullscreen dark editor page is gone; only the frozen selection overlay remains during drag.
 - Recovery panel inside the 300x306 pet window: panel 8,8..292,51; retry 30..124 x 18..46; copy 164..270 x 18..46; `elementFromPoint` at retry center returns `retry-recording`. Evidence image: `docs/evidence/feedback-recovery-panel.png`.
 - The ready handshake is still required before show; the runtime saw a decoded `#screen` image when the overlay became visible. No black flash was observed; this is a code-path/runtime observation, not high-speed capture.
+
+MIT screenshot library update (2026-10-28):
+- Active default: `electron-screenshots` 0.6.2 (MIT). `node app/main/screenshot-library.runtime.test.js`: PASS; trigger→visible library window 956ms, UI root ready 1044ms; frozen selection 400x300; floating toolbar present; text is click-positioned (textarea at 300,300); final clipboard 400x300.
+- The old capture worker/selector/editor remains as fallback only; `V2P_SCREENSHOT_LEGACY=1` forces it for regressions. Fallback runtime timings in the latest run: first 1574ms, warm 1181ms, cross-screen 796ms; cross-screen pixels and cancel semantics still pass.
+- Details/licenses: `docs/evidence/feedback-screenshot-library.txt`.

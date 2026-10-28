@@ -21,6 +21,10 @@
       "preload.js",
       "package.json"
     ],
+    "asarUnpack": [
+      "node_modules/node-screenshots/**/*",
+      "node_modules/node-screenshots-*/**/*"
+    ],
     "win": {
       "icon": "app/build/icon.ico",
       "target": [

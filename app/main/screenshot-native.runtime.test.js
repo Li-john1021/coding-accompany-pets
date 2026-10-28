@@ -254,7 +254,7 @@ async function run() {
     await new Promise((resolve, reject) => {
       const child = spawn(require('electron'), [__filename, ARG], {
         windowsHide: true,
-        env: { ...process.env, V2P_NATIVE_PROFILE: directory, V2P_PET_SHOT: evidence },
+        env: { ...process.env, V2P_NATIVE_PROFILE: directory, V2P_PET_SHOT: evidence, V2P_SCREENSHOT_LEGACY: '1' },
         stdio: ['ignore', 'pipe', 'pipe']
       });
       let output = '';
