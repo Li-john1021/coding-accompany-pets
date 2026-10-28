@@ -26,5 +26,7 @@ Notes:
 - Old v1 artifacts in the main project's app/dist-exe are not this round's deliverable; the new portable file must be copied with a distinct name when delivering.
 
 Post-audit status (2026-10-28):
-- The build/smoke above were produced before the independent audit fixes (Save handling, timeout/windowClosed/UI-ready guards, worker-fed capture, startup warm). The artifact `Voice2Prompt-1.0.0-Portable.exe` at this path is therefore NOT the final deliverable and must be rebuilt after the fixes.
-- The final post-fix portable smoke is blocked because the Windows session became locked (`CopyFromScreen` invalid handle); it must be rebuilt and launched after the session is unlocked. The build itself (electron-builder, asar:false, MIT UI/native resources) remains valid; only the runtime smoke needs repeating.
+- The build/smoke above were produced before the independent audit fixes (Save handling, timeout/windowClosed/UI-ready guards, worker-fed capture, startup warm).
+- Final rebuild after all fixes: `app/dist-exe/Voice2Prompt-1.0.0-Portable.exe`, 75,721,706 bytes, electron-builder 26.15.3, local `electronDist=app/node_modules/electron/dist` to avoid the failed Electron download, asar:false, MIT UI/native resources included.
+- Final portable smoke (desktop unlocked): launched the final exe; pet window appeared; pet 截图 opened the frozen-screen MIT UI; 500x300 selection showed the floating toolbar; clicking the Save toolbar area did not lock the app (save path is also unit-tested and the dialog can be canceled); right-click canceled the capture and restored the pet; all test processes stopped.
+- Post-fix active runtime: `screenshot-library.runtime.test.js` PASS (first 1054/1114ms, warm 773ms, textarea at 300/300, 356 text pixels, final 400x300). Fallback p3/native runtimes PASS with legacy env (1007/938/817ms; 80x30 native crop; recovery panel hit test).

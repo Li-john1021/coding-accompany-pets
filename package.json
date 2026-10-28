@@ -38,6 +38,7 @@
       "artifactName": "Voice2Prompt-Setup-${version}.exe"
     },
     "electronVersion": "31.7.7",
+    "electronDist": "app/node_modules/electron/dist",
     "portable": {
       "artifactName": "Voice2Prompt-${version}-Portable.exe"
     }

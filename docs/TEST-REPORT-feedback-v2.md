@@ -7,7 +7,7 @@
 ## 结论
 
 - 41/41 个单元测试文件通过。
-- 截图默认使用 MIT 的 `electron-screenshots` 0.6.2（React UI 由 `react-screenshots` 0.6.1 MIT 提供，原生捕获为 Apache-2.0 的 `node-screenshots`）：冻结屏 + 选区 + 小浮条，文字工具点哪里就在哪里出现输入框。集成测试实测触发到窗口 956ms、UI 就绪 1044ms；文字框精确出现在点击坐标 (300,300)，最终剪贴板 400×300 图片在对应位置有 356 个文字像素。
+- 截图默认使用 MIT 的 `electron-screenshots` 0.6.2（React UI 由 `react-screenshots` 0.6.1 MIT 提供，原生捕获为 Apache-2.0 的 `node-screenshots`）：冻结屏 + 选区 + 小浮条，文字工具点哪里就在哪里出现输入框。集成测试实测首次触发到窗口 1054ms、UI 就绪 1114ms；第二次 warm 捕获 773ms；文字框精确出现在点击坐标 (300,300)，最终剪贴板 400×300 图片在对应位置有 356 个文字像素。
 - 旧的自研浮条路径保留为库不可用时的回退（`V2P_SCREENSHOT_LEGACY=1` 强制），其跨屏/混合 DPI runtime 和原生 OS 输入测试仍全部通过。
 - 3 分钟隐藏窗 AudioWorklet 采集通过：真实 wall-clock 181.2s，首/中/尾音调标记完整；双初始化失败会停止麦克风 track 并清掉主进程 recording flag。
 - 长音频 ASR 通过：3 分钟输入拆成 6 个 ≤30s 分段并完整重建；35s 录音中段 503 与 `finish_reason=length` 都整体失败、保留恢复、重试成功后才写剪贴板。
@@ -19,14 +19,14 @@
 
 | 验收 | 结果 | 证据 |
 | --- | --- | --- |
-| B01 暖截图耗时/绘制就绪 | 通过：默认 MIT 库触发→窗口 956ms、UI 就绪 1044ms；回退路径首/暖/跨屏 1574/1181/796ms。窗口在捕获完成后显示 | `docs/evidence/feedback-screenshot-library.txt`，`feedback-capture.txt` |
-| B02 画笔/文字/撤销/完成/取消/像素 | 通过：默认 MIT 库文字框精确点在点击坐标、完成后 400×300 图片含文字像素；回退路径的画笔/文字/撤销/完成/取消与跨屏像素仍通过 | `docs/evidence/feedback-screenshot-library.txt`，`feedback-annotation.txt`，`feedback-recovery-panel.png` |
+| B01 暖截图耗时/绘制就绪 | 通过：默认 MIT 库首次触发→窗口 1054ms、UI 1114ms，第二次 warm 773ms；回退路径首/暖/跨屏 1007/938/817ms | `docs/evidence/feedback-screenshot-library.txt`，`feedback-capture.txt` |
+| B02 画笔/文字/撤销/完成/取消/像素 | 通过：默认 MIT 库文字框精确点在点击坐标、完成后 400×300 图片含 356 个文字像素；回退路径画笔/文字/撤销/完成/取消与跨屏像素仍通过 | `docs/evidence/feedback-screenshot-library.txt`，`feedback-annotation.txt`，`feedback-recovery-panel.png` |
 | B03 识图原因/开启后跑通 | 通过：gate 原因“请在设置中为当前文字模型勾选多模态”；真实配置开启后 1.1s 识图成功 | `docs/evidence/feedback-recognition.txt`，`vision-e2e.runtime.test.js` |
 | B04 三/五分钟采集与尾帧 | 通过：180s 样本测试 + 181.2s 隐藏窗真实采集；flush 后不再收帧 | `docs/evidence/feedback-asr.txt`，`audio-capture.runtime.test.js` |
 | B05 分段≤30s/完整覆盖/合并/失败路径 | 通过：5 分钟 10 段字节重建、3 分钟 6 段、真实 97s 4 段；打乱/截断/429/503/超时拒绝 | `docs/evidence/feedback-asr.txt`，`feedback-asr-live.txt` |
 | B06 恢复/重试/不自动粘贴/清理 | 通过：失败保留恢复，重试成功后才写剪贴板；恢复面板 300×306 内可命中 | `docs/evidence/feedback-asr.txt`，`feedback-recovery-panel.png` |
 | B07 原有回归 | 通过：41/41 单元测试文件；热键/录音/文字/Undo/剪贴板互斥保持 | 本报告 |
-| B08 便携包运行 | 通过：`Voice2Prompt-1.0.0-Portable.exe` 实际启动；桌宠截图打开打包后的 MIT 冻结屏，500×300 选区显示小浮条，右键取消恢复桌宠；资源包含库与 native 模块 | `docs/evidence/feedback-portable.txt` |
+| B08 便携包运行 | 通过：最终 `Voice2Prompt-1.0.0-Portable.exe`（75,721,706 bytes）实际启动；桌宠截图打开打包后的 MIT 冻结屏，500×300 选区显示小浮条，保存点击不锁死，右键取消恢复桌宠；资源包含库与 native 模块 | `docs/evidence/feedback-portable.txt` |
 
 ## 真实调用预算
 
@@ -75,7 +75,7 @@ V2P_ALLOW_REAL_CONFIG=1 node app/main/vision-e2e.runtime.test.js
 - 其他修复：重复 ok/cancel 防抖；热键截图成功消息改为 info 级别，不再触发错误样式；启动时预创建库实例（warm），并增加第二次捕获的 warm 计时测试；识图 gate/mock 不再读取真实配置，真实步骤仍需 `V2P_ALLOW_REAL_CONFIG=1`；ASR 后交付异常仍保留 recoveryId；超时错误信息改为通用 “Request timed out”；文档 41/41 与 asar:false 表述已修正。默认库路径的抓屏改由已验证的快速 capture worker 供图，避免 `node-screenshots` 在当前桌面会话偶发失败。
 - 残留风险：MIT 库窗口在冻结图送达前显示，理论上仍可能有短暂 live-desktop 闪烁；本轮未做高速摄像验证。`setOpacity` 在透明 kiosk 窗口上不可靠，已回退该方案。
 - **第二轮独立审查**（`docs/audits/feedback-v2-2.json`）判 **pass**，无 blocker/major。审查确认 save/timeout/windowClosed/fallback/重复事件/热键 toast/recoveryId/识图 hermetic 修复有效；并提示 60s 计时会误伤长标注、重复 Save、save dialog extreme case、worker-fed 路径缺单测。已修复：UI 就绪后取消 60s 计时；重复 Save 防抖；保存对话框前后切换 library 窗口 alwaysOnTop；新增 captureImage/worker-fed 单测。save dialog 永不返回仍作为 minor residual。
-- **屏幕 runtime 复跑阻塞**：审查修复期间 Windows 会话被锁定，`Graphics.CopyFromScreen` 报“句柄无效”，`node-screenshots` 报 desktop 错误；因此修复后的 `screenshot-library.runtime.test.js`、回退 runtime 与便携包冒烟需要在会话解锁后重跑。屏幕锁定前的证据（MIT 库文字点选、便携版小浮条）仍然有效，但不能替代修复后的最终 runtime。
+- **屏幕 runtime 复跑**：审查期间会话一度锁定（`CopyFromScreen` 报“句柄无效”），解锁后已复跑：主动路径 `screenshot-library.runtime.test.js` PASS（首次 1054/1114ms，warm 773ms，文字在 300/300，356 文字像素，最终 400×300）；回退 p3/native runtime PASS（1007/938/817ms，80×30 原生裁剪，恢复面板命中）；最终便携包启动并实测小浮条/取消。锁定期间的临时失败不作为产品结论。
 
 ## 环境与限制
 
@@ -86,4 +86,4 @@ V2P_ALLOW_REAL_CONFIG=1 node app/main/vision-e2e.runtime.test.js
 - 恢复面板的完整重试流程由生产 ASR e2e 的真实 renderer 点击覆盖；原生回退测试验证了 300×306 内布局、按钮可见和 `elementFromPoint` 命中 retry。
 - “无黑闪”依据是默认库先捕获后显示窗口，以及回退路径 ready 握手后才 show 的代码路径；并非高速摄像观测。
 - 真实 provider 调用只使用合成 TTS/验证图；没有上传用户桌面、录音或真实剪贴板内容。用户配置备份 `config.json.bak-vision-1793184768201` 保留在用户 profile 目录。
-- 便携包已构建并实测：`app/dist-exe/Voice2Prompt-1.0.0-Portable.exe`（75,637,263 bytes）。为让 MIT 库的预构建 HTML/静态资源从 `file://` 正常加载，构建配置使用 `"asar": false`；资源在 `resources/app/node_modules/...`，native `node-screenshots` 与 `uiohook-napi` 均已包含。实测便携版：桌宠截图 → 冻结屏 → 500×300 选区 → 小浮条显示 → 右键取消恢复桌宠。旧 v1 `Voice2Prompt-Screenshot-Vision.exe` 不得作为本轮交付包。
+- 便携包已构建并实测：`app/dist-exe/Voice2Prompt-1.0.0-Portable.exe`（75,721,706 bytes，最终修复后重建）。为让 MIT 库的预构建 HTML/静态资源从 `file://` 正常加载，构建配置使用 `"asar": false`；资源在 `resources/app/node_modules/...`，native `node-screenshots` 与 `uiohook-napi` 均已包含；联网下载 Electron 不稳定时使用本地 `electronDist=app/node_modules/electron/dist` 离线打包。实测便携版：桌宠截图 → 冻结屏 → 500×300 选区 → 小浮条显示 → 保存点击不锁死 → 右键取消恢复桌宠。旧 v1 `Voice2Prompt-Screenshot-Vision.exe` 不得作为本轮交付包。
