@@ -1,38 +1,38 @@
-# Release artifacts · v1.1.0
+# Release artifacts · v1.2.0
 
 两件产物都是自包含的：内置 Electron 运行时和 `app/vendor/` 下的全部第三方运行时代码，
 不需要 `npm install`、Node.js 或网络。
 
 | 文件 | 大小 | 用途 |
 |---|---|---|
-| `coding-accompany-pets-Setup-1.1.0.exe` | 74,696,207 bytes | NSIS 安装版；可选择安装目录，创建桌面快捷方式 |
-| `coding-accompany-pets-1.1.0-Portable.exe` | 74,347,051 bytes | 便携版；双击直接运行，不写安装目录 |
+| `coding-accompany-pets-Setup-1.2.0.exe` | 77,352,948 bytes | NSIS 安装版；可选择安装目录，创建桌面快捷方式 |
+| `coding-accompany-pets-1.2.0-Portable.exe` | 77,003,778 bytes | 便携版；双击直接运行，不写安装目录 |
 
 校验值见 `SHA256SUMS.txt`。
+
+## v1.2.0 主要变化
+
+- 第三方 Live2D / BongoCat 皮肤导入：设置页支持 zip / 文件夹，包内任意层级有 `*.model3.json` 即可。
+- 内置 DeepSeek 大肥鱼（MOC3 v6），打包产物已包含 Cubism Core 6.0.1。
+- 渲染统一 `sceneRoot`、自动裁边、按皮肤比例调整宠物窗、参数能力探测（单/双手、鼠标、嘴、呼吸）。
+- 设置页支持“复制到项目内置目录”，方便开发时把皮肤随仓库分发。
+- 内置皮肤来源与 BongoCat 生态致谢见根 README。
 
 ## 安装/运行
 
 - 安装版：双击 Setup，选择目录后安装；首次启动打开设置页。
 - 便携版：双击 Portable；首次启动同样打开设置页。
 - 配置、模型、录音恢复数据保存在 `%APPDATA%\Voice2Prompt`，与安装目录无关。
-  这是改名前的配置目录，1.1.0 显式沿用，升级不会丢模型和皮肤。
+  这是改名前的配置目录，1.1.0 起显式沿用，升级不会丢模型和皮肤。
 - 旧版配置会自动迁移：原来勾选“多模态”的文字模型会成为独立识图模型。
 - 安装版与旧版 `Voice2Prompt` 的 appId 不同，可以并存；确认新版可用后再卸载旧版。
 
 ## 验证记录（2026-10-29）
 
-- 单元测试 43/43 通过。
-- 关键运行时测试通过：
-  - 截图冻结屏 + 浮条 + 文字点选 + 剪贴板 PNG
-  - 桌宠截图前后真实鼠标拖拽（mousedown 不丢失）
-  - 识图按钮门控、气泡“正在读取图片中…”、结果写入剪贴板
-  - 设置页识图模型增删保存、旧配置迁移
-- 打包内容：`resources/app` 下无 `node_modules`，`vendor/` 含 electron-screenshots、
-  uiohook-napi、pixi 及两个 win32-x64 原生 `.node`。
-- 便携版启动正常；主进程 inspector 查询到
-  `app.getPath('userData') = %APPDATA%\Voice2Prompt`、`app name = coding-accompany-pets`、`version = 1.1.0`。
-- 安装版静默安装到 `D:\v2p\coding-accompany-pets-test`：退出码 0；安装目录内容完整，
-  启动后同样读取旧配置目录；随后静默卸载并删除测试目录，原 `D:\v2p\Voice2Prompt` 未受影响。
+- 单元测试通过：`skin-pack`、`pet-window-layout`、`pet-actions-ui`、`pet-status`。
+- 皮肤渲染通过：大肥鱼、内置键盘猫、罗小黑、小熊猫昊昊、小键盘、乃琳、阮梅、逍遥散人。
+- 打包内容：`resources/app` 下无 `node_modules`；`renderer/lib/live2dcubismcore.min.js` 228,042 bytes（Core 6.0.1）；`assets/models/deepseek` 3.1 MB。
+- `win-unpacked` 与 Portable 版均启动成功，并加载大肥鱼（窗口 376×465，状态“点我开始听”）。
 
 ## 说明
 

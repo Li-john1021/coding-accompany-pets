@@ -40,8 +40,8 @@
 |  | 🧩 安装版 | 🎒 便携版 |
 |---|---|---|
 | **适合** | 长期使用，想要桌面快捷方式 | 试用、放 U 盘、不想写安装目录 |
-| **文件** | [`coding-accompany-pets-Setup-1.1.0.exe`](https://github.com/Li-john1021/coding-accompany-pets/releases/download/v1.1.0/coding-accompany-pets-Setup-1.1.0.exe) | [`coding-accompany-pets-1.1.0-Portable.exe`](https://github.com/Li-john1021/coding-accompany-pets/releases/download/v1.1.0/coding-accompany-pets-1.1.0-Portable.exe) |
-| **大小** | 约 71 MB | 约 71 MB |
+| **文件** | [`coding-accompany-pets-Setup-1.2.0.exe`](https://github.com/Li-john1021/coding-accompany-pets/releases/download/v1.2.0/coding-accompany-pets-Setup-1.2.0.exe) | [`coding-accompany-pets-1.2.0-Portable.exe`](https://github.com/Li-john1021/coding-accompany-pets/releases/download/v1.2.0/coding-accompany-pets-1.2.0-Portable.exe) |
+| **大小** | 约 74 MB | 约 74 MB |
 | **怎么用** | 双击安装 → 从桌面/开始菜单启动 | 双击即运行，不写安装目录 |
 
 👉 也可以直接打开 [**Releases 页面**](https://github.com/Li-john1021/coding-accompany-pets/releases/latest) 下载。
@@ -117,7 +117,7 @@
 - **没有遥测、没有账号、没有后台偷偷上传。**
 - 只有你主动触发语音 / 识图时，才会把音频 / 图片发给你在设置里配置的模型端点。
 - 配置、模型、皮肤、录音恢复数据都在本机：`%APPDATA%\Voice2Prompt`。
-  - 这是改名前的目录名，1.1.0 特意沿用，升级不会丢配置。
+  - 这是改名前的目录名，1.1.0 起特意沿用，升级不会丢配置。
   - API Key 只做了 base64 轻度混淆，**不是加密**；别把 `config.json` 发到公开的地方。
 - 截图只写入系统剪贴板；识图结果也只写入剪贴板，不会自动替你发送。
 
@@ -134,7 +134,7 @@
 <details>
 <summary><b>为什么配置目录叫 Voice2Prompt，不是新名字？</b></summary>
 
-软件 1.1.0 改名成了 `coding-accompany-pets`，但配置目录沿用了旧路径，目的是让老用户的模型、皮肤和录音恢复数据无缝保留。以后如果迁移目录，会提供一次性迁移。
+软件从 1.1.0 起改名成了 `coding-accompany-pets`，但配置目录沿用了旧路径，目的是让老用户的模型、皮肤和录音恢复数据无缝保留。以后如果迁移目录，会提供一次性迁移。
 </details>
 
 <details>

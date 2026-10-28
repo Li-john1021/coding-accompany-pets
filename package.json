@@ -1,7 +1,7 @@
 {
   "name": "coding-accompany-pets",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "会听写、会截图、会识图的桌面编码搭子",
   "scripts": {
     "dist": "electron-builder --win portable nsis"

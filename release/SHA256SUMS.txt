@@ -1,2 +1,2 @@
-93a1600df0f0f9c48e0c1b954ae53ffdd0b2f9954d54fbebb541b2df793cae61 *coding-accompany-pets-1.1.0-Portable.exe
-d682d5dabb700073133d99ef79681c2b17fb9eb5ea25535cd7ef230127ced05c *coding-accompany-pets-Setup-1.1.0.exe
+b9fa0c7ae4099caa16fc02394c28145e889819cb493d3b94571421821009a90f *coding-accompany-pets-1.2.0-Portable.exe
+f6942e4e27061ebaa230ca4f19f50a32417977f6a17d00610581a36fe1c4ed7d *coding-accompany-pets-Setup-1.2.0.exe
