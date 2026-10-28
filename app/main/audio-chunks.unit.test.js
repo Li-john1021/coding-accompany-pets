@@ -62,7 +62,11 @@ async function run() {
   await test('AudioWorklet keeps 5 minutes of 48kHz input and flushes its final partial block', async () => {
     let Processor;
     const output = [];
-    const processorPort = { onmessage: null, postMessage(message) { if (message.type === 'pcm') output.push(message.samples); } };
+    const flushed = [];
+    const processorPort = { onmessage: null, postMessage(message) {
+      if (message.type === 'pcm') output.push(message.samples);
+      else if (message.type === 'flushed') flushed.push(message);
+    } };
     class WorkletBase { constructor() { this.port = processorPort; } }
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'renderer', 'audio-capture-worklet.js'), 'utf8'), {
       AudioWorkletProcessor: WorkletBase, sampleRate: 48000, registerProcessor: (_name, ctor) => { Processor = ctor; }, Float32Array, Math
@@ -75,12 +79,18 @@ async function run() {
       input.fill(offset < totalFrames / 3 ? 0.1 : offset < totalFrames * 2 / 3 ? 0.4 : -0.4);
       instance.process([[input]], [[new Float32Array(size)]]);
     }
-    instance.port.onmessage({ data: 'flush' });
+    instance.port.onmessage({ data: { type: 'flush', sessionId: 41 } });
     const captured = Float32Array.from(output.flatMap((block) => Array.from(block)));
     assert.equal(captured.length, Math.ceil(totalFrames * 16000 / 48000));
     assert.ok(captured[100] > 0.09 && captured[100] < 0.11);
     assert.ok(captured[16000 * 150] > 0.39 && captured[16000 * 150] < 0.41);
     assert.ok(captured[captured.length - 10] < -0.39 && captured[captured.length - 10] > -0.41);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(flushed)), [{ type: 'flushed', sessionId: 41 }]);
+    const stoppedLength = output.reduce((total, block) => total + block.length, 0);
+    instance.process([[new Float32Array(128).fill(0.9)]], [[new Float32Array(128)]]);
+    instance.port.onmessage({ data: { type: 'flush', sessionId: 41 } });
+    assert.equal(output.reduce((total, block) => total + block.length, 0), stoppedLength, 'no frames are captured after flush');
+    assert.equal(flushed.length, 1, 'a repeated flush is ignored');
   });
 
   await test('chat protocol sends valid per-chunk WAVs and concatenates results in request order', async () => {
@@ -136,6 +146,9 @@ async function run() {
       fetchImpl: async () => okJson({ choices: [{ finish_reason: 'stop', message: { content: ++silenceCalls === 1 ? '   ' : 'speech after pause' } }] })
     });
     assert.equal(withPause, 'speech after pause', 'valid silent segment does not discard later speech');
+    await assert.rejects(transcribeSmart(provider('chat'), makeWav(16000 * 31), 'x.wav', 'audio/wav', {
+      fetchImpl: async () => okJson({ choices: [{ finish_reason: 'stop', message: { content: '   ' } }] })
+    }), /没有识别到语音内容/, 'all-silent chunks report no speech instead of partial success');
     await assert.rejects(transcribeSmart(provider('chat'), makeWav(16000), 'x.wav', 'audio/wav', {
       fetchImpl: async () => okJson({ choices: [{ finish_reason: 'stop', message: {} }] })
     }), /返回为空/);
@@ -168,6 +181,10 @@ async function run() {
       assert.equal(restarted.get().id, second.id);
       assert.deepEqual(restarted.clear(second.id), { ok: true });
       assert.equal(restarted.get().id, null);
+      const blocked = path.join(dir, 'blocked');
+      fs.writeFileSync(blocked, 'not a directory');
+      recovery.initialize(blocked);
+      assert.throws(() => recovery.save(makeWav(1000)), 'recovery storage failures surface instead of claiming success');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

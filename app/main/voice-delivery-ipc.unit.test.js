@@ -1,11 +1,13 @@
 const assert = require('assert'); const fs = require('fs'); const vm = require('vm'); const path = require('path');
 const main = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
 function fixture() {
-  const handlers = {}; const deliveries = []; const states = [];
+  const handlers = {}; const deliveries = []; const states = []; const cleared = [];
   const cfg = { insertMode: 'clipboard', previewEnabled: false, previewSkipChars: 12 };
   const context = {
     Buffer, Object, String, Number, AbortController, voiceAbortController: null, recordingActive: false, voiceSubmissionActive: false, voiceDeliveryEpoch: 0,
-    audioRecovery: { clear() {}, get: () => ({ id: null }) },
+    audioRecovery: { clear(id) { cleared.push(id); }, get: () => ({ id: null }) },
+    clearRecovery: (id) => { if (id) { try { context.audioRecovery.clear(id); } catch {} } },
+    recoveryWarning: (result) => result?.recoveryError ? `恢复录音未保存：${result.recoveryError}` : '',
     voiceTargetPromise: null, pendingPreview: null, previewWin: null,
     imageWorkflow: { busy: false },
     config: { load: () => cfg }, resultDelivery: { busy: false, markDirty() {} },
@@ -29,7 +31,7 @@ function fixture() {
   const previewStart = main.indexOf("ipcMain.handle('v2p:preview-insert'"); const previewEnd = main.indexOf('// ---------------- 鼠标侧键', previewStart);
   vm.runInContext(main.slice(previewStart, previewEnd), context);
   const call = (name, payload) => handlers['v2p:' + name](null, payload);
-  return { context, cfg, deliveries, states, call };
+  return { context, cfg, deliveries, states, cleared, call };
 }
 (async () => {
   {
@@ -44,10 +46,21 @@ function fixture() {
     assert.equal(f.deliveries.length, 0);
   }
   {
-    const f = fixture(); const result = await f.call('submit', { audio: [1], options: { mode: 'none' } });
+    const f = fixture(); const baseRun = f.context.pipeline.run;
+    f.context.pipeline.run = async (...args) => ({ ...(await baseRun(...args)), recoveryId: 'recovery-ipc' });
+    const result = await f.call('submit', { audio: [1], options: { mode: 'none' } });
     assert.equal(result.ok, true); assert.equal(f.deliveries.length, 1); assert.equal(f.deliveries[0].original, ' initial raw ASR\n');
     assert.equal(f.deliveries[0].kind, 'voice');
     assert.equal(f.deliveries[0].text, 'processed voice'); assert.equal(f.context.voiceSubmissionActive, false);
+    assert.deepStrictEqual(f.cleared, ['recovery-ipc'], 'successful delivery clears its recovery recording');
+  }
+  {
+    const f = fixture();
+    f.context.pipeline.run = async () => ({ raw: 'r', polished: 'p', recoveryId: 'recovery-clear-error' });
+    f.context.audioRecovery.clear = () => { throw new Error('locked'); };
+    const result = await f.call('submit', { audio: [1], options: { mode: 'none' } });
+    assert.equal(result.ok, true, 'cleanup failure does not turn a successful delivery into an error');
+    assert.equal(f.deliveries.length, 1);
   }
   {
     const f = fixture(); f.cfg.previewEnabled = true; f.cfg.previewSkipChars = 120;
