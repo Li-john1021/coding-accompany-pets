@@ -174,13 +174,16 @@ function initializeScreenshotController() {
         id: display.id, ...display.nativeBounds
       })), { signal: screenshotController?.getSignal() });
       const captured = captures.map((display) => {
-        const dataUrl = `data:image/png;base64,${display.png}`;
-        const image = nativeImage.createFromDataURL(dataUrl);
-        const size = image.getSize();
-        if (image.isEmpty() || size.width !== display.width || size.height !== display.height) {
+        const png = Buffer.from(display.png, 'base64');
+        if (png.length < 24 || png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') {
+          throw new Error(`屏幕 ${display.id} 的捕获数据不是 PNG`);
+        }
+        const width = png.readUInt32BE(16);
+        const height = png.readUInt32BE(20);
+        if (width !== display.width || height !== display.height) {
           throw new Error(`屏幕 ${display.id} 的捕获尺寸与物理边界不符`);
         }
-        return { id: display.id, selectionBounds: { x: display.x, y: display.y, width: display.width, height: display.height }, dataUrl, pixelWidth: size.width, pixelHeight: size.height };
+        return { id: display.id, selectionBounds: { x: display.x, y: display.y, width: display.width, height: display.height }, dataUrl: `data:image/png;base64,${display.png}`, pixelWidth: width, pixelHeight: height };
       });
       return captured;
     },

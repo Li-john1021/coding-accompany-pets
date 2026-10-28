@@ -57,16 +57,23 @@ function createScreenshotController(adapters) {
       });
       session.screens = screens;
       session.done = new Promise((resolve) => { session.resolve = resolve; });
-      for (const screen of screens) {
-        const win = await adapters.createSelector({ token: session.token, screen, screens: screens.map(({ id, bounds, selectionBounds, pixelWidth, pixelHeight, dataUrl }) => ({ id, bounds, selectionBounds, pixelWidth, pixelHeight, dataUrl })) });
+      const selectorPayload = (screen) => ({
+        token: session.token, screen,
+        screens: screens.map(({ id, bounds, selectionBounds, pixelWidth, pixelHeight, dataUrl }) => ({ id, bounds, selectionBounds, pixelWidth, pixelHeight, dataUrl }))
+      });
+      const created = await Promise.allSettled(screens.map(async (screen) => {
+        const win = await adapters.createSelector(selectorPayload(screen));
         session.windows.push(win);
         session.senderIds.add(win.webContents.id);
-        if (session.abortController.signal.aborted) return { ok: false, reason: 'cancelled' };
         const onClosed = () => { if (!session.settled) session.resolve?.({ ok: false, reason: 'cancelled' }); };
         session.closedHandlers ||= new Map();
         session.closedHandlers.set(win, onClosed);
         win.on?.('closed', onClosed);
-      }
+        return win;
+      }));
+      const failure = created.find((outcome) => outcome.status === 'rejected');
+      if (failure) throw failure.reason;
+      if (session.abortController.signal.aborted) return { ok: false, reason: 'cancelled' };
       for (const win of session.windows) { win.show(); win.focus(); }
       const result = await session.done;
       if (session.abortController.signal.aborted) return { ok: false, reason: 'cancelled' };
