@@ -86,11 +86,14 @@ function createScreenshotLibrary(options = {}) {
   }
 
   function onSave(event, buffer) {
-    if (!pending || settling) { event.preventDefault(); return; }
+    if (!pending || settling || pending.saving) { event.preventDefault(); return; }
     event.preventDefault();
     const state = pending;
+    state.saving = true;
     clearTimeout(state.timer);
     const parent = instance?.$win && !instance.$win.isDestroyed() ? instance.$win : undefined;
+    try { parent?.setAlwaysOnTop(false); } catch { /* optional */ }
+    const restoreTop = () => { try { parent?.setAlwaysOnTop(true); } catch { /* optional */ } };
     let save;
     try {
       save = dialog.showSaveDialog(parent, {
@@ -98,12 +101,16 @@ function createScreenshotLibrary(options = {}) {
         filters: [{ name: 'PNG image', extensions: ['png'] }]
       });
     } catch (error) {
+      restoreTop();
       failPending(error);
       return;
     }
     Promise.resolve(save).then(({ canceled, filePath } = {}) => {
       if (pending !== state) return;
-      if (canceled || !filePath) { armTimer(state); return; }
+      if (canceled || !filePath) {
+        state.saving = false;
+        return;
+      }
       try {
         const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || []);
         const image = nativeImage.createFromBuffer(bytes);
@@ -114,7 +121,7 @@ function createScreenshotLibrary(options = {}) {
         return;
       }
       endAndSettle({ ok: false, reason: 'cancelled', saved: true });
-    }).catch((error) => { if (pending === state) failPending(error); });
+    }).catch((error) => { if (pending === state) failPending(error); }).finally(restoreTop);
   }
 
   function failPending(error) {
@@ -161,7 +168,9 @@ function createScreenshotLibrary(options = {}) {
     if (!ready) {
       trace('reveal failed');
       failPending(new Error('截图界面未就绪'));
+      return;
     }
+    if (pending) clearTimeout(pending.timer);
   }
 
   function capture(options = {}) {

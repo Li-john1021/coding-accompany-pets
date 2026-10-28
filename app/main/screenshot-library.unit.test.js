@@ -15,6 +15,7 @@ function fakeWindow(title, visible = true) {
     getTitle() { return this.title; },
     hide() { this.visible = false; this.hidden++; },
     show() { this.visible = true; this.shown++; },
+    setAlwaysOnTop() {},
     setOpacity(value) { this.opacity = value; },
     getOpacity() { return this.opacity; },
     once(name, callback) { if (name === 'closed') this.closedCallback = callback; }
@@ -24,14 +25,20 @@ function fakeWindow(title, visible = true) {
 class FakeScreenshots {
   static instance = null;
   static defaultStartError = null;
+  static defaultStartHang = false;
+  static defaultViewReady = true;
   constructor(options) {
     this.options = options;
     this.handlers = {};
     this.starts = 0;
     this.ends = 0;
     this.startError = FakeScreenshots.defaultStartError;
+    this.startHang = FakeScreenshots.defaultStartHang;
+    this.viewReady = FakeScreenshots.defaultViewReady;
     FakeScreenshots.defaultStartError = null;
-    this.$view = { webContents: { executeJavaScript: async () => true } };
+    FakeScreenshots.defaultStartHang = false;
+    FakeScreenshots.defaultViewReady = true;
+    this.$view = { webContents: { executeJavaScript: async () => this.viewReady ? true : '' } };
     this.$win = fakeWindow('screenshots', true);
     this.$win.opacity = 0;
     FakeScreenshots.instance = this;
@@ -41,6 +48,7 @@ class FakeScreenshots {
   startCapture() {
     this.starts++;
     if (this.startError) return Promise.reject(this.startError);
+    if (this.startHang) return new Promise(() => {});
     this.emit('windowCreated', this.$win);
     return Promise.resolve();
   }
@@ -73,7 +81,8 @@ function makeLibrary(windows, overrides = {}) {
     Screenshots,
     dialog: overrides.dialog || deps.dialog,
     fs: deps.fileSystem,
-    timeoutMs: overrides.timeoutMs
+    timeoutMs: overrides.timeoutMs,
+    captureImage: overrides.captureImage
   });
   return { library, ...deps };
 }
@@ -201,11 +210,23 @@ function makeLibrary(windows, overrides = {}) {
 
   {
     const pet = fakeWindow('pet', true);
+    FakeScreenshots.defaultStartHang = true;
     const { library } = makeLibrary([pet], { timeoutMs: 20 });
     const result = await library.capture();
     assert.equal(result.ok, false);
     assert.equal(result.reason, 'capture-failed');
     assert.match(result.error, /未响应/);
+    assert.equal(pet.visible, true);
+  }
+
+  {
+    const pet = fakeWindow('pet', true);
+    FakeScreenshots.defaultViewReady = false;
+    const { library } = makeLibrary([pet]);
+    const result = await library.capture();
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'capture-failed');
+    assert.match(result.error, /未就绪/);
     assert.equal(pet.visible, true);
   }
 
@@ -233,6 +254,23 @@ function makeLibrary(windows, overrides = {}) {
     assert.equal(FakeScreenshots.instance.starts, 1);
     FakeScreenshots.instance.emit('cancel', fakeEvent());
     await pending;
+  }
+
+  {
+    const pet = fakeWindow('pet', true);
+    let seen = null;
+    const { library } = makeLibrary([pet], {
+      captureImage: async (display) => { seen = display; return 'data:image/png;base64,fixture'; }
+    });
+    assert.equal(library.warm(), true);
+    const fake = FakeScreenshots.instance;
+    assert.equal(typeof fake.capture, 'function', 'captureImage overrides the library capture');
+    assert.equal(await fake.capture({ id: 7 }), 'data:image/png;base64,fixture');
+    assert.deepStrictEqual(seen, { id: 7 });
+    const pending = library.capture();
+    FakeScreenshots.instance.emit('cancel', fakeEvent());
+    assert.deepStrictEqual(await pending, { ok: false, reason: 'cancelled' });
+    assert.equal(pet.visible, true);
   }
 
   console.log('PASS screenshot library wrapper ok/cancel/save/timeout/close/duplicate/warm semantics');

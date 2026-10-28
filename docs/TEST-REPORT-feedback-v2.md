@@ -74,6 +74,7 @@ V2P_ALLOW_REAL_CONFIG=1 node app/main/vision-e2e.runtime.test.js
 - **无超时/窗口关闭兜底**：现在有 60s 上限、`windowClosed`/窗口 `closed` 监听，以及 2s 的 UI 绘制就绪检查；失败统一 settle 为 `capture-failed`，再由 main 回退到旧控制器。库 UI 静默空白不会再永久锁住 app。
 - 其他修复：重复 ok/cancel 防抖；热键截图成功消息改为 info 级别，不再触发错误样式；启动时预创建库实例（warm），并增加第二次捕获的 warm 计时测试；识图 gate/mock 不再读取真实配置，真实步骤仍需 `V2P_ALLOW_REAL_CONFIG=1`；ASR 后交付异常仍保留 recoveryId；超时错误信息改为通用 “Request timed out”；文档 41/41 与 asar:false 表述已修正。默认库路径的抓屏改由已验证的快速 capture worker 供图，避免 `node-screenshots` 在当前桌面会话偶发失败。
 - 残留风险：MIT 库窗口在冻结图送达前显示，理论上仍可能有短暂 live-desktop 闪烁；本轮未做高速摄像验证。`setOpacity` 在透明 kiosk 窗口上不可靠，已回退该方案。
+- **第二轮独立审查**（`docs/audits/feedback-v2-2.json`）判 **pass**，无 blocker/major。审查确认 save/timeout/windowClosed/fallback/重复事件/热键 toast/recoveryId/识图 hermetic 修复有效；并提示 60s 计时会误伤长标注、重复 Save、save dialog extreme case、worker-fed 路径缺单测。已修复：UI 就绪后取消 60s 计时；重复 Save 防抖；保存对话框前后切换 library 窗口 alwaysOnTop；新增 captureImage/worker-fed 单测。save dialog 永不返回仍作为 minor residual。
 - **屏幕 runtime 复跑阻塞**：审查修复期间 Windows 会话被锁定，`Graphics.CopyFromScreen` 报“句柄无效”，`node-screenshots` 报 desktop 错误；因此修复后的 `screenshot-library.runtime.test.js`、回退 runtime 与便携包冒烟需要在会话解锁后重跑。屏幕锁定前的证据（MIT 库文字点选、便携版小浮条）仍然有效，但不能替代修复后的最终 runtime。
 
 ## 环境与限制

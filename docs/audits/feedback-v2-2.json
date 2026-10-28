@@ -1,0 +1,91 @@
+{
+  "verdict": "pass",
+  "commit": "be165dbc509344d58f906e4b60404157a87abd65",
+  "scope": "Independent adversarial review of d979940..be165db (branch codex/screenshot-asr-feedback-v2). Verified the first-audit fixes F-001..F-011 in app/main/screenshot-library.js and its main.js integration (Save handling, bounded timeout, windowClosed/closed, UI-ready guard, fallback, duplicate-event settling, warm, worker-fed capture), the wrapper unit test, the hermetic vision gate/mock, the preload/pet toast contract, recovery-ID retention, generic timeout text, and the docs/evidence consistency (41/41, asar:false, transitives). No real provider calls and no user-config reads were made. Screen runtime tests and the portable exe were not run because the Windows session is locked (CopyFromScreen invalid handle).",
+  "tests_run": [
+    "for f in app/main/*.unit.test.js app/renderer/*.unit.test.js; do node \"$f\" || exit 1; done -> 41/41 PASS (0 failures)",
+    "node app/main/vision-e2e.runtime.test.js -> PASS image recognition gate and local request shape (real-config step skipped; V2P_ALLOW_REAL_CONFIG was not set; the gated block is the only real-config reader)",
+    "node app/main/asr-e2e.runtime.test.js -> PASS production ASR e2e (local mock only; six bounded chunks, 503 and finish_reason=length rejection, recovery retry without auto-paste)",
+    "inline fake-library probes (node -e, no files written): UI-ready failure -> capture-failed, endCapture called, pet restored; instance windowClosed -> capture-failed, pet restored; duplicate cancel -> one endCapture; save write failure -> capture-failed, pet restored; duplicate save -> two dialogs (gap); hanging save dialog -> capture never settles after the configured timeout and the pet stays hidden (gap)",
+    "NOT RUN (environment constraint): app/main/screenshot-library.runtime.test.js, app/main/screenshot-p3.runtime.test.js, app/main/screenshot-native.runtime.test.js, and the portable exe"
+  ],
+  "findings": [
+    {
+      "severity": "minor",
+      "id": "R2-01",
+      "file": "app/main/screenshot-library.js:182",
+      "issue": "The 60s capture timeout is armed before startCapture and is never disarmed after revealWhenPainted() confirms the UI is ready (:142-165). It therefore bounds the entire interactive annotation session, not just a silent startup failure: a user who spends more than 60s selecting/annotating is endCapture()d mid-edit, the selection is discarded, and main falls back to the legacy controller (main.js:245-246). This is bounded and recoverable, but it is a new user-visible abort introduced by the fix; the unit timeout test uses 20ms and does not exercise post-ready editing.",
+      "evidence": "app/main/screenshot-library.js:18 (DEFAULT_CAPTURE_TIMEOUT_MS=60000), :38-42 (armTimer), :41 (timeout -> failPending), :48 (clear only in settle), :142-165 (revealWhenPainted returns without clearing the timer), :182 (armTimer before startCapture); app/main/main.js:245-246 (legacy fallback on any non-ok/non-cancelled result); app/main/screenshot-library.unit.test.js:203-210 (20ms timeout test).",
+      "required_fix": "Clear or disable the interaction timeout once revealWhenPainted() succeeds (windowClosed/ok/cancel still settle the capture) or make the post-ready timeout explicitly long/documented; add a test that a capture remains pending past the configured timeout after the UI is ready."
+    },
+    {
+      "severity": "minor",
+      "id": "R2-02",
+      "file": "app/main/screenshot-library.js:92",
+      "issue": "onSave clears the pending timeout for the whole native save-dialog lifetime and only re-arms it if the dialog resolves cancelled (:106). If the native dialog never resolves or is not visible, the capture stays pending with all app windows hidden and imageWorkflow.busy=true indefinitely. The wrapper also does not mirror the third-party library's setAlwaysOnTop(false)/true around the dialog, even though the dialog's parent is the always-on-top kiosk screenshot window, so an obscured dialog is plausible (unverified on Windows in this locked session).",
+      "evidence": "app/main/screenshot-library.js:88-118 (clearTimeout at :92, showSaveDialog at :96, re-arm only at :106); app/node_modules/electron-screenshots/lib/index.js:305,317 (library toggles alwaysOnTop around its own save dialog); app/node_modules/electron-screenshots/lib/index.js:126-162 (screenshot window is alwaysOnTop and kiosk); inline probe with a never-resolving dialog and timeoutMs=30: settled=false, petVisible=false, ends=0 after the timeout would have fired.",
+      "required_fix": "Mirror the library's always-on-top toggle around the dialog (restore on both resolve and reject), and either keep a bounded save-dialog timeout (settle capture-failed so main falls back) or cancel the capture when the screenshot window closes. Add a unit case with a never-resolving dialog."
+    },
+    {
+      "severity": "nit",
+      "id": "R2-03",
+      "file": "app/main/screenshot-library.js:88",
+      "issue": "Duplicate save events are not guarded. onSave checks pending/settling, but settling is only set in endAndSettle after the dialog resolves (:55-63), so two SCREENSHOTS:save events before then both open native save dialogs. The wrapper eventually settles once, but the second dialog is orphaned. This is the remaining hole in the duplicate-event guard (ok/cancel are covered).",
+      "evidence": "app/main/screenshot-library.js:88-96 (no saving flag; settling is set only at :57); app/main/screenshot-library.unit.test.js:156-169 (duplicate ok only), :171-199 (single save events); inline probe: dialogs after duplicate save = 2, capture settled once via cancel.",
+      "required_fix": "Add a save-in-progress guard (a saving flag or set settling before opening the dialog) so duplicate save events are preventDefault/no-op, and add a duplicate-save unit test."
+    },
+    {
+      "severity": "minor",
+      "id": "R2-04",
+      "file": "app/main/main.js:157",
+      "issue": "The new default frozen-image source is not covered by any unit test: createScreenshotLibrary({captureImage}) -> screen.dipToScreenRect -> screenshotCaptureWorker is the primary capture path, but screenshot-library.unit.test.js never supplies captureImage and its FakeScreenshots.startCapture does not call this.capture(), so the override wiring and captureImage rejection/fallback are unverified. The post-fix runtime test that would exercise this path is blocked by the locked session. The code is simple and the worker itself is unit/runtime-verified, so this is a coverage gap rather than a demonstrated defect.",
+      "evidence": "app/main/main.js:157-163; app/main/screenshot-library.js:128-130 (instance.capture = options.captureImage); app/main/screenshot-library.unit.test.js:68-79 (makeLibrary passes no captureImage), :41-46 (FakeScreenshots.startCapture never calls capture); the runtime test is app/main/screenshot-library.runtime.test.js (not runnable).",
+      "required_fix": "Add a unit test whose fake startCapture calls this.capture(display), assert the captureImage override is invoked, and assert a rejected captureImage settles as capture-failed and triggers the legacy fallback. Rerun the runtime test after unlock."
+    },
+    {
+      "severity": "nit",
+      "id": "R2-05",
+      "file": "app/main/screenshot-library.unit.test.js:188",
+      "issue": "The save-cancel test and the docs state that canceling Save keeps the capture UI usable, but the prebuilt UI resets the selection and toolbar in the renderer immediately after sending SCREENSHOTS:save, before the dialog result. On cancel the wrapper correctly keeps the capture pending and re-arms the timer, but the user must make a new selection; the unit test's manual cancel event does not model this renderer reset.",
+      "evidence": "app/node_modules/react-screenshots/lib/Screenshots/operations/Save/index.js:16-29 (clearSelect, composeImage, call('onSave'), reset()); app/main/screenshot-library.unit.test.js:188-200; docs/TEST-REPORT-feedback-v2.md:73; docs/evidence/feedback-screenshot-library.txt:35.",
+      "required_fix": "Correct the test/docs wording (the capture remains open but the selection is cleared), or provide a recovery affordance if the stock reset is not acceptable."
+    },
+    {
+      "severity": "nit",
+      "id": "R2-06",
+      "file": "app/main/screenshot-library.unit.test.js:217",
+      "issue": "Coverage gaps in the wrapper unit test: only the per-window 'closed' callback is exercised; the instance-level 'windowClosed' handler, the revealWhenPainted failure ('' -> failPending), and the save dialog/write error paths are untested. Inline probes confirm these paths behave correctly, but they are not automated.",
+      "evidence": "app/main/screenshot-library.unit.test.js:217-223 (closedCallback only); app/main/screenshot-library.js:138 (windowClosed), :161-164 (UI-ready failure), :100-117 (save errors); inline probes: ui-ready-fail -> capture-failed/ends=1, windowClosed -> capture-failed/ends=1, savefail -> capture-failed/ends=1.",
+      "required_fix": "Add unit cases for windowClosed, UI-ready failure, and save write/dialog failure."
+    },
+    {
+      "severity": "nit",
+      "id": "R2-07",
+      "file": "docs/evidence/feedback-screenshot-library.txt:30",
+      "issue": "Documentation inconsistency remains: line 30 says the portable must 'include/unpack' node-screenshots and describes the library's native-capture/Electron desktopCapturer fallback, but the build now uses asar:false and the app overrides the library capture with screenshotCaptureWorker, so that library fallback is not the app path. The main report was corrected for 41/41 and asar:false, but this evidence line was missed. In addition, TEST-REPORT B08 still marks the portable as passing while the post-audit note says the artifact is pre-fix and not the final deliverable (the portable evidence file clarifies this).",
+      "evidence": "docs/evidence/feedback-screenshot-library.txt:30; docs/TEST-REPORT-feedback-v2.md:29,83; docs/evidence/feedback-portable.txt:28-30; app/main/main.js:157-163.",
+      "required_fix": "Update the stale known-limits line (asar:false; worker-fed default capture) and label B08 as the pre-fix build."
+    },
+    {
+      "severity": "nit",
+      "id": "R2-08",
+      "file": "app/renderer/pet.js:628",
+      "issue": "Info-level toasts no longer set the pet to error, but they do not clear a pre-existing error state or schedule an idle transition; a screenshot success after a previous error leaves the status element showing '❌ 出错了' while the bubble says the screenshot was copied. There is also no unit test for the new object payload/level contract.",
+      "evidence": "app/preload.js:65 (cb(p)); app/renderer/pet.js:628-634 (info only calls say()); app/main/main.js:148; no v2p:toast test in the 41 unit files (only the mock at app/main/pet-action-renderer-epoch.unit.test.js:47).",
+      "required_fix": "For info-level toasts set a non-error state (e.g., idle/done) or scheduleIdle, and add a renderer/preload contract test."
+    }
+  ],
+  "residual_risks": [
+    "Locked Windows session: the post-fix screen runtime (app/main/screenshot-library.runtime.test.js, screenshot-p3.runtime.test.js, screenshot-native.runtime.test.js) and the portable exe smoke could not be run (Graphics.CopyFromScreen returns 'invalid handle'). The code and 41/41 unit suite are sound, but the worker-fed default capture, warm second-capture timings, real Save button/dialog behavior, hide-before-capture compositor behavior, and the rebuilt portable remain unverified after the fixes.",
+    "The Save path bounds normal use, but the native save dialog is trusted to resolve: the pending timeout is cleared while it is open and main's fallback is not reached until it resolves. If the dialog is obscured (always-on-top/kiosk parent; the wrapper does not mirror the library's setAlwaysOnTop(false) toggle) or hangs, the capture can stay pending with app windows hidden; pressing Esc on the focused dialog should cancel it, but this is not proven in the locked session.",
+    "The 60s timeout also caps interactive annotation; a slow user can lose an in-progress selection and be switched to the legacy screenshot UI (R2-01). This is bounded and recoverable, not a permanent lock.",
+    "The no-flash property is still only documented, not fixed: the library shows its transparent window before the frozen image is sent/painted (revealWhenPainted only checks after the fact), and the setOpacity workaround was reverted. No high-speed capture was performed.",
+    "The default library path is single-display (cursor display) by design; the worker-fed dipToScreenRect -> physical bounds mapping and the frozen-image crop/text scaling were validated on the 100% primary display pre-fix, not on the 125% secondary and not post-fix.",
+    "The wrapper's hide() of app windows is not followed by a compositor wait; the worker captures immediately, so a pet/settings ghost in the frozen image was not observed but is not asserted, and the post-fix runtime that would assert it is blocked.",
+    "Real-provider claims (multimodal flag change, config.json.bak-vision-1793184768201, one real vision call, four real ASR calls) were not independently reverified: no real calls were made and the user profile was not read. The hermetic gate/mock passed; the frozen evidence is only code-consistent.",
+    "The portable artifact app/dist-exe/Voice2Prompt-1.0.0-Portable.exe is the pre-fix build; docs correctly mark it as not final, but it must be rebuilt and smoked after unlock. asar:false exposes plain source/node_modules in the package (accepted for this local build).",
+    "The unit suite covers the wrapper but not the Electron integration of the new captureImage override; the lock/fallback behavior of the real library UI with the wrapper (including real save-dialog presentation) depends on the blocked runtime test.",
+    "The node-screenshots and uiohook-napi native x64 Windows binaries tie the portable to that ABI/OS; unrelated to this fix but still a delivery constraint."
+  ],
+  "notes": "No real provider calls, no V2P_ALLOW_REAL_* env vars, no user-config reads, no secrets printed, and no files modified except this audit. Unit suite reproduced 41/41 PASS; vision gate/mock PASS (real step skipped) and ASR local-mock e2e PASS. First-audit verification: F-001 is addressed by the explicit Save handler (preventDefault, save dialog, PNG write, endCapture, settle; unit tests cover success and cancel) with the caveats R2-02/R2-03/R2-05; F-002 is addressed by the 60s timeout, windowClosed/per-window closed handlers, 2s UI-ready check, and main's capture-failed fallback (the new caveats are R2-01, the timeout covers editing, and R2-02, the save dialog clears it); F-003 is addressed for ok/cancel by the settling guard and duplicate-ok test (save remains unguarded, R2-03); F-004 is addressed by the level:'info' toast and pet.js handling both object and string payloads (no automated toast test, R2-08); F-005 is addressed by startup warm() plus a second-capture runtime measurement, but the post-fix runtime is blocked (residual); F-006 is verified: the default vision run does not read %APPDATA%/Voice2Prompt/config.json, and the real step is behind V2P_ALLOW_REAL_CONFIG; F-007 is addressed by pendingRecoveryId in main.js and the new voice-delivery IPC test; F-008 remains a documented residual (window shows before the frozen image, no high-speed verification) and was not code-fixed; F-009 is addressed in the main report (41/41, asar:false, transitives) with one stale evidence line (R2-07); F-010 is fixed by the generic 'Request timed out' text in models.js; F-011 no longer applies because the legacy capture worker is now the freeze source for the default library path and is warmed accordingly. The default-path code and unit suite are sound; the verdict is pass with the minor/nit improvements above, and the locked-session screen/portable rerun is a documented residual risk rather than a blocker."
+}
