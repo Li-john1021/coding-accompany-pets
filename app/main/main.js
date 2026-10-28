@@ -22,6 +22,7 @@ const { createScreenshotController } = require('./screenshot');
 const { createScreenshotLibrary } = require('./screenshot-library');
 const { showAndStabilize } = require('./window-restore');
 const { createImageWorkflow } = require('./image-workflow');
+const visionTarget = require('./vision-target');
 const screenshotGeometry = require('./screenshot-geometry');
 const { createScreenshotCaptureWorker } = require('./screenshot-capture-worker');
 const screenshotCaptureWorker = createScreenshotCaptureWorker();
@@ -249,13 +250,10 @@ function initializeScreenshotController() {
   imageWorkflow = createImageWorkflow({
     capture: captureScreenshot,
     getProvider: () => {
-      try { return pipeline.findProvider('llm'); } catch { return null; }
+      const provider = visionTarget.activeVisionProvider(config.load());
+      return provider ? { ...provider, apiKey: config.unmask(provider.apiKey) } : null;
     },
-    getProviderStatus: () => {
-      const cfg = config.load();
-      const provider = cfg.llmProviders.find((entry) => entry.id === cfg.activeLlmId);
-      return provider ? { baseUrl: provider.baseUrl, model: provider.model, multimodal: provider.multimodal === true } : null;
-    },
+    getProviderStatus: () => visionTarget.visionProviderStatus(config.load()),
     hasImage: () => { try { return !clipboard.readImage().isEmpty(); } catch { return false; } },
     readImage: () => { const image = clipboard.readImage(); return image.isEmpty() ? null : image.toPNG(); },
     transcribeImage: (provider, png, opts) => models.transcribeImage(provider, png, opts),
@@ -488,7 +486,7 @@ function registerIpc() {
     if (!fromPetMainFrame(event) || !imageWorkflow) return { ok: false, reason: 'unauthorized' };
     return imageWorkflow.runScreenshot();
   });
-  ipcMain.handle('v2p:get-image-state', (event) => fromPetMainFrame(event) && imageWorkflow ? imageWorkflow.state() : { eligible: false, hasImage: false, providerReady: false, multimodal: false, busy: false, stage: 'idle', error: '' });
+  ipcMain.handle('v2p:get-image-state', (event) => fromPetMainFrame(event) && imageWorkflow ? imageWorkflow.state() : { eligible: false, hasImage: false, providerReady: false, busy: false, stage: 'idle', error: '' });
   ipcMain.handle('v2p:recognize-image', (event) => fromPetMainFrame(event) && imageWorkflow ? imageWorkflow.recognize() : { ok: false, error: 'unauthorized' });
   ipcMain.on('v2p:screenshot:pointer', (event, payload) => screenshotController?.pointer(event, payload));
   ipcMain.on('v2p:screenshot:cancel', (event, payload) => screenshotController?.cancel(event, payload));
@@ -499,6 +497,7 @@ function registerIpc() {
     // 下发给设置页时解码 apiKey，便于编辑；保存时渲染层重新编码回传
     cfg.asrProviders = cfg.asrProviders.map((p) => ({ ...p, apiKey: config.unmask(p.apiKey) }));
     cfg.llmProviders = cfg.llmProviders.map((p) => ({ ...p, apiKey: config.unmask(p.apiKey) }));
+    cfg.visionProviders = (Array.isArray(cfg.visionProviders) ? cfg.visionProviders : []).map((p) => ({ ...p, apiKey: config.unmask(p.apiKey) }));
     return cfg;
   });
 
@@ -526,7 +525,7 @@ function registerIpc() {
     // 注意：渲染层传来的 apiKey 已是明文（get-config 时解码过），此处不得再 unmask
     try {
       if (kind === 'asr') return await models.validateAsr(provider);
-      if (kind === 'image-vision' || (kind === 'llm' && provider?.multimodal === true)) return await models.validateImageVision(provider);
+      if (kind === 'image-vision') return await models.validateImageVision(provider);
       return await models.validateLlm(provider);
     } catch (err) {
       return { ok: false, error: String(err.message || err).slice(0, 200) };

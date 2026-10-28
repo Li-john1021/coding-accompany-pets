@@ -95,7 +95,9 @@ async function transcribeImage(provider, pngBuffer, opts = {}) {
 }
 
 async function validateImageVision(provider, opts = {}) {
-  if (!provider || provider.multimodal !== true) return { ok: false, error: '请先声明此模型支持多模态图片输入' };
+  if (!provider || !String(provider.baseUrl || '').trim() || !String(provider.model || '').trim()) {
+    return { ok: false, error: '请先填写识图模型的 Base URL 和模型名' };
+  }
   try {
     const pngBuffer = opts.pngBuffer || require('fs').readFileSync(require('path').join(__dirname, 'vision-validation.png'));
     const text = await transcribeImage(provider, pngBuffer, opts);

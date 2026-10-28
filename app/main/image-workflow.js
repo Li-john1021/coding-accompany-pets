@@ -13,9 +13,9 @@ function createImageWorkflow(deps) {
     let hasImage = false;
     try { hasImage = !!deps.hasImage(); } catch { }
     const available = !disposed && !busy && !conflicting();
-    const reason = !available ? '已有操作正在进行，请稍后识图' : !ready ? '请先在设置中配置当前文字模型' : provider.multimodal !== true ? '请在设置中为当前文字模型勾选“多模态”' : !hasImage ? '请先截图或复制图片' : '';
-    return { eligible: available && ready && provider.multimodal === true && hasImage, canScreenshot: available,
-      hasImage, providerReady: ready, multimodal: !!(provider && provider.multimodal === true), busy, stage, error, reason };
+    const reason = !available ? '已有操作正在进行，请稍后识图' : !ready ? '请先在设置中配置识图模型' : !hasImage ? '请先截图或复制图片' : '';
+    return { eligible: available && ready && hasImage, canScreenshot: available,
+      hasImage, providerReady: ready, busy, stage, error, reason };
   }
   function publish() { try { deps.onState?.(state()); } catch { /* A closed UI must not strand the operation lock. */ } }
   function admitted() { return !disposed && !busy && !conflicting(); }
@@ -42,7 +42,7 @@ function createImageWorkflow(deps) {
     try {
       const selected = deps.getProvider();
       provider = selected ? { ...selected } : null;
-      if (!provider || !String(provider.baseUrl || '').trim() || !String(provider.model || '').trim() || provider.multimodal !== true) throw new Error('当前文字模型未配置为多模态模型');
+      if (!provider || !String(provider.baseUrl || '').trim() || !String(provider.model || '').trim()) throw new Error('当前识图模型未配置');
       const image = deps.readImage();
       if (!image || !image.length) throw new Error('剪贴板中没有图片');
       png = Buffer.from(image);

@@ -15,14 +15,14 @@ const vm = require('vm');
     models: Object.fromEntries(['validateAsr', 'validateLlm', 'validateImageVision'].map(name =>
       [name, async provider => { calls.push({ name, provider }); return { ok: true }; }]))
   });
-  const provider = { model: 'fixture', multimodal: true };
+  const provider = { model: 'fixture', baseUrl: 'http://local/v1' };
   await handler(null, { kind: 'llm', provider });
-  assert.equal(calls.pop().name, 'validateImageVision', 'existing settings button probes images for a checked LLM');
-  await handler(null, { kind: 'llm', provider: { ...provider, multimodal: false } });
-  assert.equal(calls.pop().name, 'validateLlm', 'unchecked text models retain text ping');
+  assert.equal(calls.pop().name, 'validateLlm', 'text models always use the text ping');
+  await handler(null, { kind: 'llm', provider: { ...provider, multimodal: true } });
+  assert.equal(calls.pop().name, 'validateLlm', 'a legacy multimodal field no longer changes text validation');
   await handler(null, { kind: 'asr', provider });
   assert.equal(calls.pop().name, 'validateAsr', 'ASR validation remains independent');
   await handler(null, { kind: 'image-vision', provider });
   assert.equal(calls.pop().name, 'validateImageVision');
-  console.log('PASS settings validation IPC routes declared multimodal models to image probe');
+  console.log('PASS settings validation IPC routes the vision list to the image probe');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -97,7 +97,7 @@ function updateActionButtons() {
     else button.removeAttribute('aria-busy');
   }
   if (imageHelp) {
-    const needsSetup = imageState?.hasImage && !imageState.busy && !voiceBusy && (!imageState.providerReady || !imageState.multimodal);
+    const needsSetup = imageState?.hasImage && !imageState.busy && !voiceBusy && !imageState.providerReady;
     imageHelp.style.display = needsSetup ? 'block' : 'none';
     imageHelp.textContent = needsSetup ? `${imageState.reason}（点此设置）` : '';
   }

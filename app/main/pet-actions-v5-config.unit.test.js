@@ -17,21 +17,35 @@ for (const insertMode of ['paste', 'clipboard']) {
   const f = fixture({ insertMode, promptText: legacy, llmProviders: [{ id: 'legacy', model: 'chat' }] });
   assert.equal(f.config.load().promptText, prompts.DEFAULT_PROMPT);
   assert.equal(f.config.load().screenshotHotkey, 'Alt+A');
-  assert.equal(f.config.load().llmProviders[0].multimodal, false);
+  assert.equal('multimodal' in f.config.load().llmProviders[0], false);
+  assert.equal(f.config.load().visionProviders.length, 0);
   assert.equal(f.config.load().undoToastSeconds, 10);
   f.config.load().screenshotHotkey = 'Control+Alt+S';
-  f.config.load().llmProviders.push({ id: 'vision', multimodal: true });
   f.config.save();
   assert.equal(f.disk().insertMode, insertMode);
   assert.equal(f.disk().screenshotHotkey, 'Control+Alt+S');
-  assert.equal(f.disk().llmProviders[0].multimodal, false);
-  assert.equal(f.disk().llmProviders[1].multimodal, true);
   assert.equal(f.disk().promptText, prompts.DEFAULT_PROMPT);
   assert.equal('autoPaste' in f.disk(), false);
 }
-for (const value of [undefined, null, 1, 'true', false]) {
-  const f = fixture({ llmProviders: [{ id: 'model', multimodal: value }] });
-  assert.equal(f.config.load().llmProviders[0].multimodal, false);
+{
+  const f = fixture({
+    activeLlmId: 'm',
+    llmProviders: [{ id: 'm', name: 'MiMo', model: 'mimo-v2.6-flash', baseUrl: 'https://api.example/v1', apiKey: 'b64:a2V5', multimodal: true }]
+  });
+  const loaded = f.config.load();
+  assert.equal('multimodal' in loaded.llmProviders[0], false, 'the legacy text-model flag is removed');
+  assert.equal(loaded.visionProviders.length, 1, 'the active multimodal model becomes a vision provider');
+  assert.equal(loaded.activeVisionId, loaded.visionProviders[0].id);
+  assert.equal(loaded.visionProviders[0].model, 'mimo-v2.6-flash');
+  assert.equal(loaded.visionProviders[0].apiKey, 'b64:a2V5');
+  assert.equal(f.disk().visionProviders.length, 1, 'migration persists immediately');
+  assert.equal('multimodal' in f.disk().llmProviders[0], false);
+}
+for (const flag of [undefined, null, false]) {
+  const f = fixture({ llmProviders: [{ id: 'model', multimodal: flag }] });
+  const loaded = f.config.load();
+  assert.equal('multimodal' in loaded.llmProviders[0], false);
+  assert.equal(loaded.visionProviders.length, 0, 'text-only configs do not invent a vision provider');
 }
 for (const [value, expected] of [[-10, 1], [0, 1], [1.9, 1], [121, 120], ['22', 22], ['bad', 10]]) {
   const f = fixture({ promptText: legacy + '\ncustom', undoToastSeconds: value });

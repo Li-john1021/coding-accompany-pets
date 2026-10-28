@@ -95,3 +95,14 @@ V2P_ALLOW_REAL_CONFIG=1 node app/main/vision-e2e.runtime.test.js
 2. **识图点击无反馈/用不了**：识图链路本身正常（真实 `mimo-v2.6-flash` 对 900×560 合成图 3649ms 正确转写；本地 mock 端到端通过）。不可用的原因是未满足条件时按钮 disabled，点击没有任何反馈。现在不可用时仍可点击并弹原因气泡；可用时点击立即弹“正在读取图片中…”，成功后显示“识图完成，文字已复制”，失败显示真实错误。
 
 回归：单元 42/42 PASS；默认截图+识图 UI runtime PASS；旧控制器 p3/native runtime PASS。未改 ASR，未上传用户桌面/录音，视觉真实调用仅用合成图。证据：`docs/evidence/feedback-ui-fixes.txt`。
+
+## 独立识图模型（2026-10-29）
+
+按要求把识图从文字模型中彻底拆开，并移除文字模型上的“多模态”勾选：
+
+- 配置新增 `visionProviders` / `activeVisionId`；设置页新增独立“识图模型”卡片（增删、勾选当前、独立校验）。文字模型只负责文字，纯文本模型也能配合独立视觉模型识图。
+- 旧配置迁移：`multimodal === true` 的激活文字模型自动复制为识图模型（保留 endpoint/model/key），随后删除 `multimodal` 字段；迁移在配置加载时完成并立即保存。用户当前的 MiMo 配置会自动成为识图模型，无需手工重配。
+- 识图门控只检查识图模型的 baseUrl/model；错误文案改为“请先在设置中配置识图模型”。`models.validateImageVision` 不再要求 multimodal 声明。
+- 兼容性更新：P5 E2E 改为验证 vision-a/vision-b 切换与“文字模型切换不影响识图”；设置 E2E 改为验证识图列表持久化；`pet-restore-ui` 使用独立 visionProviders；旧截图测试继续通过。
+- 回归：单元 43/43 PASS；vision gate/mock PASS；settings E2E 四场景 PASS；P5 vision E2E PASS；pet-restore-ui PASS；p3/native PASS。本轮无真实 provider 调用。
+- 证据：`docs/evidence/feedback-vision-settings.txt`。

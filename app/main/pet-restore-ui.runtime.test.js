@@ -195,11 +195,14 @@ async function run() {
   await new Promise((resolve) => mock.server.listen(0, '127.0.0.1', resolve));
   const port = mock.server.address().port;
   fs.writeFileSync(path.join(directory, 'config.json'), JSON.stringify({
-    asrProviders: [], llmProviders: [{
-      id: 'fixture-llm', name: 'fixture', baseUrl: `http://127.0.0.1:${port}/v1`,
-      apiKey: '', model: 'fixture-llm', multimodal: true
-    }],
+    asrProviders: [],
+    llmProviders: [{ id: 'fixture-llm', name: 'fixture', baseUrl: 'http://127.0.0.1:9/v1', apiKey: '', model: 'fixture-llm' }],
     activeAsrId: '', activeLlmId: 'fixture-llm',
+    visionProviders: [{
+      id: 'fixture-vision', name: 'fixture-vision', baseUrl: `http://127.0.0.1:${port}/v1`,
+      apiKey: '', model: 'fixture-llm'
+    }],
+    activeVisionId: 'fixture-vision',
     hotkey: 'Control+Shift+F11', screenshotHotkey: 'Control+Alt+F11', petModel: 'keyboard', petScale: 1,
     mouseRecord: false, triggerMode: 'hold', insertMode: 'clipboard', previewEnabled: false
   }));

@@ -53,7 +53,15 @@ async function fixture() {
       await waitFor(() => settings.webContents.executeJavaScript("!!document.querySelector('#prompt-text').value && document.querySelector('#pet-model').options.length > 0"), 'settings loaded via IPC');
     }
     const state = () => settings.webContents.executeJavaScript("({checked:document.querySelector('#insert-mode').checked,seconds:Number(document.querySelector('#undo-toast-seconds').value)})");
-    const visionState = () => settings.webContents.executeJavaScript("({hotkey:document.querySelector('#screenshot-hotkey').value,multimodal:document.querySelector('#llm-list .f-multimodal')?.checked ?? false})");
+    const visionState = () => settings.webContents.executeJavaScript(`(() => {
+      const row = document.querySelector('#vision-list .provider-row');
+      return {
+        hotkey: document.querySelector('#screenshot-hotkey').value,
+        visionCount: document.querySelectorAll('#vision-list .provider-row').length,
+        visionModel: row ? row.querySelector('.f-model').value : '',
+        visionActive: row ? row.querySelector('input[type=radio]').checked : false
+      };
+    })()`);
     const persisted = () => JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8'));
     async function click(selector) {
       // HTMLElement.click performs checkbox activation and production listeners
@@ -80,7 +88,7 @@ async function fixture() {
       await reopen({ checked, seconds: expectedSeconds });
     }
     async function saveVisionSettings() {
-      await click('#llm-add');
+      await click('#vision-add');
       await settings.webContents.executeJavaScript("document.querySelector('.hotkey-capture[data-target=\"screenshot-hotkey\"]').click()");
       await waitFor(() => settings.webContents.executeJavaScript("document.querySelector('.hotkey-capture[data-target=\"screenshot-hotkey\"]').textContent.includes('正在监听')"), 'screenshot recorder started');
       await settings.webContents.executeJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");
@@ -91,26 +99,34 @@ async function fixture() {
       await settings.webContents.executeJavaScript('window.__captureTimers.shift()()');
       const capture = await visionState();
       assert.equal(capture.hotkey, 'Alt+Shift+S', 'screenshot recorder captures its own field');
-      await settings.webContents.executeJavaScript("(() => {const row=document.querySelector('#llm-list .provider-row');row.querySelector('.f-model').value='fixture-model';row.querySelector('.f-multimodal').checked=true;})()");
+      await settings.webContents.executeJavaScript(`(() => {
+        const row = document.querySelector('#vision-list .provider-row');
+        row.querySelector('.f-name').value = 'fixture-vision';
+        row.querySelector('.f-url').value = 'http://127.0.0.1:9/v1';
+        row.querySelector('.f-model').value = 'fixture-model';
+        row.querySelector('input[type=radio]').click();
+      })()`);
       await click('#save');
       await waitFor(() => settings.webContents.executeJavaScript("document.querySelector('#save-tip').textContent.includes('已保存')"), 'vision settings save completed');
       const disk = persisted();
       assert.equal(disk.screenshotHotkey, 'Alt+Shift+S');
-      assert.equal(disk.llmProviders[0].multimodal, true);
-      assert.deepStrictEqual(await visionState(), { hotkey: 'Alt+Shift+S', multimodal: true });
+      assert.equal(disk.visionProviders.length, 1);
+      assert.equal(disk.visionProviders[0].model, 'fixture-model');
+      assert.equal(disk.activeVisionId, disk.visionProviders[0].id);
+      assert.deepStrictEqual(await visionState(), { hotkey: 'Alt+Shift+S', visionCount: 1, visionModel: 'fixture-model', visionActive: true });
       settings.close();
       await waitFor(() => settings.isDestroyed(), 'settings closed after vision save');
       await open();
-      assert.deepStrictEqual(await visionState(), { hotkey: 'Alt+Shift+S', multimodal: true }, 'vision settings persist after settings window recreation');
+      assert.deepStrictEqual(await visionState(), { hotkey: 'Alt+Shift+S', visionCount: 1, visionModel: 'fixture-model', visionActive: true }, 'vision settings persist after settings window recreation');
     }
     await open();
     if (restart) {
       assert.deepStrictEqual(await state(), { checked: false, seconds: 37 }, 'fresh Electron process loads saved values from disk');
-      assert.deepStrictEqual(await visionState(), { hotkey: 'Alt+Shift+S', multimodal: true }, 'fresh Electron process loads vision settings');
+      assert.deepStrictEqual(await visionState(), { hotkey: 'Alt+Shift+S', visionCount: 1, visionModel: 'fixture-model', visionActive: true }, 'fresh Electron process loads vision settings');
     } else {
       assert.deepStrictEqual(await state(), { checked: scenario === 'default', seconds: 10 }, 'default 10 and canonical/legacy mode load');
       assert.equal((await visionState()).hotkey, 'Alt+A', 'legacy config defaults screenshot hotkey');
-      assert.equal((await visionState()).multimodal, false, 'missing legacy capability is unchecked');
+      assert.equal((await visionState()).visionCount, 0, 'no vision provider is invented from a text-only config');
       await saveVisionSettings();
       if (scenario === 'legacy-clipboard') await save(false, 10, 10);
       await save(false, 37, 37);
@@ -153,7 +169,7 @@ async function child(directory, scenario, restart) {
         const result = JSON.parse(line.slice(PREFIX.length));
         assert.equal(result.ok, true, result.error);
         assert.equal(code, 0);
-        console.log('PASS production settings UI ' + scenario + (restart ? ' fresh-process persistence' : ' checkbox/save/reopen/duration bounds'));
+        console.log('PASS production settings UI ' + scenario + (restart ? ' fresh-process persistence' : ' vision list/save/reopen/duration bounds'));
         resolve();
       } catch (error) { reject(error); }
     });

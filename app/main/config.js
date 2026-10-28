@@ -54,6 +54,8 @@ function defaultConfig() {
     llmProviders: [],
     activeAsrId: '',
     activeLlmId: '',
+    visionProviders: [],    // 识图模型，独立于文字模型：[{id,name,baseUrl,apiKey,model}]
+    activeVisionId: '',
     hotkey: 'Control+Shift+Space',
     screenshotHotkey: 'Alt+A',
     triggerMode: 'hold',    // 宠物交互方式：hold=长按录音（拖动取消）| click=单击开始，再单击转录
@@ -98,14 +100,48 @@ function load() {
   }
   if (cache.promptText === LEGACY_DEFAULT_PROMPT) cache.promptText = DEFAULT_PROMPT;
   cache.llmProviders = (Array.isArray(cache.llmProviders) ? cache.llmProviders : [])
-    .map((provider) => ({ ...provider, multimodal: provider.multimodal === true }));
+    .filter((provider) => provider && typeof provider === 'object')
+    .map((provider) => ({ ...provider }));
+  cache.visionProviders = (Array.isArray(cache.visionProviders) ? cache.visionProviders : [])
+    .filter((provider) => provider && typeof provider === 'object')
+    .map((provider) => ({ ...provider }));
+  cache.activeVisionId = typeof cache.activeVisionId === 'string' ? cache.activeVisionId.trim() : '';
+  let visionMigrated = false;
+  // Legacy: the text model carried a "multimodal" checkbox. Seed a dedicated
+  // vision provider from the active multimodal model once, then drop the flag.
+  if (!cache.visionProviders.length) {
+    const legacy = cache.llmProviders.find((provider) => provider.id === cache.activeLlmId && provider.multimodal === true)
+      || cache.llmProviders.find((provider) => provider.multimodal === true);
+    if (legacy) {
+      cache.visionProviders.push({
+        id: 'vision-' + String(legacy.id || Date.now().toString(36)),
+        name: `${legacy.name || '视觉模型'}（识图）`,
+        baseUrl: legacy.baseUrl || '',
+        apiKey: legacy.apiKey || '',
+        model: legacy.model || ''
+      });
+      cache.activeVisionId = cache.visionProviders[0].id;
+      visionMigrated = true;
+    }
+  }
+  for (const provider of cache.llmProviders) {
+    if ('multimodal' in provider) { delete provider.multimodal; visionMigrated = true; }
+  }
+  if (!cache.visionProviders.some((provider) => provider.id === cache.activeVisionId)) {
+    cache.activeVisionId = cache.visionProviders[0] ? cache.visionProviders[0].id : '';
+  }
+  if (visionMigrated) {
+    try { save(); } catch { /* A read-only profile must not block startup. */ }
+  }
   cache.undoToastSeconds = clampUndoSeconds(cache.undoToastSeconds);
   return cache;
 }
 
 function save() {
   cache.llmProviders = (Array.isArray(cache.llmProviders) ? cache.llmProviders : [])
-    .map((provider) => ({ ...provider, multimodal: provider.multimodal === true }));
+    .filter((provider) => provider && typeof provider === 'object');
+  cache.visionProviders = (Array.isArray(cache.visionProviders) ? cache.visionProviders : [])
+    .filter((provider) => provider && typeof provider === 'object');
   cache.undoToastSeconds = clampUndoSeconds(cache.undoToastSeconds);
   fs.mkdirSync(path.dirname(configPath()), { recursive: true });
   fs.writeFileSync(configPath(), JSON.stringify(cache, null, 2), 'utf8');

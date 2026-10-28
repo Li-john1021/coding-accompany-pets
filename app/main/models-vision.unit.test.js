@@ -74,8 +74,8 @@ async function test(name, fn) {
     }
   });
 
-  await test('explicit image validator requires declared capability and visible token', async () => {
-    assert.deepEqual(await validateImageVision({ ...provider, multimodal: false }, { fetchImpl: async () => { throw new Error('must not call'); } }), { ok: false, error: '请先声明此模型支持多模态图片输入' });
+  await test('explicit image validator requires a usable endpoint and visible token', async () => {
+    assert.deepEqual(await validateImageVision({ ...provider, baseUrl: '', model: '' }, { fetchImpl: async () => { throw new Error('must not call'); } }), { ok: false, error: '请先填写识图模型的 Base URL 和模型名' });
     assert.deepEqual(await validateImageVision(provider, { pngBuffer: png, fetchImpl: async () => okResponse(`Detected ${IMAGE_VALIDATION_TOKEN}`) }), { ok: true });
     const missingToken = await validateImageVision(provider, { pngBuffer: png, fetchImpl: async () => okResponse('Some image text') });
     assert.equal(missingToken.ok, false);

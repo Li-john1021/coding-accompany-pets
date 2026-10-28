@@ -75,17 +75,15 @@ async function fixture() {
     const state = await pet.webContents.executeJavaScript('window.v2p.getImageState()');
     if (scenario === 'gate') {
       assert.equal(state.hasImage, true);
-      assert.equal(state.multimodal, false);
       assert.equal(state.eligible, false);
-      assert.match(state.reason, /多模态/);
+      assert.match(state.reason, /识图模型/);
       const result = await pet.webContents.executeJavaScript('window.v2p.recognizeImage()');
       assert.equal(result.ok, false);
-      assert.match(result.error, /多模态/);
+      assert.match(result.error, /识图模型/);
       console.log(PREFIX + JSON.stringify({ ok: true, scenario, state, result }));
       return;
     }
     assert.equal(state.hasImage, true);
-    assert.equal(state.multimodal, true);
     assert.equal(state.eligible, true);
     assert.equal(state.reason, '');
     const started = Date.now();
@@ -150,17 +148,21 @@ async function run() {
   let host = '';
   try {
     writeJson(path.join(gateProfile, 'config.json'), {
-      asrProviders: [], llmProviders: [{ id: 'vision-gate', name: 'gate', baseUrl: 'https://invalid.example/v1', apiKey: '', model: 'vision-gate', multimodal: false }],
-      activeAsrId: '', activeLlmId: 'vision-gate', hotkey: 'Control+Shift+F12', screenshotHotkey: 'Control+Alt+F12',
+      asrProviders: [], llmProviders: [{ id: 'text-gate', name: 'gate', baseUrl: 'https://invalid.example/v1', apiKey: '', model: 'text-gate' }],
+      activeAsrId: '', activeLlmId: 'text-gate', visionProviders: [], activeVisionId: '',
+      hotkey: 'Control+Shift+F12', screenshotHotkey: 'Control+Alt+F12',
       petModel: 'keyboard', petScale: 1, mouseRecord: false, triggerMode: 'hold', insertMode: 'clipboard', previewEnabled: false
     });
     const gate = await runScenario('gate', gateProfile, validationPath);
-    assert.match(gate.state.reason, /多模态/);
-    assert.match(gate.result.error, /多模态/);
+    assert.match(gate.state.reason, /识图模型/);
+    assert.match(gate.result.error, /识图模型/);
 
     writeJson(path.join(mockProfile, 'config.json'), {
-      asrProviders: [], llmProviders: [{ id: 'vision-fixture', name: 'fixture', baseUrl: `http://127.0.0.1:${mockPort}/v1`, apiKey: '', model: 'vision-fixture', multimodal: true }],
-      activeAsrId: '', activeLlmId: 'vision-fixture', hotkey: 'Control+Shift+F12', screenshotHotkey: 'Control+Alt+F12',
+      asrProviders: [], llmProviders: [{ id: 'text-fixture', name: 'text', baseUrl: 'http://127.0.0.1:9/v1', apiKey: '', model: 'text-fixture' }],
+      activeAsrId: '', activeLlmId: 'text-fixture',
+      visionProviders: [{ id: 'vision-fixture', name: 'fixture', baseUrl: `http://127.0.0.1:${mockPort}/v1`, apiKey: '', model: 'vision-fixture' }],
+      activeVisionId: 'vision-fixture',
+      hotkey: 'Control+Shift+F12', screenshotHotkey: 'Control+Alt+F12',
       petModel: 'keyboard', petScale: 1, mouseRecord: false, triggerMode: 'hold', insertMode: 'clipboard', previewEnabled: false
     });
     const mocked = await runScenario('mock', mockProfile, validationPath);
@@ -178,15 +180,26 @@ async function run() {
     const realProfile = path.join(process.env.APPDATA, 'Voice2Prompt');
     const realConfigPath = path.join(realProfile, 'config.json');
     const realConfig = readJson(realConfigPath);
-    activeProvider = realConfig.llmProviders.find((provider) => provider.id === realConfig.activeLlmId);
-    assert.ok(activeProvider, 'real config has an active LLM provider');
-    assert.ok(activeProvider.baseUrl && activeProvider.model && activeProvider.apiKey, 'real provider has endpoint, model and key');
-    host = new URL(activeProvider.baseUrl).host;
+    const enabledConfig = JSON.parse(JSON.stringify(realConfig));
+    enabledConfig.visionProviders = Array.isArray(enabledConfig.visionProviders) ? enabledConfig.visionProviders : [];
+    let vision = enabledConfig.visionProviders.find((provider) => provider.id === enabledConfig.activeVisionId) || enabledConfig.visionProviders[0];
+    if (!vision) {
+      const activeLlm = enabledConfig.llmProviders.find((provider) => provider.id === enabledConfig.activeLlmId);
+      assert.ok(activeLlm && activeLlm.baseUrl && activeLlm.model && activeLlm.apiKey, 'real config has an active LLM provider with endpoint, model and key');
+      vision = {
+        id: 'vision-real-' + Date.now().toString(36),
+        name: `${activeLlm.name || '视觉模型'}（识图）`,
+        baseUrl: activeLlm.baseUrl, apiKey: activeLlm.apiKey, model: activeLlm.model
+      };
+      enabledConfig.visionProviders = [vision];
+    }
+    enabledConfig.activeVisionId = vision.id;
+    assert.ok(vision.baseUrl && vision.model && vision.apiKey, 'real vision provider has endpoint, model and key');
+    activeProvider = vision;
+    host = new URL(vision.baseUrl).host;
     realBackup = `${realConfigPath}.bak-vision-${Date.now()}`;
     fs.copyFileSync(realConfigPath, realBackup);
-    const enabledConfig = JSON.parse(JSON.stringify(realConfig));
-    const enabledProvider = enabledConfig.llmProviders.find((provider) => provider.id === enabledConfig.activeLlmId);
-    enabledProvider.multimodal = true;
+    for (const provider of enabledConfig.llmProviders) delete provider.multimodal;
     writeJson(realConfigPath, enabledConfig);
     realEnabled = true;
     let real;
@@ -197,6 +210,8 @@ async function run() {
       realEnabled = false;
       throw error;
     }
+    fs.copyFileSync(realBackup, realConfigPath);
+    realEnabled = false;
     const evidence = [
       'Feedback v2 U3 recognition evidence',
       'Date: ' + new Date().toISOString(),
@@ -206,7 +221,7 @@ async function run() {
       'promptSha256: ' + sha256(fs.readFileSync(path.join(__dirname, 'vision-prompts.js'))),
       'adapterSha256: ' + sha256(fs.readFileSync(path.join(__dirname, 'models.js'))),
       '',
-      'Gate (real config copy, multimodal=false, no provider request):',
+      'Gate (no vision provider, no provider request):',
       'reason: ' + gate.state.reason,
       'recognizeError: ' + gate.result.error,
       '',
@@ -218,7 +233,7 @@ async function run() {
       'model: ' + activeProvider.model,
       'host: ' + host,
       'visionRequests: 1 (new budget max 2, v1 eight calls unchanged)',
-      'userProfileModified: multimodal enabled for ' + activeProvider.id + ' only',
+      'userProfileModified: temporary visionProviders entry for ' + activeProvider.id + ' (original config restored)',
       'backup: ' + path.basename(realBackup),
       'ms: ' + real.ms,
       'textSha256: ' + real.textSha256,

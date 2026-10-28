@@ -34,12 +34,14 @@ function providerRow(kind, p, isActive) {
          <option value="transcriptions" ${protoDefault !== 'chat' ? 'selected' : ''}>transcriptions</option>
          <option value="chat" ${protoDefault === 'chat' ? 'selected' : ''}>chat（MiMo）</option>
        </select>`
-    : `<select class="f-think" title="思考模式：混合推理模型（MiMo v2.5 等）默认开思考，整理前会先生成一大段推理，明显变慢。
+    : kind === 'llm'
+      ? `<select class="f-think" title="思考模式：混合推理模型（MiMo v2.5 等）默认开思考，整理前会先生成一大段推理，明显变慢。
 自动 = 仅对已知推理端点（MiMo）自动关闭；关闭 = 始终发送关闭参数；保留 = 从不发送">
          <option value="auto" ${p.noThinking === undefined || p.noThinking === null ? 'selected' : ''}>思考:自动</option>
          <option value="on" ${p.noThinking === true ? 'selected' : ''}>思考:关闭</option>
          <option value="off" ${p.noThinking === false ? 'selected' : ''}>思考:保留</option>
-       </select>`;
+       </select>`
+      : '';
   row.innerHTML = `
     <label class="radio" title="设为当前使用">
       <input type="radio" name="active-${kind}" ${isActive ? 'checked' : ''} />
@@ -49,7 +51,6 @@ function providerRow(kind, p, isActive) {
     <input class="f-key" type="password" placeholder="API Key" value="${esc(p.apiKey)}" />
     <input class="f-model" placeholder="模型名（如：whisper-1 / gpt-4o）" value="${esc(p.model)}" />
     ${protoSelect}
-    ${kind === 'llm' ? `<label class="chk multimodal-option" title="声明此模型支持图片输入"><input class="f-multimodal" type="checkbox" ${p.multimodal === true ? 'checked' : ''} /> 多模态</label>` : ''}
     <button class="btn small validate">校验</button>
     <button class="btn small danger del">删除</button>
     <span class="validate-msg"></span>
@@ -58,13 +59,13 @@ function providerRow(kind, p, isActive) {
     const msg = row.querySelector('.validate-msg');
     msg.textContent = '校验中…';
     msg.className = 'validate-msg pending';
-    const res = await window.v2p.validateModel(kind, collectRow(row));
+    const res = await window.v2p.validateModel(kind === 'vision' ? 'image-vision' : kind, collectRow(row));
     msg.textContent = res.ok ? '✅ 可正常调用' : `❌ ${res.error || '失败'}`;
     msg.className = 'validate-msg ' + (res.ok ? 'ok' : 'fail');
   });
   row.querySelector('.del').addEventListener('click', () => row.remove());
   row.querySelector(`input[type=radio]`).addEventListener('change', () => {
-    document.querySelectorAll(`#asr-list .provider-row, #llm-list .provider-row`)
+    document.querySelectorAll(`#asr-list .provider-row, #llm-list .provider-row, #vision-list .provider-row`)
       .forEach((r) => { if (r.closest('.provider-list').id === `${kind}-list`) r.classList.remove('active'); });
     row.classList.add('active');
   });
@@ -74,7 +75,6 @@ function providerRow(kind, p, isActive) {
 function collectRow(row) {
   const proto = row.querySelector('.f-proto');
   const think = row.querySelector('.f-think');
-  const multimodal = row.querySelector('.f-multimodal');
   const noThinking = think ? (think.value === 'auto' ? undefined : think.value === 'on') : undefined;
   return {
     id: row.dataset.id,
@@ -83,8 +83,7 @@ function collectRow(row) {
     apiKey: row.querySelector('.f-key').value.trim(),
     model: row.querySelector('.f-model').value.trim(),
     ...(proto ? { asrProtocol: proto.value } : {}),
-    ...(think ? { noThinking } : {}),
-    ...(multimodal ? { multimodal: multimodal.checked } : {})
+    ...(think ? { noThinking } : {})
   };
 }
 
@@ -103,7 +102,9 @@ function renderList(kind, providers, activeId) {
     tip.className = 'empty-tip';
     tip.textContent = kind === 'asr'
       ? '还没有语音模型。添加一个 ASR 端点：OpenAI 兼容选 transcriptions 协议（OpenAI whisper、SiliconFlow、Groq 等）；小米 MiMo 选 chat 协议（模型名 mimo-v2.5-asr）。'
-      : '还没有文字模型。添加任意 OpenAI 兼容的聊天端点（如 DeepSeek、OpenAI、小米 MiMo、Ollama 等）。';
+      : kind === 'vision'
+        ? '还没有识图模型。添加任意 OpenAI 兼容的视觉端点（如小米 MiMo、Qwen-VL、GPT-4o）；它与文字模型独立，纯文本文字模型也可以正常识图。'
+        : '还没有文字模型。添加任意 OpenAI 兼容的聊天端点（如 DeepSeek、OpenAI、小米 MiMo、Ollama 等）。';
     box.appendChild(tip);
   }
   providers.forEach((p) => box.appendChild(providerRow(kind, p, p.id === activeId)));
@@ -118,6 +119,10 @@ async function addProvider(kind, preset = {}) {
   $(`#${kind}-list`).querySelectorAll('.empty-tip').forEach((e) => e.remove());
   const row = providerRow(kind, p, false);
   $(`#${kind}-list`).appendChild(row);
+  if (kind === 'vision' && $(`#${kind}-list`).querySelectorAll('.provider-row').length === 1) {
+    row.querySelector('input[type=radio]').checked = true;
+    row.classList.add('active');
+  }
   return row;
 }
 
@@ -257,6 +262,7 @@ async function loadConfig() {
   cfg = await window.v2p.getConfig();
   renderList('asr', cfg.asrProviders, cfg.activeAsrId);
   renderList('llm', cfg.llmProviders, cfg.activeLlmId);
+  renderList('vision', cfg.visionProviders || [], cfg.activeVisionId || '');
   $('#hotkey').value = cfg.hotkey || '';
   $('#screenshot-hotkey').value = cfg.screenshotHotkey || 'Alt+A';
   $('#trigger-mode').value = cfg.triggerMode || 'hold';
@@ -277,6 +283,7 @@ async function loadConfig() {
 function wireEvents() {
   $('#asr-add').addEventListener('click', () => addProvider('asr'));
   $('#llm-add').addEventListener('click', () => addProvider('llm'));
+  $('#vision-add').addEventListener('click', () => addProvider('vision'));
 
   // 快捷键捕获：点击「录制」后进入捕获态，下一个组合键（含修饰键）即被记录；Esc 取消
   document.querySelectorAll('.hotkey-capture').forEach((button) =>
@@ -333,11 +340,14 @@ function wireEvents() {
   $('#save').addEventListener('click', async () => {
     const asr = collectList('asr');
     const llm = collectList('llm');
+    const vision = collectList('vision');
     const patch = {
       asrProviders: asr.providers.map((p) => ({ ...p, apiKey: b64encode(p.apiKey) })),
       llmProviders: llm.providers.map((p) => ({ ...p, apiKey: b64encode(p.apiKey) })),
+      visionProviders: vision.providers.map((p) => ({ ...p, apiKey: b64encode(p.apiKey) })),
       activeAsrId: asr.activeId,
       activeLlmId: llm.activeId,
+      activeVisionId: vision.activeId,
       hotkey: $('#hotkey').value.trim(),
       screenshotHotkey: $('#screenshot-hotkey').value.trim() || 'Alt+A',
       triggerMode: $('#trigger-mode').value,

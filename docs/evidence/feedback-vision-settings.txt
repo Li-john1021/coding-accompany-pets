@@ -1,0 +1,37 @@
+# 独立识图模型设置（2026-10-29）
+
+## 设计
+
+- 新增 `visionProviders: [{id,name,baseUrl,apiKey,model}]` 与 `activeVisionId`，与 `llmProviders` / `activeLlmId` 完全独立。
+- 文字模型上的“多模态”勾选已移除；识图门控只检查识图模型的 baseUrl + model，不再要求文字模型声明多模态。
+- 迁移：旧配置中 `multimodal === true` 的激活文字模型（没有则任意一个）自动复制为识图模型，id 为 `vision-<原id>`，名称加“（识图）”；随后删除文字模型上的 `multimodal` 字段并立即保存。之后若用户删除识图模型，识图不可用并提示“请先在设置中配置识图模型”。
+- 设置页新增“🖼️ 识图模型（Vision）”卡片：添加/删除/勾选当前识图模型/独立校验（校验会发送内置 V2P-7KQ2 校验图）。文字模型行不再显示多模态勾选。
+- `app/main/vision-target.js` 负责解析当前识图模型；主进程解 mask 后的 key；`models.validateImageVision` 不再要求 multimodal 声明。
+
+## 旧配置迁移（真实配置的临时副本，未打印密钥）
+
+```
+VISION_MIGRATE:{"beforeLlmMultimodal":[true],"beforeVisionCount":0,
+"afterLlmHasMultimodal":false,"diskLlmHasMultimodal":false,
+"visionCount":1,"activeVisionMatches":true,"visionModel":"mimo-v2.6-flash",
+"visionHasMaskedKey":true,"activeLlmModel":"mimo-v2.6-flash","textUsesLlmStill":true}
+```
+
+含义：用户的 MiMo 配置自动成为识图模型，文字模型仍保持 MiMo；文字行不再带多模态字段；key 以 `b64:` 形式保留，未被打印。
+
+## 回归结果
+
+- 单元测试：**43/43 PASS**（新增 `vision-target.unit.test.js`；更新 config 迁移、vision IPC 路由、image validator 用例）。
+- 识图 gate/mock：`node app/main/vision-e2e.runtime.test.js` PASS；无识图模型时 reason/error 为“识图模型”，mock 请求仍为一张 260×72 PNG，剪贴板一致。
+- 新设置 UI 的端到端：`node app/main/pet-actions-v5-settings.e2e.test.js` PASS（四个场景：default/legacy-clipboard × 首次/重启），识图模型行可保存、重开和跨进程持久化。
+- 识图完整链路：`node app/main/screenshot-vision-p5.e2e.test.js` PASS（vision-a/vision-b 切换、文字模型切换不影响识图、设置校验、成功/失败/在途快照、取消截图保留剪贴板）。
+- 桌宠恢复 + 识图气泡：`node app/main/pet-restore-ui.runtime.test.js` PASS（真实 OS 拖拽 60×40；“正在读取图片中…”→“识图完成，文字已复制”；mock 请求含 image_url）。
+- 旧截图回退：`screenshot-p3.runtime.test.js`、`screenshot-native.runtime.test.js` PASS。
+- 本轮未做真实 provider 调用；迁移探针只读真实配置的临时副本，未上传任何内容、未打印密钥。
+
+## 交付
+
+- 新便携包：`app/dist-exe/Voice2Prompt-FeedbackV2.2-1.0.0-Portable.exe`
+  - 75,728,005 bytes
+  - SHA-256 `9c1a693d683b628445037f2cd6ec3163dd20e7db7948e63b5f9a406a723ddc8a`
+- 旧 V2.1 包保留；V2.2 首次启动会自动迁移配置。

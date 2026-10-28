@@ -35,9 +35,7 @@ main { padding: 16px 24px 32px; }
 .provider-row.active { background: #eef2ff; }
 /* ASR 行多一个协议选择列 */
 #asr-list .provider-row { grid-template-columns: 28px 100px 1fr 130px 130px 108px 56px 56px; }
-#llm-list .provider-row { grid-template-columns: 28px 100px 1fr 130px 130px 108px 86px 56px 56px; }
-.provider-row .multimodal-option { display: flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; }
-.provider-row .multimodal-option input { width: auto; margin: 0; }
+#llm-list .provider-row { grid-template-columns: 28px 100px 1fr 130px 130px 108px 56px 56px; }
 .provider-row select {
   padding: 6px 4px;
   border: 1px solid #dfe4ea;

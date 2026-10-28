@@ -89,10 +89,10 @@ async function fixture() {
     const show = win.show.bind(win), showInactive = win.showInactive.bind(win), focus = win.focus.bind(win);
     win.setFocusable(false);
     win.hide();
-    const isSelector = () => win.webContents.getURL().endsWith('/screenshot.html');
-    win.show = () => { if (isSelector()) { win.setFocusable(true); show(); } };
-    win.showInactive = () => { if (isSelector()) showInactive(); };
-    win.focus = () => { if (isSelector()) focus(); };
+    const isInteractiveSurface = () => win.webContents.getURL().endsWith('/screenshot.html') || win.getTitle() === 'screenshots';
+    win.show = () => { if (isInteractiveSurface()) { win.setFocusable(true); show(); } };
+    win.showInactive = () => { if (isInteractiveSurface()) showInactive(); };
+    win.focus = () => { if (isInteractiveSurface()) focus(); };
   });
 
   const savedClipboard = clipboardSnapshot(clipboard);
@@ -126,10 +126,16 @@ async function fixture() {
     fs.writeFileSync(path.join(directory, 'config.json'), JSON.stringify({
       asrProviders: [],
       llmProviders: [
-        { id: 'provider-a', name: 'Local A', model: MODEL_A, baseUrl, apiKey: KEY_A, multimodal: false },
-        { id: 'provider-b', name: 'Local B', model: MODEL_B, baseUrl, apiKey: KEY_B, multimodal: true }
+        { id: 'provider-a', name: 'Local A', model: MODEL_A, baseUrl, apiKey: KEY_A },
+        { id: 'provider-b', name: 'Local B', model: MODEL_B, baseUrl, apiKey: KEY_B }
       ],
-      activeLlmId: 'provider-a', activeAsrId: '',
+      activeLlmId: 'provider-a',
+      visionProviders: [
+        { id: 'vision-a', name: 'Vision A', model: MODEL_A, baseUrl, apiKey: KEY_A },
+        { id: 'vision-b', name: 'Vision B', model: MODEL_B, baseUrl, apiKey: KEY_B }
+      ],
+      activeVisionId: 'vision-a',
+      activeAsrId: '',
       hotkey: 'Control+Shift+F12', screenshotHotkey: 'Control+Alt+F12',
       petModel: '', insertMode: 'paste', undoToastSeconds: 10,
       previewEnabled: false, enableStructure: false, enableOptimize: false
@@ -140,7 +146,7 @@ async function fixture() {
     pet = await waitFor(() => BrowserWindow.getAllWindows().find((win) => win.webContents.getURL().endsWith('/pet.html')), 'production pet');
     await waitFor(() => !pet.webContents.isLoading(), 'pet renderer/preload');
     const button = () => pet.webContents.executeJavaScript("document.querySelector('[data-mode=\\\"image_recognition\\\"]')");
-    const buttonState = () => pet.webContents.executeJavaScript("(() => {const b=document.querySelector('[data-mode=\\\"image_recognition\\\"]');return b&&{disabled:b.disabled,busy:b.getAttribute('aria-busy'),label:b.textContent.trim()}})()");
+    const buttonState = () => pet.webContents.executeJavaScript("(() => {const b=document.querySelector('[data-mode=\\\"image_recognition\\\"]');return b&&{disabled:b.disabled||b.classList.contains('is-disabled'),busy:b.getAttribute('aria-busy'),label:b.textContent.trim()}})()");
     const setClipboardImage = (buffer) => clipboard.writeImage(nativeImage.createFromBuffer(buffer));
     const isImageClipboard = () => !clipboard.readImage().isEmpty();
     const imagePixels = () => {
@@ -160,17 +166,17 @@ async function fixture() {
       await pet.webContents.executeJavaScript('window.v2p.openSettings()');
       settings = await waitFor(() => BrowserWindow.getAllWindows().find((win) => win.webContents.getURL().endsWith('/settings.html')), 'production settings');
       await waitFor(() => !settings.webContents.isLoading(), 'settings renderer');
-      await waitFor(() => settings.webContents.executeJavaScript("!!document.querySelector('#llm-list .provider-row[data-id=provider-a] .f-multimodal')"), 'settings provider rows');
+      await waitFor(() => settings.webContents.executeJavaScript("!!document.querySelector('#vision-list .provider-row[data-id=vision-a] .f-model')"), 'settings vision provider rows');
     }
     const saveSettings = async () => {
       await settings.webContents.executeJavaScript("document.querySelector('#save').click()");
       await waitFor(() => settings.webContents.executeJavaScript("document.querySelector('#save-tip').textContent.includes('已保存')"), 'production settings save');
     };
-    const setMultimodal = async (id, enabled) => {
-      await settings.webContents.executeJavaScript(`(() => {const n=document.querySelector('#llm-list .provider-row[data-id=${JSON.stringify(id)}] .f-multimodal');if(n.checked!==${enabled})n.click();})()`);
+    const setActiveVisionProvider = async (id) => {
+      await settings.webContents.executeJavaScript(`document.querySelector('#vision-list .provider-row[data-id=${JSON.stringify(id)}] input[type=radio]').click()`);
       await saveSettings();
     };
-    const setActiveProvider = async (id) => {
+    const setActiveTextProvider = async (id) => {
       await settings.webContents.executeJavaScript(`document.querySelector('#llm-list .provider-row[data-id=${JSON.stringify(id)}] input[type=radio]').click()`);
       await saveSettings();
     };
@@ -184,15 +190,14 @@ async function fixture() {
     assert.equal(nativeB.isEmpty(), false, 'synthetic image B decodes in Electron');
 
     setClipboardImage(imageA);
-    await waitButton(true);
-    assert.equal((await buttonState()).disabled, true, 'actual clipboard image does not bypass an unchecked active model');
-    await openSettings();
-    await setActiveProvider('provider-b');
     await waitButton(false);
-    await setClipboardImage(imageA);
-    await setActiveProvider('provider-a');
-    await waitButton(true);
-    await setMultimodal('provider-a', true);
+    await openSettings();
+    await setActiveTextProvider('provider-b');
+    await waitButton(false);
+    assert.equal((await buttonState()).disabled, false, 'text model choice never gates recognition');
+    await setActiveVisionProvider('vision-b');
+    await waitButton(false);
+    await setActiveVisionProvider('vision-a');
     await waitButton(false);
 
     clipboard.writeText('external text clipboard sentinel');
@@ -203,8 +208,8 @@ async function fixture() {
 
     const validationBefore = state.requests.length;
     state.replyQueue.push({ status: 200, text: 'V2P-7KQ2' });
-    await settings.webContents.executeJavaScript("document.querySelector('#llm-list .provider-row[data-id=provider-a] .validate').click()");
-    await waitFor(() => settings.webContents.executeJavaScript("document.querySelector('#llm-list .provider-row[data-id=provider-a] .validate-msg').textContent.includes('可正常调用')"), 'image validation completed');
+    await settings.webContents.executeJavaScript("document.querySelector('#vision-list .provider-row[data-id=vision-a] .validate').click()");
+    await waitFor(() => settings.webContents.executeJavaScript("document.querySelector('#vision-list .provider-row[data-id=vision-a] .validate-msg').textContent.includes('可正常调用')"), 'image validation completed');
     assert.equal(state.requests.length, validationBefore + 1, 'settings validation makes one local image request');
     const validationRequest = state.requests[validationBefore];
     assert.equal(validationRequest.authorization, `Bearer ${KEY_A}`);
@@ -246,7 +251,7 @@ async function fixture() {
     assert.equal(deferredRequest.authorization, `Bearer ${KEY_A}`);
     assert.equal(deferredRequest.body.model, MODEL_A);
     clipboard.writeText('changed while request was active');
-    await setActiveProvider('provider-b');
+    await setActiveVisionProvider('vision-b');
     assert.equal(deferredRequest.body.model, MODEL_A, 'in-flight request keeps the starting model snapshot');
     assert.equal(deferredRequest.authorization, `Bearer ${KEY_A}`, 'in-flight request keeps the starting credential snapshot');
     response(state.deferred.res, 200, OUTPUT_TEXT);
@@ -259,11 +264,14 @@ async function fixture() {
     await waitFor(() => pet.webContents.executeJavaScript("!document.querySelector('[data-mode=screenshot]').disabled"), 'screenshot button ready');
     await pet.webContents.executeJavaScript("document.querySelector('[data-mode=screenshot]').click()");
     const overlay = await waitFor(() => BrowserWindow.getAllWindows().find((win) =>
-      win.webContents.getURL().endsWith('/screenshot.html') && win.isVisible()), 'production screenshot selector');
-    await overlay.webContents.executeJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");
+      win.getTitle() === 'screenshots' && win.isVisible()), 'production screenshot selector');
+    const overlayView = overlay.getBrowserViews()[0];
+    assert.ok(overlayView, 'library uses a BrowserView');
+    await waitFor(() => overlayView.webContents.executeJavaScript("!!document.querySelector('.screenshots')"), 'screenshot library root');
+    await overlayView.webContents.executeJavaScript("document.querySelector('.screenshots').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:700,clientY:400}))");
     await waitFor(async () => !(await pet.webContents.executeJavaScript('window.v2p.getImageState()')).busy, 'screenshot cancellation settled');
     assert.equal(clipboard.readText(), 'screenshot cancellation sentinel', 'cancelled screenshot preserves clipboard contents');
-    await waitFor(() => !BrowserWindow.getAllWindows().some((win) => win.webContents.getURL().endsWith('/screenshot.html')), 'screenshot selector cleanup');
+    await waitFor(() => !BrowserWindow.getAllWindows().some((win) => win.getTitle() === 'screenshots' && win.isVisible()), 'screenshot selector cleanup');
 
     console.log(PREFIX + JSON.stringify({ ok: true, requestCount: state.requests.length,
       validationPngBytes: validationPng.length, recognizedPngBytes: clipboardImageA.length,
