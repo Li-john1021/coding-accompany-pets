@@ -171,3 +171,35 @@ V2P_ALLOW_REAL_CONFIG=1 node app/main/vision-e2e.runtime.test.js
   - 已实际启动；旧 `Voice2Prompt-FeedbackV2-1.0.0-Portable.exe` 仍是上一版，勿混用。
 - 证据：`docs/evidence/feedback-ui-fixes.txt`；报告追加段落见 `docs/TEST-REPORT-feedback-v2.md`。
 - ASR 仍未改动。识图真实调用只用了合成图；未上传用户桌面/录音。
+
+## 11. 识图模型独立设置（2026-10-29）
+
+用户要求把识图模型与文字模型彻底分开，并去掉文字模型上的“多模态”勾选。
+
+### 11.1 新结构
+
+- 配置新增 `visionProviders: [{id,name,baseUrl,apiKey,model}]` 和 `activeVisionId`，与 `llmProviders`/`activeLlmId` 完全独立。
+- 设置页新增“🖼️ 识图模型（Vision）”卡片：添加/删除/设为当前/独立校验（内置 V2P-7KQ2 图）。
+- 文字模型行不再有多模态勾选；识图门控只要求识图模型有 baseUrl + model。
+- 纯文本文字模型（DeepSeek/GLM 等）现在可以配任意 OpenAI 兼容视觉模型来识图；识图结果仍只写剪贴板。
+
+### 11.2 迁移
+
+- 首次加载旧配置时，若 `visionProviders` 为空且存在 `multimodal === true` 的文字模型（优先当前激活），自动复制为识图模型（id `vision-<原id>`，名称加“（识图）”，保留 endpoint/model/key），随后删除所有文字模型上的 `multimodal` 并立即保存。
+- 用户当前 MiMo 配置已验证：迁移后 `visionProviders` 1 条、`activeVisionId` 有效、模型 `mimo-v2.6-flash`、key 仍为 `b64:` 掩码；文字模型仍是 MiMo。
+- 如果用户删除识图模型，识图按钮提示“请先在设置中配置识图模型”。
+- 注意：配置迁移后，旧 V2.1 包不会再识别识图（它只认 multimodal），请使用 V2.2。
+
+### 11.3 回归
+
+- 单元 **43/43 PASS**（新增 `vision-target.unit.test.js`；更新 config/vision IPC/validator 用例）。
+- vision gate/mock PASS；settings E2E 四场景 PASS；P5 vision E2E PASS；pet-restore-ui PASS；p3/native PASS。
+- 本轮无真实 provider 调用；迁移探针只读真实配置临时副本，未上传内容、未打印密钥。
+- 证据：`docs/evidence/feedback-vision-settings.txt`。
+
+### 11.4 交付
+
+- 新包（主项目）：`app/dist-exe/Voice2Prompt-FeedbackV2.2-1.0.0-Portable.exe`
+  - 75,728,005 bytes
+  - SHA-256 `9c1a693d683b628445037f2cd6ec3163dd20e7db7948e63b5f9a406a723ddc8a`
+- 旧 V2.1 保留；V2.2 首次启动自动迁移配置。ASR 未改动。
