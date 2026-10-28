@@ -26,7 +26,7 @@
 | B05 分段≤30s/完整覆盖/合并/失败路径 | 通过：5 分钟 10 段字节重建、3 分钟 6 段、真实 97s 4 段；打乱/截断/429/503/超时拒绝 | `docs/evidence/feedback-asr.txt`，`feedback-asr-live.txt` |
 | B06 恢复/重试/不自动粘贴/清理 | 通过：失败保留恢复，重试成功后才写剪贴板；恢复面板 300×306 内可命中 | `docs/evidence/feedback-asr.txt`，`feedback-recovery-panel.png` |
 | B07 原有回归 | 通过：40/40 单元测试文件；热键/录音/文字/Undo/剪贴板互斥保持 | 本报告 |
-| B08 便携包运行 | 构建后补充 | `docs/TEST-REPORT-feedback-v2.md`（构建记录） |
+| B08 便携包运行 | 通过：`Voice2Prompt-1.0.0-Portable.exe` 实际启动；桌宠截图打开打包后的 MIT 冻结屏，500×300 选区显示小浮条，右键取消恢复桌宠；资源包含库与 native 模块 | `docs/evidence/feedback-portable.txt` |
 
 ## 真实调用预算
 
@@ -75,4 +75,4 @@ V2P_ALLOW_REAL_CONFIG=1 node app/main/vision-e2e.runtime.test.js
 - 恢复面板的完整重试流程由生产 ASR e2e 的真实 renderer 点击覆盖；原生回退测试验证了 300×306 内布局、按钮可见和 `elementFromPoint` 命中 retry。
 - “无黑闪”依据是默认库先捕获后显示窗口，以及回退路径 ready 握手后才 show 的代码路径；并非高速摄像观测。
 - 真实 provider 调用只使用合成 TTS/验证图；没有上传用户桌面、录音或真实剪贴板内容。用户配置备份 `config.json.bak-vision-1793184768201` 保留在用户 profile 目录。
-- 便携包构建与实际启动验证在审查通过后补充；旧 v1 `Voice2Prompt-Screenshot-Vision.exe` 不得作为本轮交付包。
+- 便携包已构建并实测：`app/dist-exe/Voice2Prompt-1.0.0-Portable.exe`（75,637,263 bytes）。为让 MIT 库的预构建 HTML/静态资源从 `file://` 正常加载，构建配置使用 `"asar": false`；资源在 `resources/app/node_modules/...`，native `node-screenshots` 与 `uiohook-napi` 均已包含。实测便携版：桌宠截图 → 冻结屏 → 500×300 选区 → 小浮条显示 → 右键取消恢复桌宠。旧 v1 `Voice2Prompt-Screenshot-Vision.exe` 不得作为本轮交付包。

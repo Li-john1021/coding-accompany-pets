@@ -1,0 +1,26 @@
+Feedback v2 portable package evidence
+Date: 2026-10-28
+
+Artifact:
+- Path: app/dist-exe/Voice2Prompt-1.0.0-Portable.exe
+- Size: 75,637,263 bytes
+- Build command: ./app/node_modules/.bin/electron-builder --win portable --publish never
+- Build config change: `"asar": false` in package.json. Reason: the MIT `react-screenshots` prebuilt UI loads its HTML/static JS through file://; with the default asar packaging the library window appeared but rendered transparent/blank. Disabling asar makes resources/app contain node_modules/react-screenshots/dist/electron.html and its static assets, and the UI loads in the packaged app. The warning "asar usage is disabled" is accepted for this local portable build; app.asar is not used.
+- The packaged resources include:
+  - resources/app/node_modules/electron-screenshots/lib/index.cjs.js
+  - resources/app/node_modules/react-screenshots/dist/electron.html + static
+  - resources/app/node_modules/node-screenshots-win32-x64-msvc/node-screenshots.win32-x64-msvc.node
+  - resources/app/node_modules/uiohook-napi native files
+
+Smoke test (portable exe actually launched):
+- Launched Voice2Prompt-1.0.0-Portable.exe; it extracted to a temp directory and started the real user profile (active provider multimodal=true).
+- Pet window appeared at 1130,543, 300x306.
+- Clicked the pet 截图 action. The screenshot process window titled `screenshots` covered the primary display 0,0,2560,1440; the frozen desktop was shown.
+- Dragged a 500x300 selection from (400,300) to (900,600); the MIT floating toolbar appeared with 矩形/椭圆/箭头/画笔/文字/马赛克/撤销/重做/保存/取消/完成. This confirms the packaged UI is not blank and the small-toolbar model works from the portable build.
+- Right-click cancelled: the screenshots window closed and the pet window was restored. All Voice2Prompt/portable processes were then stopped; no test instance remained.
+- No user desktop/screenshot image was uploaded or committed; only timing/geometry/layout facts are recorded here.
+
+Notes:
+- The portable UI is the same `react-screenshots` bundle verified in `feedback-screenshot-library.txt`; the dev integration test proves the text tool creates a textarea at the click coordinates and the final clipboard image contains the text pixels.
+- The packaged app uses the same real user config; multimodal is enabled for b52kdw0d and the backup remains config.json.bak-vision-1793184768201.
+- Old v1 artifacts in the main project's app/dist-exe are not this round's deliverable; the new portable file must be copied with a distinct name when delivering.

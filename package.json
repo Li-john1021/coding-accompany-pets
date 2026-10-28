@@ -13,6 +13,7 @@
       "output": "app/dist-exe",
       "app": "app"
     },
+    "asar": false,
     "files": [
       "main/**/*",
       "renderer/**/*",
@@ -20,10 +21,6 @@
       "build/icon.ico",
       "preload.js",
       "package.json"
-    ],
-    "asarUnpack": [
-      "node_modules/node-screenshots/**/*",
-      "node_modules/node-screenshots-*/**/*"
     ],
     "win": {
       "icon": "app/build/icon.ico",
