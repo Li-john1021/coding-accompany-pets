@@ -75,7 +75,9 @@ async function fixture() {
     compositor.destroy();
 
     assert.ok(displays.length >= 1, 'Electron must report at least one display');
+    const timings = {};
     clipboard.writeText('screenshot cancel sentinel');
+    const firstTriggerStarted = Date.now();
     await pet.webContents.executeJavaScript('void window.v2p.screenshot().then(result => window.__cancelShot = result)');
     const cancelState = await waitFor(async () => {
       const win = BrowserWindow.getAllWindows().find((entry) => entry.webContents.getURL().endsWith('/screenshot.html') && entry.isVisible());
@@ -84,6 +86,7 @@ async function fixture() {
       return result ? { result } : null;
     }, 'cancel selector or result');
     if (!cancelState.win) throw Error(JSON.stringify({ startResult: cancelState.result, displays, physicalMonitors, identityMap }));
+    timings.firstTriggerToReadyMs = Date.now() - firstTriggerStarted;
     const cancelOverlay = cancelState.win;
     await cancelOverlay.webContents.executeJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");
     const cancelled = await waitFor(() => pet.webContents.executeJavaScript('window.__cancelShot || null'), 'cancel result');
@@ -101,8 +104,10 @@ async function fixture() {
       markerProcess.on('error', (error) => { clearTimeout(timeout); reject(error); });
     });
     await new Promise((resolve) => setTimeout(resolve, 250));
+    const warmTriggerStarted = Date.now();
     await pet.webContents.executeJavaScript('void window.v2p.screenshot().then(result => window.__captureShot = result)');
     const captureOverlay = await waitFor(() => BrowserWindow.getAllWindows().find((win) => win.webContents.getURL().endsWith('/screenshot.html') && win.isVisible() && win.getBounds().x === 0 && win.getBounds().y === 0), 'capture selector');
+    timings.warmTriggerToReadyMs = Date.now() - warmTriggerStarted;
     await captureOverlay.webContents.executeJavaScript(`(() => {
       const options={bubbles:true,button:0,clientX:60,clientY:60};
       document.dispatchEvent(new MouseEvent('mousedown',options));
@@ -164,15 +169,19 @@ async function fixture() {
     assert.equal(pet.isVisible(), true, 'previously visible pet window is restored');
     let crossMonitorPixels = null;
     if (crossRect) {
+      const crossTriggerStarted = Date.now();
       await pet.webContents.executeJavaScript('void window.v2p.screenshot().then(result => window.__crossShot = result)');
       const overlayFor = (monitor) => BrowserWindow.getAllWindows().find((win) => win.webContents.getURL().endsWith('/screenshot.html') && win.isVisible() && Math.abs(win.getBounds().x - displays.find(d => String(d.id) === monitor.id).bounds.x) < 2);
       const leftOverlay = await waitFor(() => overlayFor(leftMonitor), 'left cross selector');
       const rightOverlay = await waitFor(() => overlayFor(rightMonitor), 'right cross selector');
+      timings.crossTriggerToReadyMs = Date.now() - crossTriggerStarted;
       const dispatch = (win, monitor, type, x, y) => win.webContents.executeJavaScript(`document.dispatchEvent(new MouseEvent(${JSON.stringify(type)},{bubbles:true,button:0,clientX:(${x}-${monitor.x})/${monitor.width}*innerWidth,clientY:(${y}-${monitor.y})/${monitor.height}*innerHeight}))`);
       await dispatch(leftOverlay, leftMonitor, 'mousedown', crossRect.x, crossRect.y);
       await dispatch(rightOverlay, rightMonitor, 'mousemove', crossRect.x+crossRect.width, crossRect.y+crossRect.height);
       await dispatch(rightOverlay, rightMonitor, 'mouseup', crossRect.x+crossRect.width, crossRect.y+crossRect.height);
       const rightEditor = await waitFor(() => overlayFor(rightMonitor), 'cross-screen crop editor');
+      assert.equal(rightEditor.webContents.id, rightOverlay.webContents.id, 'cross-screen editor opens on the release screen');
+      await waitFor(() => rightEditor.webContents.executeJavaScript("document.getElementById('editor').classList.contains('open')"), 'cross-screen crop preview rendered');
       await rightEditor.webContents.executeJavaScript("document.getElementById('done-tool').click()");
       const crossResult = await waitFor(() => pet.webContents.executeJavaScript('window.__crossShot || null'), 'cross-screen image');
       assert.equal(crossResult.ok, true, JSON.stringify(crossResult));
@@ -186,7 +195,7 @@ async function fixture() {
     console.log(PREFIX + JSON.stringify({ ok: true, displays,
       desktopSources: desktopSources.map((source) => ({ id: source.id, name: source.name, display_id: source.display_id, thumbnailSize: source.thumbnail.getSize() })),
       physicalMonitors, identityMap: identityMap.map(({ id, name, x, y, width, height }) => ({ id, name, x, y, width, height })),
-      capture: captured, cancelClipboardPreserved: true, editorCancelledWithoutClipboardWrite: true, annotationPixels, centerPixel, penPixel, compositionPixels: pixelResult, gapPixels, crossMonitorPixels }));
+      capture: captured, timings, cancelClipboardPreserved: true, editorCancelledWithoutClipboardWrite: true, annotationPixels, centerPixel, penPixel, compositionPixels: pixelResult, gapPixels, crossMonitorPixels }));
   } catch (error) {
     console.error(PREFIX + JSON.stringify({ ok: false, error: error.stack }));
     process.exitCode = 1;
