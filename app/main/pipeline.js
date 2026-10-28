@@ -1,7 +1,4 @@
 // pipeline.js — 核心管线：音频 → ASR → 按需整理 → 写入；文本整理可被选区/预览共用
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 const config = require('./config');
 const { chatCompletion, transcribeSmart } = require('./models');
 const { insertText } = require('./insert');
@@ -175,27 +172,37 @@ async function processText(raw, mode = 'default', onState = () => {}) {
 }
 
 // state 回调：onState(stage) stage ∈ listening|transcribing|polishing|inserting|done|error
+function clearRecovery(audioRecovery, id) {
+  if (!id) return;
+  try { audioRecovery.clear(id); } catch { /* cleanup must not turn a delivered result into a failure */ }
+}
+
 async function run(audioBuffer, mime, onState, options = {}) {
   const cfg = config.load();
   const audioRecovery = require('./audio-recovery');
-  const tmpFile = path.join(os.tmpdir(), `v2p-${Date.now()}.${extForMime(mime)}`);
-  fs.writeFileSync(tmpFile, audioBuffer);
-  const recovery = audioRecovery.save(audioBuffer);
+  let recovery = null;
+  let recoveryError = null;
   try {
+    try { recovery = audioRecovery.save(audioBuffer); }
+    catch (error) { recoveryError = String(error.message || error); }
+
     onState('transcribing');
     const asr = findProvider('asr');
-    const raw = await transcribeSmart(asr, audioBuffer, path.basename(tmpFile), mime || 'audio/wav', {
+    const raw = await transcribeSmart(asr, audioBuffer, `recording.${extForMime(mime)}`, mime || 'audio/wav', {
       signal: options.signal,
       timeoutMs: options.asrTimeoutMs,
       onProgress: (progress) => options.onProgress?.(progress)
     });
     if (!raw) throw new Error('没有识别到语音内容');
-    audioRecovery.saveText(recovery.id, raw);
+    if (recovery) {
+      try { audioRecovery.saveText(recovery.id, raw); }
+      catch (error) { recoveryError = String(error.message || error); }
+    }
 
     // preview 模式：只返回转写，由预览卡决定后续 processText
     if (options.transcriptOnly) {
-      if (!options.deferDelivery) audioRecovery.clear(recovery.id);
-      return { raw, polished: raw, mode: 'none', inserted: false, copiedOnly: true, preview: true, recoveryId: recovery.id };
+      if (!options.deferDelivery) clearRecovery(audioRecovery, recovery?.id);
+      return { raw, polished: raw, mode: 'none', inserted: false, copiedOnly: true, preview: true, recoveryId: recovery?.id || null, recoveryError };
     }
 
     const mode = resolveMode(options.mode, cfg);
@@ -204,7 +211,7 @@ async function run(audioBuffer, mime, onState, options = {}) {
     onState('inserting');
     const { inserted, copiedOnly } = options.deferDelivery ? { inserted: false, copiedOnly: true } : await insertText(result.text, cfg.insertMode);
     onState('done');
-    if (!options.deferDelivery) audioRecovery.clear(recovery.id);
+    if (!options.deferDelivery) clearRecovery(audioRecovery, recovery?.id);
     return {
       raw,
       polished: result.text,
@@ -213,10 +220,15 @@ async function run(audioBuffer, mime, onState, options = {}) {
       note: result.note,
       inserted,
       copiedOnly,
-      recoveryId: recovery.id
+      recoveryId: recovery?.id || null,
+      recoveryError
     };
-  } finally {
-    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+  } catch (error) {
+    if (error && typeof error === 'object') {
+      error.recoveryId = recovery?.id || null;
+      if (recoveryError) error.recoveryError = recoveryError;
+    }
+    throw error;
   }
 }
 

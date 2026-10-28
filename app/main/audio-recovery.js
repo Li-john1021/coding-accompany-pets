@@ -25,11 +25,17 @@ function save(wav) {
   const id = crypto.randomUUID();
   const wavPath = path.join(recoveryDir, `${id}.wav`);
   const nextMeta = `${meta}.${process.pid}.tmp`;
-  fs.writeFileSync(wavPath, wav, { mode: 0o600 });
-  fs.writeFileSync(nextMeta, JSON.stringify({ id, raw: null, savedAt: Date.now() }), { mode: 0o600 });
   let oldId = null;
-  if (fs.existsSync(meta)) { try { oldId = readMeta(meta).id; } catch { /* replace invalid metadata */ } }
-  fs.renameSync(nextMeta, meta);
+  try {
+    fs.writeFileSync(wavPath, wav, { mode: 0o600 });
+    fs.writeFileSync(nextMeta, JSON.stringify({ id, raw: null, savedAt: Date.now() }), { mode: 0o600 });
+    if (fs.existsSync(meta)) { try { oldId = readMeta(meta).id; } catch { /* replace invalid metadata */ } }
+    fs.renameSync(nextMeta, meta);
+  } catch (error) {
+    try { fs.unlinkSync(wavPath); } catch { /* best-effort cleanup */ }
+    try { fs.unlinkSync(nextMeta); } catch { /* best-effort cleanup */ }
+    throw error;
+  }
   if (oldId && oldId !== id) { try { fs.unlinkSync(path.join(recoveryDir, `${oldId}.wav`)); } catch { /* stale cleanup */ } }
   return { ok: true, id };
 }
@@ -40,7 +46,10 @@ function get() {
   const details = readMeta(meta);
   if (Date.now() - details.savedAt > 7 * 24 * 60 * 60 * 1000) { clear(details.id); return { ok: true, id: null, wav: null, raw: null }; }
   const wav = path.join(recoveryDir, `${details.id}.wav`);
-  if (!fs.existsSync(wav)) return { ok: true, id: null, wav: null, raw: null };
+  if (!fs.existsSync(wav)) {
+    try { fs.unlinkSync(meta); } catch { /* stale metadata cleanup */ }
+    return { ok: true, id: null, wav: null, raw: null };
+  }
   return { ok: true, id: details.id, wav: fs.readFileSync(wav), raw: details.raw || null };
 }
 

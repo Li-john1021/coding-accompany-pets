@@ -250,6 +250,7 @@ async function transcribeSmart(provider, audioBuffer, filename, mime, opts = {})
     if (part) parts.push(part); // A valid empty string can represent a silent segment.
     opts.onProgress?.({ completed: i + 1, total: chunks.length, index: i });
   }
+  if (!parts.length) throw new Error('没有识别到语音内容');
   return parts.join('\n').trim();
 }
 

@@ -424,11 +424,18 @@ function currentPetImageDataUrl() {
 }
 
 // ---------------- IPC ----------------
+function clearRecovery(id) {
+  if (!id) return;
+  try { audioRecovery.clear(id); } catch { /* cleanup must not change a delivered result */ }
+}
+
 function registerIpc() {
   const fromPetMainFrame = (event) => !!petWin && !petWin.isDestroyed() && event.sender === petWin.webContents && event.senderFrame === event.sender.mainFrame && event.senderFrame.url.startsWith('file:') && event.senderFrame.url.endsWith('/pet.html');
   const recoveryBusy = () => voiceSubmissionActive || imageWorkflow?.busy || petActionWorkflow.busy || resultDelivery.busy;
+  const recoveryReadBusy = () => recoveryBusy() || recordingActive;
+  const recoveryWarning = (result) => result?.recoveryError ? `恢复录音未保存：${result.recoveryError}` : '';
   ipcMain.handle('v2p:audio-recovery-get', (event) => {
-    if (!fromPetMainFrame(event)) return { ok: false, error: 'unauthorized' };
+    if (!fromPetMainFrame(event) || recoveryReadBusy()) return { ok: false, error: '当前不可读取恢复录音' };
     try { return audioRecovery.get(); } catch { return { ok: false, error: '恢复录音暂时不可读取' }; }
   });
   ipcMain.handle('v2p:audio-recovery-save', (event, wav) => {
@@ -441,12 +448,13 @@ function registerIpc() {
     } catch (error) { return { ok: false, error: String(error.message || error) }; }
   });
   ipcMain.handle('v2p:audio-recovery-clear', (event, id) => {
-    if (!fromPetMainFrame(event) || recoveryBusy() || typeof id !== 'string') return { ok: false, error: '当前不可清除恢复录音' };
-    return audioRecovery.clear(id);
+    if (!fromPetMainFrame(event) || recoveryReadBusy() || typeof id !== 'string') return { ok: false, error: '当前不可清除恢复录音' };
+    try { return audioRecovery.clear(id); } catch (error) { return { ok: false, error: String(error.message || error) }; }
   });
   ipcMain.handle('v2p:audio-recovery-text', (event, id) => {
-    if (!fromPetMainFrame(event) || recoveryBusy() || recordingActive) return { ok: false, error: '已有操作正在进行' };
-    const saved = audioRecovery.get();
+    if (!fromPetMainFrame(event) || recoveryReadBusy() || typeof id !== 'string') return { ok: false, error: '已有操作正在进行' };
+    let saved;
+    try { saved = audioRecovery.get(); } catch { return { ok: false, error: '恢复录音暂时不可读取' }; }
     if (saved.id !== id || !saved.raw) return { ok: false, error: '没有可复制的识别原文' };
     clipboard.writeText(saved.raw);
     return { ok: true };
@@ -529,8 +537,8 @@ function registerIpc() {
           const r2 = await pipeline.processText(result.raw, 'default', setState);
           const ins = await deliverResult({ original: result.raw, text: r2.text, target, kind: 'voice', isCurrent });
           if (!isCurrent()) return { ok: false, voiceSuperseded: true };
-          if (!ins.cancelled && result.recoveryId) audioRecovery.clear(result.recoveryId);
-          const out = { raw: result.raw, polished: r2.text, mode: r2.mode, note: r2.note, ...ins };
+          if (!ins.cancelled) clearRecovery(result.recoveryId);
+          const out = { raw: result.raw, polished: r2.text, mode: r2.mode, note: [r2.note, recoveryWarning(result)].filter(Boolean).join('；'), ...ins };
           setState('done');
           petBroadcast('v2p:result', out);
           return { ok: true, ...out };
@@ -542,16 +550,16 @@ function registerIpc() {
       const delivery = await deliverResult({ original: result.raw, text: result.polished, target, kind: 'voice', isCurrent,
         insertMode: opts.recoveryCopyOnly ? 'clipboard' : config.load().insertMode });
       if (!isCurrent()) return { ok: false, voiceSuperseded: true };
-      if (!delivery.cancelled && result.recoveryId) audioRecovery.clear(result.recoveryId);
-      const out = { ...result, ...delivery, note: [result.note, delivery.note].filter(Boolean).join('；') };
+      if (!delivery.cancelled) clearRecovery(result.recoveryId);
+      const out = { ...result, ...delivery, note: [result.note, delivery.note, recoveryWarning(result)].filter(Boolean).join('；') };
       petBroadcast('v2p:result', out);
       return { ok: true, ...out };
     } catch (err) {
       setState('error');
-      const msg = String(err.message || err);
+      const detail = err?.recoveryError ? `；恢复录音未保存：${err.recoveryError}` : '';
+      const msg = String(err.message || err) + detail;
       petBroadcast('v2p:toast', { text: msg.slice(0, 120) });
-      let recoveryId = null;
-      try { recoveryId = audioRecovery.get().id; } catch { }
+      const recoveryId = typeof err?.recoveryId === 'string' ? err.recoveryId : null;
       return { ok: false, error: msg, recoveryId };
     } finally {
       voiceSubmissionActive = false;
@@ -1216,7 +1224,7 @@ ipcMain.handle('v2p:preview-insert', async (_e, { text, copyOnly }) => {
     const result = await deliverResult({ original: session.initialRaw, text: String(text || ''), target: session.target, kind: 'voice',
       insertMode: copyOnly ? 'clipboard' : config.load().insertMode });
     session.delivered = true;
-    if (!result.cancelled && session.recoveryId) audioRecovery.clear(session.recoveryId);
+    if (!result.cancelled) clearRecovery(session.recoveryId);
     return { ok: true, ...result };
   } finally { voiceSubmissionActive = false; }
 });
