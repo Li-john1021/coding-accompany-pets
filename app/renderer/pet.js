@@ -625,7 +625,13 @@ window.v2p.onResult((r) => {
   say((r.polished || '').slice(0, 90) + ((r.polished || '').length > 90 ? '…' : '') + note, 5000);
   scheduleIdle(3000);
 });
-window.v2p.onToast((text) => { say(text, 5000); setState('error'); scheduleIdle(3500); });
+window.v2p.onToast((payload) => {
+  const text = typeof payload === 'string' ? payload : payload?.text;
+  if (!text) return;
+  say(text, 5000);
+  const level = typeof payload === 'string' ? 'error' : (payload.level || 'error');
+  if (level === 'error') { setState('error'); scheduleIdle(3500); }
+});
 window.v2p.onHotkeyStart(startRecording);
 window.v2p.onHotkeyStop(stopRecording);
 window.v2p.onPetImageChanged((dataUrl) => { if (dataUrl) petImg.src = dataUrl; });

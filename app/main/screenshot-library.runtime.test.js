@@ -225,8 +225,22 @@ async function fixture() {
       }
     }
     assert.ok(textPixels > 0, 'final clipboard image contains text pixels at the clicked position');
+
+    const warmStarted = Date.now();
+    await pet.webContents.executeJavaScript('window.__shot2 = null; void window.v2p.screenshot().then(result => window.__shot2 = result)');
+    const warmWindow = await waitFor(() => BrowserWindow.getAllWindows().find((win) => win.getTitle() === 'screenshots' && win.isVisible()), 'warm library window');
+    const warmOpenMs = Date.now() - warmStarted;
+    const warmView = warmWindow.getBrowserViews()[0];
+    assert.ok(warmView, 'warm capture reuses the library BrowserView');
+    const warmWc = warmView.webContents;
+    await waitFor(() => warmWc.executeJavaScript("!!document.querySelector('.screenshots')"), 'warm library UI root');
+    const warmUiMs = Date.now() - warmStarted;
+    await warmWc.executeJavaScript(`document.querySelector('.screenshots').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 700, clientY: 400 }))`);
+    const warmCancelled = await waitFor(() => pet.webContents.executeJavaScript('window.__shot2 || null'), 'warm cancel result');
+    assert.deepStrictEqual(warmCancelled, { ok: false, reason: 'cancelled' });
+
     console.log(PREFIX + JSON.stringify({
-      ok: true, result, textarea, filled, textPixels, openMs, uiMs,
+      ok: true, result, textarea, filled, textPixels, openMs, uiMs, warmOpenMs, warmUiMs, warmCancelled,
       libraryWindow: { title: libraryWindow.getTitle(), bounds: libraryWindow.getBounds() }
     }));
   } catch (error) {

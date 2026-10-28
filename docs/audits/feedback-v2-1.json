@@ -1,0 +1,114 @@
+{
+  "verdict": "fail",
+  "commit": "ac77fdbe7c7203f3a5bdcd6c916df3a9f190efb2",
+  "scope": "Independent read-only review of d979940..ac77fdb (branch codex/screenshot-asr-feedback-v2): default MIT electron-screenshots screenshot path plus legacy fallback, screenshot window hiding/restoring, clipboard write, ok/cancel/abort/save/close behavior, recognition gate and real-config evidence, chunked long-audio ASR and recovery, prior hotkey/vision/undo guards, packaging (asar:false, native modules) and docs/evidence consistency.",
+  "tests_run": [
+    "for f in app/main/*.unit.test.js app/renderer/*.unit.test.js; do node \"$f\" || exit 1; done (41/41 PASS)",
+    "node app/main/screenshot-library.runtime.test.js (PASS; openMs 894, uiMs 1067, textarea left/top 300/300, 356 text pixels, clipboard 400x300)",
+    "node app/main/screenshot-p3.runtime.test.js (PASS; test sets V2P_SCREENSHOT_LEGACY=1; first/warm/cross 1428/1053/1012ms, 40x30 crop, 80x30 cross-screen pixels)",
+    "node app/main/screenshot-native.runtime.test.js (PASS; test sets V2P_SCREENSHOT_LEGACY=1; real OS input, 80x30 crop, recovery-panel hit test)",
+    "node app/main/asr-e2e.runtime.test.js (PASS; local mock only; 3-minute WAV -> 6 chunks, 503 and finish_reason=length rejection, recovery retry without auto-paste)"
+  ],
+  "findings": [
+    {
+      "severity": "major",
+      "id": "F-001",
+      "file": "app/main/screenshot-library.js:71",
+      "issue": "The wrapper binds only the library's 'ok' and 'cancel' events. The prebuilt UI always exposes a 保存 button; clicking it sends SCREENSHOTS:save, which electron-screenshots handles by showing a save dialog, writing the file, and calling endCapture() without ever settling the wrapper. The capture promise then never resolves, the app windows stay hidden, and imageWorkflow.busy remains true, blocking screenshot, voice hotkey, v2p:submit and recovery IPC until the app is restarted.",
+      "evidence": "docs/evidence/feedback-portable.txt:19 lists 保存 in the default toolbar; app/node_modules/react-screenshots/lib/Screenshots/operations/index.js:23 always includes Save; app/node_modules/electron-screenshots/lib/index.js:290-325 emits 'save' and calls endCapture on a successful save; app/main/screenshot-library.js:45-65 has no save handler and :79-96 sets pending without a terminal-event guard; app/main/screenshot-library.unit.test.js has no save case. An inline fake-library simulation with emit('save') produced pendingSettled=false and petHidden=true after 300ms.",
+      "required_fix": "Bind the library's 'save' (and afterSave) event explicitly: either hide/disable the Save operation, or preventDefault and settle as ok/cancel while restoring windows and resolving the capture. Add a unit/runtime test for the save path."
+    },
+    {
+      "severity": "major",
+      "id": "F-002",
+      "file": "app/main/screenshot-library.js:93",
+      "issue": "There is no timeout or terminal-event guard around the library. If the prebuilt UI never mounts/renders or the window is closed externally, startCapture() waits forever for SCREENSHOTS:ready or for ok/cancel; the wrapper only handles a rejected startCapture(), and main's fallback to the legacy controller runs only after the wrapper resolves non-ok. A silent library failure therefore leaves the pet hidden and imageWorkflow busy forever; this is the same class as the observed asar blank-UI failure.",
+      "evidence": "app/main/screenshot-library.js:31-43 settles only on ok/cancel/abort; :79-96 sets pending with no timer and no windowClosed listener; app/node_modules/electron-screenshots/lib/index.js:34-39,51-58 waits indefinitely for SCREENSHOTS:ready; :169-172 emits windowClosed which the wrapper ignores; app/main/image-workflow.js:23-35 holds busy until the capture promise resolves; app/main/main.js:227-236 falls back only on a non-ok resolved result; docs/LEDGER-feedback-v2.md:17 documents the blank/transparent library UI that required asar:false.",
+      "required_fix": "Race startCapture()/capture against a bounded timeout and treat timeout or windowClosed as capture-failed (settle, restore windows, then let main run the legacy fallback). Add tests with a never-resolving startCapture and an externally closed library window."
+    },
+    {
+      "severity": "minor",
+      "id": "F-003",
+      "file": "app/main/screenshot-library.js:31",
+      "issue": "settle() clears pending only after endCapture resolves (up to the library's 500ms reset wait). A second ok event during that interval is processed again, writing the clipboard twice and calling endCapture twice; concurrent removeBrowserView/hide calls can race and the duplicate write is unnecessary.",
+      "evidence": "app/main/screenshot-library.js:31-43 (pending stays set until settle after endCapture) and :45-59; no duplicate-ok test exists in screenshot-library.unit.test.js or screenshot-library.runtime.test.js.",
+      "required_fix": "Transition to a settling state and clear pending before awaiting endCapture, or ignore ok/cancel while a settle is in progress; add a duplicate-event test."
+    },
+    {
+      "severity": "minor",
+      "id": "F-004",
+      "file": "app/main/main.js:148",
+      "issue": "The screenshot success message is sent on v2p:toast, but pet.js treats every v2p:toast as an error (say(...) plus setState('error')). A successful hotkey screenshot therefore shows '截图已复制，可点击识图' with the error status/styling, while the pet-button path uses say() without error; the two entry points are inconsistent and the hotkey state is misleading.",
+      "evidence": "app/main/main.js:145-149; app/renderer/pet.js:628 ('window.v2p.onToast((text) => { say(text, 5000); setState('error'); ... })'); the message is success content.",
+      "required_fix": "Add a success/info level to the toast payload (or a separate channel) and handle it without setState('error'), or use the existing result path for screenshot success."
+    },
+    {
+      "severity": "minor",
+      "id": "F-005",
+      "file": "app/main/screenshot-library.runtime.test.js:89",
+      "issue": "The active library path is not pre-warmed: createScreenshotLibrary() only creates the wrapper, and ensureInstance() loads the prebuilt UI on the first capture. The only default-path measurement is that first trigger; there is no second-capture/warm timing, while the warmed screenshotCaptureWorker belongs to the legacy path. The 'warm trigger' acceptance is therefore not demonstrated for the active path (the single 894ms first trigger is below 1s but is not a warm measurement).",
+      "evidence": "app/main/main.js:157 creates only the wrapper; app/main/screenshot-library.js:71-77 creates the library instance on first capture; app/main/screenshot-library.runtime.test.js:89-97 records one openMs/uiMs; app/main/main.js:158 warms the unused legacy worker; docs/TEST-REPORT-feedback-v2.md:22 reports only the single default run.",
+      "required_fix": "Capture twice on the same app instance and record the second-capture timing, and either pre-create the library instance at startup or document the first-trigger value as the accepted warm result."
+    },
+    {
+      "severity": "minor",
+      "id": "F-006",
+      "file": "app/main/vision-e2e.runtime.test.js:142",
+      "issue": "The supposedly deterministic vision e2e reads %APPDATA%/Voice2Prompt/config.json and requires an active provider with an API key even when V2P_ALLOW_REAL_CONFIG is unset. It does not print the key and makes no provider call, but the test is not hermetic, touches the real profile, and contradicts the report's claim that the default run does not read the real provider.",
+      "evidence": "app/main/vision-e2e.runtime.test.js:142-148 and 179-182; docs/TEST-REPORT-feedback-v2.md:67.",
+      "required_fix": "Gate the real-config read behind V2P_ALLOW_REAL_CONFIG, or use a synthetic config for gate/mock; update the report wording."
+    },
+    {
+      "severity": "minor",
+      "id": "F-007",
+      "file": "app/main/main.js:575",
+      "issue": "If delivery throws after pipeline.run has already succeeded, the submit catch returns recoveryId:null even though the recovery WAV/raw is still on disk. pet.js showAudioRecovery(null) hides the panel, so the user has no retry/copy entry until restart although the data was retained. This is not the deferred MiMo platform issue.",
+      "evidence": "app/main/main.js:563-576; app/renderer/pet.js:429,449-457 (expectedId null => hidden); pipeline.run only clears recovery after successful delivery (app/main/pipeline.js:211-214).",
+      "required_fix": "Keep the pipeline recoveryId in the submit scope and return it on delivery errors, or call showAudioRecovery() with no expected id after a post-ASR delivery failure."
+    },
+    {
+      "severity": "minor",
+      "id": "F-008",
+      "file": "app/main/screenshot-library.js:79",
+      "issue": "The active library path shows the BrowserWindow before the frozen image is delivered to the UI, and the wrapper has no image-painted handshake. The runtime records the window visible at 894ms but the UI root ready only at 1067ms; a short live-desktop flash before the frozen image is possible. The evidence's 'no black flash' statement is explicitly observational and not high-speed verified, so the active path does not prove the no-flash requirement.",
+      "evidence": "app/node_modules/electron-screenshots/lib/index.js:51-58 (createWindow/shows before send('SCREENSHOTS:capture')), :112-195; app/main/screenshot-library.runtime.test.js:89-97 (openMs 894, uiMs 1067); docs/TEST-REPORT-feedback-v2.md:76.",
+      "required_fix": "Verify with a high-speed capture and, if visible, keep the library window hidden until the capture event has been painted (for example via the library's windowCreated hook) or explicitly document the residual flash."
+    },
+    {
+      "severity": "nit",
+      "id": "F-009",
+      "file": "docs/TEST-REPORT-feedback-v2.md:28",
+      "issue": "Documentation is internally inconsistent: B07 says 40/40 unit test files while line 9 and feedback-screenshot-library.txt say 41/41; line 73 says native modules must be asar-unpacked although the build now uses asar:false; feedback-screenshot-library.txt labels react-screenshots/node-screenshots as app/package.json dependencies although they are electron-screenshots transitives.",
+      "evidence": "docs/TEST-REPORT-feedback-v2.md:9,28,73; docs/evidence/feedback-screenshot-library.txt:5-9; app/package.json:18-23.",
+      "required_fix": "Correct the 40/40 count, update the asar wording to the actual asar:false build, and describe the two packages as transitives (or declare them explicitly)."
+    },
+    {
+      "severity": "nit",
+      "id": "F-010",
+      "file": "app/main/models.js:10",
+      "issue": "requestSignal's timeout abort reason is 'Vision request timed out'; the same helper now wraps each ASR chunk request, so ASR chunk timeouts are reported to users/logs as vision timeouts.",
+      "evidence": "app/main/models.js:8-23; app/main/models.js:190-196 and 211-217 use requestSignal for ASR.",
+      "required_fix": "Pass a subject/message into requestSignal or use a generic 'request timed out'."
+    },
+    {
+      "severity": "nit",
+      "id": "F-011",
+      "file": "app/main/main.js:158",
+      "issue": "The legacy screenshot capture worker is warmed on every app start even though the default path is electron-screenshots; this keeps an unused hidden PowerShell process resident because the worker is only used by the legacy path or after a library failure.",
+      "evidence": "app/main/main.js:156-158; app/main/screenshot-capture-worker.js:172-191; app/main/main.js:227-236 shows the default path never calls it unless V2P_SCREENSHOT_LEGACY=1 or the library fails.",
+      "required_fix": "Warm the worker lazily when the legacy path is selected or on first library failure."
+    }
+  ],
+  "residual_risks": [
+    "The portable build disables asar for the entire app so the react-screenshots file:// UI loads; this is documented and the packaged resources/native modules were verified, but it exposes plain source/node_modules and any future re-enable of asar or missing static asset reproduces the blank-UI/hang class in F-002.",
+    "The default library path is single-display by design (cursor display) and was runtime-validated only on the 2560x1440@100% primary display. The 1536x865@125% secondary was used only by the legacy cross-screen tests; default-path crop/text scaling on a scaled display is untested. This is within the user's stated single-screen scope but still a scaling risk.",
+    "The shipped default path was not pre-warmed and repeated captures were not runtime-tested; only one open/ok cycle exists in the runtime evidence. The default-path integration test exercised the text tool, 完成 and clipboard output; pen, undo and the toolbar 取消 rely on the third-party library and were not driven there (the portable smoke saw the toolbar and used right-click cancel only).",
+    "The 'no flash' property is based on code ordering and an observational check, not high-speed capture; the library shows the transparent window before sending the frozen image (F-008).",
+    "Real-provider claims (multimodal flag changed only for the active provider, config.json backup config.json.bak-vision-1793184768201, one real vision call, four real ASR calls) were not independently reverified in this audit: no real calls were made and the user profile was not read. Code and frozen evidence are consistent, but the live state/backup could not be checked.",
+    "The 3-minute hidden-window audio-capture runtime was not re-run in this audit (per instructions); its 181.23s evidence and the worklet/flush unit tests were accepted as-is.",
+    "Library selection hides app windows then captures immediately without waiting for the compositor; a pet/settings ghost in the frozen image was not observed but is not explicitly asserted by the runtime test.",
+    "node-screenshots and uiohook-napi are native x64 Windows binaries; the portable is tied to that ABI/OS. Other platform optional packages are pruned from the package, which is appropriate for this delivery.",
+    "The save dead-end is a stock behavior of the chosen MIT UI; the user did not ask for a Save button, so a fix may legitimately hide/disable it instead of adding save-file support."
+  ],
+  "notes": "No real provider calls, no V2P_ALLOW_REAL_* env vars, no user-config reads, no secrets printed, no files modified except this audit. Unit suite reproduced 41/41 PASS. Default screenshot runtime reproduced PASS (open 894ms, UI root 1067ms, textarea exactly 300/300, 356 text pixels, clipboard 400x300). Legacy p3 runtime PASS (1428/1053/1012ms, 40x30 crop, 80x30 cross-screen pixels) and native OS-input runtime PASS (80x30, pen/undo/text/done/cancel, recovery panel hit test). ASR e2e PASS against a local mock (6 chunks/3-minute, 503 and finish_reason=length rejection, recovery retry, no auto-paste). An inline fake-library simulation confirmed that the library 'save' event leaves the wrapper pending and the pet hidden; this is the basis of F-001, and the lack of any timeout/windowClosed guard is the basis of F-002. The implementation otherwise matches the declared default/fallback split, click-positioned text, clipboard-only vision, chunked ASR, recovery retention/cleanup, and prior guard behavior. The verdict is fail because F-001 is a normal user action that permanently locks the app, and F-002 makes the declared fallback unreachable for a silent library failure."
+}

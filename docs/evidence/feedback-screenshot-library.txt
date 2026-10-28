@@ -2,11 +2,9 @@ Feedback v2 screenshot library evidence
 Date: 2026-10-28
 Decision: use the MIT-licensed `electron-screenshots` stack as the default screenshot UI instead of maintaining the custom annotation editor. The user explicitly requested MIT reuse for text placement; single-screen is the accepted scope.
 
-Dependencies (app/package.json):
-- electron-screenshots 0.6.2 — MIT
-- react-screenshots 0.6.1 — MIT (prebuilt electron.html UI)
-- node-screenshots 0.2.8 — Apache-2.0 (Windows prebuilt node-screenshots-win32-x64-msvc)
-- React/React DOM transitives used by the prebuilt UI
+Dependencies:
+- app/package.json direct dependency: electron-screenshots 0.6.2 — MIT
+- transitives of electron-screenshots: react-screenshots 0.6.1 — MIT (prebuilt electron.html UI); node-screenshots 0.2.8 — Apache-2.0 (Windows prebuilt node-screenshots-win32-x64-msvc); React/React DOM for the prebuilt UI
 - Verified on Electron 31.7.7 Windows x64
 
 Active path:
@@ -31,3 +29,9 @@ Known limits:
 - electron-screenshots captures the display nearest the cursor (single display). This matches the user's current single-screen scope; the old cross-screen controller remains only as fallback.
 - `node-screenshots` is native; the portable build must include/unpack it. If the native capture fails, the library itself falls back to Electron desktopCapturer, and the app falls back to the old controller if the library UI fails.
 - The user deferred the MiMo ASR platform issue; no further ASR work in this round.
+
+Audit fixes (2026-10-28):
+- The default path now supplies the frozen image through the app's verified `screenshotCaptureWorker` via `createScreenshotLibrary({ captureImage })`; this avoids the library's `node-screenshots`/desktopCapturer capture failure seen in this desktop session while keeping the MIT frozen-screen/floating-toolbar/text UI.
+- Save is handled explicitly: wrapper preventDefault, save dialog, PNG write, endCapture, settle. Canceled save keeps the capture UI open.
+- Added 60s timeout, windowClosed/closed handling, 2s UI-ready check, duplicate-event settling guard, startup warm(), and a second-capture warm timing measurement.
+- These changes are covered by `screenshot-library.unit.test.js` (ok/cancel/save success+cancel/timeout/close/duplicate/warm). The post-fix screen runtime and portable smoke are pending because the Windows session was locked (`CopyFromScreen` invalid handle); pre-fix runtime/portable evidence remains recorded above.

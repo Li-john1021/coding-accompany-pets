@@ -62,7 +62,7 @@ contextBridge.exposeInMainWorld('v2p', {
   onProbe: (cb) => ipcRenderer.on('v2p:probe', (_e, o) => cb(o)),
   onResult: (cb) => ipcRenderer.on('v2p:result', (_e, p) => cb(p)),
   onImageState: (cb) => ipcRenderer.on('v2p:image-state', (_e, p) => cb(p)),
-  onToast: (cb) => ipcRenderer.on('v2p:toast', (_e, p) => cb(p.text)),
+  onToast: (cb) => ipcRenderer.on('v2p:toast', (_e, p) => cb(p)),
   onHotkeyStart: (cb) => ipcRenderer.on('v2p:hotkey-start', () => cb()),
   onHotkeyStop: (cb) => ipcRenderer.on('v2p:hotkey-stop', () => cb()),
   onTriggerModeChanged: (cb) => ipcRenderer.on('v2p:trigger-mode-changed', (_e, p) => cb(p.mode)),

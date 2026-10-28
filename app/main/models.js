@@ -7,7 +7,7 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
 
 function requestSignal(timeoutMs, externalSignal) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error('Vision request timed out')), timeoutMs);
+  const timer = setTimeout(() => controller.abort(new Error('Request timed out')), timeoutMs);
   const abort = () => controller.abort(externalSignal.reason);
   if (externalSignal) {
     if (externalSignal.aborted) abort();

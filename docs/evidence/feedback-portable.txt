@@ -24,3 +24,7 @@ Notes:
 - The portable UI is the same `react-screenshots` bundle verified in `feedback-screenshot-library.txt`; the dev integration test proves the text tool creates a textarea at the click coordinates and the final clipboard image contains the text pixels.
 - The packaged app uses the same real user config; multimodal is enabled for b52kdw0d and the backup remains config.json.bak-vision-1793184768201.
 - Old v1 artifacts in the main project's app/dist-exe are not this round's deliverable; the new portable file must be copied with a distinct name when delivering.
+
+Post-audit status (2026-10-28):
+- The build/smoke above were produced before the independent audit fixes (Save handling, timeout/windowClosed/UI-ready guards, worker-fed capture, startup warm). The artifact `Voice2Prompt-1.0.0-Portable.exe` at this path is therefore NOT the final deliverable and must be rebuilt after the fixes.
+- The final post-fix portable smoke is blocked because the Windows session became locked (`CopyFromScreen` invalid handle); it must be rebuilt and launched after the session is unlocked. The build itself (electron-builder, asar:false, MIT UI/native resources) remains valid; only the runtime smoke needs repeating.

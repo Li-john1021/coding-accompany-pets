@@ -139,14 +139,6 @@ async function run() {
   const validationPath = path.join(__dirname, 'vision-validation.png');
   const validation = fs.readFileSync(validationPath);
   const validationSha = sha256(validation);
-  const realProfile = path.join(process.env.APPDATA, 'Voice2Prompt');
-  const realConfigPath = path.join(realProfile, 'config.json');
-  const realConfig = readJson(realConfigPath);
-  const activeProvider = realConfig.llmProviders.find((provider) => provider.id === realConfig.activeLlmId);
-  assert.ok(activeProvider, 'real config has an active LLM provider');
-  assert.ok(activeProvider.baseUrl && activeProvider.model && activeProvider.apiKey, 'real provider has endpoint, model and key');
-  const host = new URL(activeProvider.baseUrl).host;
-
   const gateProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'v2p-vision-gate-'));
   const mockProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'v2p-vision-mock-'));
   const mock = startMockVision();
@@ -154,12 +146,14 @@ async function run() {
   const mockPort = mock.server.address().port;
   let realBackup = '';
   let realEnabled = false;
+  let activeProvider = null;
+  let host = '';
   try {
-    const gateConfig = JSON.parse(JSON.stringify(realConfig));
-    const gateProvider = gateConfig.llmProviders.find((provider) => provider.id === gateConfig.activeLlmId);
-    gateProvider.apiKey = '';
-    gateProvider.multimodal = false;
-    writeJson(path.join(gateProfile, 'config.json'), gateConfig);
+    writeJson(path.join(gateProfile, 'config.json'), {
+      asrProviders: [], llmProviders: [{ id: 'vision-gate', name: 'gate', baseUrl: 'https://invalid.example/v1', apiKey: '', model: 'vision-gate', multimodal: false }],
+      activeAsrId: '', activeLlmId: 'vision-gate', hotkey: 'Control+Shift+F12', screenshotHotkey: 'Control+Alt+F12',
+      petModel: 'keyboard', petScale: 1, mouseRecord: false, triggerMode: 'hold', insertMode: 'clipboard', previewEnabled: false
+    });
     const gate = await runScenario('gate', gateProfile, validationPath);
     assert.match(gate.state.reason, /多模态/);
     assert.match(gate.result.error, /多模态/);
@@ -181,6 +175,13 @@ async function run() {
       return;
     }
 
+    const realProfile = path.join(process.env.APPDATA, 'Voice2Prompt');
+    const realConfigPath = path.join(realProfile, 'config.json');
+    const realConfig = readJson(realConfigPath);
+    activeProvider = realConfig.llmProviders.find((provider) => provider.id === realConfig.activeLlmId);
+    assert.ok(activeProvider, 'real config has an active LLM provider');
+    assert.ok(activeProvider.baseUrl && activeProvider.model && activeProvider.apiKey, 'real provider has endpoint, model and key');
+    host = new URL(activeProvider.baseUrl).host;
     realBackup = `${realConfigPath}.bak-vision-${Date.now()}`;
     fs.copyFileSync(realConfigPath, realBackup);
     const enabledConfig = JSON.parse(JSON.stringify(realConfig));

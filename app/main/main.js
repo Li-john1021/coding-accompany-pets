@@ -145,7 +145,7 @@ function handleScreenshotHotkey() {
   imageWorkflow.runScreenshot().then((result) => {
     if (result.ok) {
       const state = imageWorkflow.state();
-      petBroadcast('v2p:toast', { text: state.eligible ? '截图已复制，可点击识图' : `截图已复制。${state.reason}` });
+      petBroadcast('v2p:toast', { text: state.eligible ? '截图已复制，可点击识图' : `截图已复制。${state.reason}`, level: 'info' });
     }
     if (!result.ok && result.reason !== 'cancelled' && result.reason !== 'zero-area') {
       petBroadcast('v2p:toast', { text: result.error || '截图失败，请重试' });
@@ -154,7 +154,14 @@ function handleScreenshotHotkey() {
 }
 
 function initializeScreenshotController() {
-  screenshotLibrary = createScreenshotLibrary();
+  const captureLibraryDisplay = async (display) => {
+    const bounds = screen.dipToScreenRect(null, { x: display.x, y: display.y, width: display.width, height: display.height });
+    const [capture] = await screenshotCaptureWorker.capture([{ id: String(display.id), ...bounds }]);
+    if (!capture?.png) throw new Error('屏幕捕获失败');
+    return `data:image/png;base64,${capture.png}`;
+  };
+  screenshotLibrary = createScreenshotLibrary({ captureImage: captureLibraryDisplay });
+  screenshotLibrary.warm();
   screenshotCaptureWorker.warm();
   screenshotController = createScreenshotController({
     getAppWindows: () => BrowserWindow.getAllWindows().filter((win) => !win.webContents.getURL().endsWith('/screenshot.html')),
@@ -225,13 +232,17 @@ function initializeScreenshotController() {
     writeImage: (dataUrl) => clipboard.writeImage(nativeImage.createFromDataURL(dataUrl))
   });
   const captureScreenshot = async (opts = {}) => {
-    if (process.env.V2P_SCREENSHOT_LEGACY === '1') return screenshotController.capture(opts);
+    if (process.env.V2P_SCREENSHOT_LEGACY === '1') {
+      screenshotCaptureWorker.warm();
+      return screenshotController.capture(opts);
+    }
     try {
       const result = await screenshotLibrary.capture(opts);
       if (result.ok || result.reason === 'cancelled') return result;
     } catch (error) {
       if (/截图已在进行/.test(String(error.message || error))) return { ok: false, reason: 'busy', error: '已有操作正在进行' };
     }
+    screenshotCaptureWorker.warm();
     return screenshotController.capture(opts);
   };
   imageWorkflow = createImageWorkflow({
@@ -532,6 +543,7 @@ function registerIpc() {
     const isCurrent = () => voiceDeliveryEpoch === operationVoiceEpoch;
     const targetPromise = voiceTargetPromise;
     voiceTargetPromise = null;
+    let pendingRecoveryId = null;
     try {
       const buf = Buffer.from(audio);
       const opts = { ...(options || {}), deferDelivery: true, signal: requestController.signal,
@@ -543,6 +555,7 @@ function registerIpc() {
         opts.transcriptOnly = true;
       }
       const result = await pipeline.run(buf, mime, (stage) => { if (isCurrent()) setState(stage); }, opts);
+      pendingRecoveryId = result.recoveryId || null;
       if (!isCurrent()) return { ok: false, voiceSuperseded: true };
       if (result.preview && config.load().previewEnabled && !opts.recoveryCopyOnly) {
         const skip = Number(config.load().previewSkipChars) || 12;
@@ -572,7 +585,7 @@ function registerIpc() {
       const detail = err?.recoveryError ? `；恢复录音未保存：${err.recoveryError}` : '';
       const msg = String(err.message || err) + detail;
       petBroadcast('v2p:toast', { text: msg.slice(0, 120) });
-      const recoveryId = typeof err?.recoveryId === 'string' ? err.recoveryId : null;
+      const recoveryId = typeof err?.recoveryId === 'string' ? err.recoveryId : pendingRecoveryId;
       return { ok: false, error: msg, recoveryId };
     } finally {
       voiceSubmissionActive = false;

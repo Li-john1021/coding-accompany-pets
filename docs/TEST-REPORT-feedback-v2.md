@@ -25,7 +25,7 @@
 | B04 三/五分钟采集与尾帧 | 通过：180s 样本测试 + 181.2s 隐藏窗真实采集；flush 后不再收帧 | `docs/evidence/feedback-asr.txt`，`audio-capture.runtime.test.js` |
 | B05 分段≤30s/完整覆盖/合并/失败路径 | 通过：5 分钟 10 段字节重建、3 分钟 6 段、真实 97s 4 段；打乱/截断/429/503/超时拒绝 | `docs/evidence/feedback-asr.txt`，`feedback-asr-live.txt` |
 | B06 恢复/重试/不自动粘贴/清理 | 通过：失败保留恢复，重试成功后才写剪贴板；恢复面板 300×306 内可命中 | `docs/evidence/feedback-asr.txt`，`feedback-recovery-panel.png` |
-| B07 原有回归 | 通过：40/40 单元测试文件；热键/录音/文字/Undo/剪贴板互斥保持 | 本报告 |
+| B07 原有回归 | 通过：41/41 单元测试文件；热键/录音/文字/Undo/剪贴板互斥保持 | 本报告 |
 | B08 便携包运行 | 通过：`Voice2Prompt-1.0.0-Portable.exe` 实际启动；桌宠截图打开打包后的 MIT 冻结屏，500×300 选区显示小浮条，右键取消恢复桌宠；资源包含库与 native 模块 | `docs/evidence/feedback-portable.txt` |
 
 ## 真实调用预算
@@ -66,11 +66,21 @@ V2P_ALLOW_REAL_CONFIG=1 node app/main/vision-e2e.runtime.test.js
 
 `V2P_ALLOW_REAL_ASR=1` 和 `V2P_ALLOW_REAL_CONFIG=1` 是显式真实调用门禁；默认不读取真实 provider、不修改用户配置。原生截图证据默认写临时目录，设置 `V2P_EVIDENCE_DIR=docs/evidence` 才写仓库证据。
 
+## 独立审查与修复（2026-10-28）
+
+第一轮干净独立审查（`docs/audits/feedback-v2-1.json`）判 fail，指出两个 major，已修复：
+
+- **Save 锁死**：MIT UI 的“保存”按钮原先只触发库的 save/endCapture，wrapper 不 settle，导致桌宠隐藏、`imageWorkflow.busy` 永久为 true。现在 wrapper 监听 `save`，`preventDefault` 后弹保存对话框、写 PNG、正常 `endCapture` 并 settle（取消保存则保持截图界面可用）。单测覆盖保存成功/取消。
+- **无超时/窗口关闭兜底**：现在有 60s 上限、`windowClosed`/窗口 `closed` 监听，以及 2s 的 UI 绘制就绪检查；失败统一 settle 为 `capture-failed`，再由 main 回退到旧控制器。库 UI 静默空白不会再永久锁住 app。
+- 其他修复：重复 ok/cancel 防抖；热键截图成功消息改为 info 级别，不再触发错误样式；启动时预创建库实例（warm），并增加第二次捕获的 warm 计时测试；识图 gate/mock 不再读取真实配置，真实步骤仍需 `V2P_ALLOW_REAL_CONFIG=1`；ASR 后交付异常仍保留 recoveryId；超时错误信息改为通用 “Request timed out”；文档 41/41 与 asar:false 表述已修正。默认库路径的抓屏改由已验证的快速 capture worker 供图，避免 `node-screenshots` 在当前桌面会话偶发失败。
+- 残留风险：MIT 库窗口在冻结图送达前显示，理论上仍可能有短暂 live-desktop 闪烁；本轮未做高速摄像验证。`setOpacity` 在透明 kiosk 窗口上不可靠，已回退该方案。
+- **屏幕 runtime 复跑阻塞**：审查修复期间 Windows 会话被锁定，`Graphics.CopyFromScreen` 报“句柄无效”，`node-screenshots` 报 desktop 错误；因此修复后的 `screenshot-library.runtime.test.js`、回退 runtime 与便携包冒烟需要在会话解锁后重跑。屏幕锁定前的证据（MIT 库文字点选、便携版小浮条）仍然有效，但不能替代修复后的最终 runtime。
+
 ## 环境与限制
 
 - Windows 10.0.22631 x64；Electron 31.7.7；测试期间显示器扩展为 2560×1440 + 1536×865@1.25。
 - 用户明确“基本不会跨屏截图，单屏即可”。默认截图路径使用 `electron-screenshots`（MIT），它按鼠标所在显示器单屏捕获；旧跨屏控制器保留为回退，仅由 `V2P_SCREENSHOT_LEGACY=1` 启用。
-- 依赖：`electron-screenshots@0.6.2`（MIT）、`react-screenshots@0.6.1`（MIT，预构建 UI）、`node-screenshots@0.2.8`（Apache-2.0，Windows 预构建 native 模块）及 React 运行时。Electron 31 下原生捕获和 UI 已实测；便携包需要把 native 模块从 asar unpack，已在构建配置中处理并实测。
+- 依赖：`app/package.json` 直接依赖 `electron-screenshots@0.6.2`（MIT）；`react-screenshots@0.6.1`（MIT，预构建 UI）与 `node-screenshots@0.2.8`（Apache-2.0，Windows 预构建 native 模块）是它的传递依赖。构建使用 `"asar": false`，资源位于 `resources/app/node_modules`，native 模块可加载；Electron 31 与便携版均已实测。
 - 用户已说明 MiMo ASR 平台侧约 1 分钟限制由他后续处理；本轮保留 4 段真实 ASR 证据，不再继续 ASR 修改。
 - 恢复面板的完整重试流程由生产 ASR e2e 的真实 renderer 点击覆盖；原生回退测试验证了 300×306 内布局、按钮可见和 `elementFromPoint` 命中 retry。
 - “无黑闪”依据是默认库先捕获后显示窗口，以及回退路径 ready 握手后才 show 的代码路径；并非高速摄像观测。

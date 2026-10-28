@@ -63,6 +63,15 @@ function fixture() {
     assert.equal(f.deliveries.length, 1);
   }
   {
+    const f = fixture();
+    f.context.pipeline.run = async () => ({ raw: 'r', polished: 'p', recoveryId: 'recovery-delivery' });
+    f.context.deliverResult = async () => { throw new Error('delivery failed'); };
+    const result = await f.call('submit', { audio: [1], options: { mode: 'none' } });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'delivery failed');
+    assert.equal(result.recoveryId, 'recovery-delivery', 'post-ASR delivery failure keeps the recovery ID for the UI');
+  }
+  {
     const f = fixture(); f.cfg.previewEnabled = true; f.cfg.previewSkipChars = 120;
     await f.call('submit', { audio: [1], options: {} });
     assert.equal(f.deliveries.length, 1); assert.equal(f.deliveries[0].original, ' initial raw ASR\n');
