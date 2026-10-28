@@ -27,6 +27,7 @@
 - ✂️ **截图工具**：`Alt+A` 冻结屏幕、框选、标注文字，确认后 PNG 直接进剪贴板。
 - 👁️ **独立识图模型**：截图后点「识图」，用你单独配置的视觉模型把图里的内容读成文字，结果只写剪贴板。
 - 🐱 **BongoCat 桌宠**：Live2D 键盘猫，听写时戴耳机、敲键盘；滚轮缩放，拖到哪都行。
+- 📦 **第三方皮肤导入**：BongoCat / 通用 Live2D 皮肤 zip 或文件夹一键换肤；无底图、无键帽的模型也能用，自动裁边，按皮肤比例调整窗口。
 - 🎨 **皮肤工坊**：19 个零件上色画板，描边自动锁定，画完起名就能换装。
 - 📦 **下载即用**：安装版 / 便携版都自带 Electron 和全部运行时代码，**不需要 Node、npm 或编译环境**。
 
@@ -145,7 +146,7 @@
 <details>
 <summary><b>桌宠不动 / 没有 Live2D？</b></summary>
 
-发布包里已包含 Live2D 运行时。若你从源码运行，需要自行从 [Live2D 官网](https://www.live2d.com/sdk/download/web/) 下载 Cubism SDK for Web，把 `live2dcubismcore.min.js` 放到 `app/renderer/lib/`。没有该文件时桌宠会回退成静态图片，其他功能不受影响。
+发布包里已包含 Live2D 运行时。若你从源码运行，需要自行从 [Live2D 官网](https://www.live2d.com/sdk/download/web/) 下载 **Cubism SDK for Web R5（Core 6.0.1+）**，把 `Core/live2dcubismcore.min.js` 放到 `app/renderer/lib/`。新版 MOC3 v6 皮肤（例如 DeepSeek 大肥鱼）必须用这个版本；旧版 Core 5.1 会提示版本过旧。没有该文件时桌宠会回退成静态图片，其他功能不受影响。第三方皮肤导入说明见 [`docs/skin-import.md`](docs/skin-import.md)。
 </details>
 
 <details>
@@ -221,10 +222,21 @@ release/       可直接下载的安装版 / 便携版与校验值
 - 桌宠渲染：[PixiJS](https://pixijs.com/)（MIT）、
   [pixi-live2d-display](https://github.com/guansss/pixi-live2d-display)（MIT）
 - 内置键盘猫皮肤：来自 [ayangweb/BongoCat](https://github.com/ayangweb/BongoCat)（模型文件以该仓库为准）
+- 内置大肥鱼皮肤：来自 [mefist-asuka/Deepseek-standard-mode](https://github.com/mefist-asuka/Deepseek-standard-mode)；角色/贴图版权归 赤风RED、EmoteLab，随仓库自用，商用/再分发请确认原作者授权
 - Live2D Cubism Core：Live2D Proprietary，源码仓库不提交，需自行下载；发布包由本机构建并包含本机副本，再分发前请确认 Live2D 条款
 - 应用图标与 README 主视觉：项目使用的插画素材，版权归原作者所有；仅用于本项目展示，单独复用前请先取得授权
 
 第三方运行时代码的版本、许可证和保留文件清单见 [`app/vendor/README.md`](app/vendor/README.md)。
+
+### 致谢 BongoCat 生态
+
+- [MMmmmoko/Bongo-Cat-Mver](https://github.com/MMmmmoko/Bongo-Cat-Mver)：最早的 Bongo Cat C++ overlay（MIT），也是“装饰性操作演示”这一形态的源头；本项目桌宠的灵感与皮肤约定都从这里来。
+- [ayangweb/BongoCat](https://github.com/ayangweb/BongoCat)：现代桌面版 BongoCat，内置键盘猫模型、`resources/left-keys` 皮肤结构和 `CatParam*` 参数约定以该仓库为准。
+- [ayangweb/Awesome-BongoCat](https://github.com/ayangweb/Awesome-BongoCat)：第三方皮肤索引；本项目测试过的乃琳、罗小黑、阮梅、小熊猫昊昊、逍遥散人等皮肤均来自该列表，版权归各作者，自用请注明来源。
+- [mefist-asuka/Deepseek-standard-mode](https://github.com/mefist-asuka/Deepseek-standard-mode)：内置大肥鱼资源包；角色/贴图版权归 赤风RED、EmoteLab，工程参考与 `psd2live` 工具由 阿特ers、常日缠 开源。
+- [Bongo-Cat-Mver 转换站](https://bongocat.vteamer.cc)：老资源转新格式的社区工具。
+
+再次感谢以上作者把模型、工具和桌面宠物形态开源出来。第三方皮肤版权归各原作者，本项目只做本地导入与展示，不主张任何皮肤权利。
 
 ---
 

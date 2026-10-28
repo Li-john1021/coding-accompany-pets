@@ -88,17 +88,26 @@
         </div>
         <div class="pet-row" id="live2d-row">
           <select id="pet-model"></select>
+          <button class="btn" id="import-skin-zip" title="导入 BongoCat / Live2D 皮肤 zip 整包">📦 导入 zip…</button>
+          <button class="btn" id="import-skin-folder" title="导入解压后的皮肤文件夹">📁 导入文件夹…</button>
           <button class="btn" id="edit-skin" title="打开画板，修改选中皮肤的涂装">✏️ 修改</button>
-          <button class="btn danger" id="del-skin" title="删除选中的自建皮肤（内置皮肤不可删）">🗑 删除</button>
+          <button class="btn danger" id="del-skin" title="删除选中的用户皮肤（内置皮肤不可删）">🗑 删除</button>
           <button class="btn" id="open-models-folder">打开皮肤目录…</button>
           <button class="btn" id="open-paint">🎨 创建皮肤…</button>
+        </div>
+        <div class="pet-row" id="import-target-row">
+          <label class="chk" title="开发用：直接写入 app/assets/models，随仓库一起分发；安装版目录通常只读"><input type="checkbox" id="import-to-repo" /> 复制到项目内置目录</label>
+          <span class="hint">不勾选时导入到用户目录</span>
+        </div>
+        <div class="pet-row" id="skin-info-row" style="display:none;">
+          <span class="hint" id="skin-info"></span>
         </div>
         <div class="pet-row" id="image-row" style="display:none;">
           <img id="pet-preview" alt="宠物" />
           <button class="btn" id="pick-pet">选择图片…</button>
           <span class="hint">发给你喜欢的图片即可替换，支持 png/jpg/gif/webp</span>
         </div>
-        <span class="hint">创建皮肤：在画板上挑零件上色（描边自动锁定，画不散架），画完点「✨ 生成皮肤」起个名字，皮肤就会出现在上面的下拉框里，选中保存即生效。只想用现成的，把皮肤文件夹放进皮肤目录也可（详见 docs/skin-guide.md）。</span>
+        <span class="hint">直接用「📦 导入 zip / 📁 导入文件夹」换第三方 Live2D 皮肤（如 BongoCat / Awesome-BongoCat）；包内任意层级有 <code>*.model3.json</code> 即可。没有 background/键帽的通用模型也能加载，只做形象、头部和呼吸。皮肤版权归原作者，自用请注明来源。</span>
       </div>
       <div class="form-row">
         <label>优化提示词（高级，一般不用改）</label>

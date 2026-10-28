@@ -1,11 +1,15 @@
 const BASE_WIDTH = 300;
 const BASE_HEIGHT = 306;
 
-function boundsForScale(scale) {
+function boundsForContent(baseWidth, baseHeight, scale) {
   return {
-    width: Math.round(BASE_WIDTH * scale),
-    height: Math.round(BASE_HEIGHT * scale)
+    width: Math.round(Number(baseWidth) * scale),
+    height: Math.round(Number(baseHeight) * scale)
   };
+}
+
+function boundsForScale(scale) {
+  return boundsForContent(BASE_WIDTH, BASE_HEIGHT, scale);
 }
 
 function applyInitialZoomAfterLoad(petWindow, getScale) {
@@ -15,4 +19,4 @@ function applyInitialZoomAfterLoad(petWindow, getScale) {
   });
 }
 
-module.exports = { BASE_WIDTH, BASE_HEIGHT, boundsForScale, applyInitialZoomAfterLoad };
+module.exports = { BASE_WIDTH, BASE_HEIGHT, boundsForContent, boundsForScale, applyInitialZoomAfterLoad };

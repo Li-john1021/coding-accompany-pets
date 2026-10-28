@@ -15,6 +15,7 @@ const fs = require('fs');
 const { pathToFileURL, domainToUnicode } = require('url');
 const config = require('./config');
 const petWindowLayout = require('./pet-window-layout');
+const skinPack = require('./skin-pack');
 const models = require('./models');
 const pipeline = require('./pipeline');
 const audioRecovery = require('./audio-recovery');
@@ -92,7 +93,9 @@ const MODELS_ROOT = path.join(__dirname, '..', 'assets', 'models');
 // 用户皮肤目录（打包后 asar 只读，新皮肤往这里放），优先级高于内置
 const USER_MODELS_ROOT = path.join(app.getPath('userData'), 'models');
 // 按名字解析皮肤目录：先用户目录后内置
-const resolveModelDir = (name) => {
+const resolveModelDir = (rawName) => {
+  const name = skinPack.safeName(rawName);
+  if (!name) return null;
   for (const root of [USER_MODELS_ROOT, MODELS_ROOT]) {
     const p = path.join(root, name);
     if (fs.existsSync(p)) return p;
@@ -104,6 +107,8 @@ let tray = null;
 let settingsWin = null;
 let petWin = null;
 let paintWin = null;
+// 宠物窗的 CSS 基准尺寸；Live2D 皮肤按自身场景比例改写，静态图沿用默认值
+let petBaseSize = { width: petWindowLayout.BASE_WIDTH, height: petWindowLayout.BASE_HEIGHT };
 let screenshotController = null;
 let screenshotLibrary = null;
 let recordingActive = false; // 全局热键触发录音时的状态标记
@@ -359,7 +364,7 @@ function createPetWindow() {
     config.save();
   }
   petWin = new BrowserWindow({
-    ...petWindowLayout.boundsForScale(s),
+    ...petWindowLayout.boundsForContent(petBaseSize.width, petBaseSize.height, s),
     frame: false,
     transparent: true,
     resizable: false,
@@ -393,12 +398,40 @@ function applyPetScale(delta) {
   petWin.setBounds({
     x: Math.round(x - (w * (next / cur - 1)) / 2),
     y: Math.round(y - (h * (next / cur - 1)) / 2),
-    ...petWindowLayout.boundsForScale(next)
+    ...petWindowLayout.boundsForContent(petBaseSize.width, petBaseSize.height, next)
   });
   petWin.webContents.setZoomFactor(next);
   const cfg = config.load();
   cfg.petScale = next;
   config.save();
+}
+
+/** 渲染层算完皮肤场景后回传 CSS 基准尺寸；窗口以中心为锚点等比跟随 */
+function applyPetBaseSize(width, height) {
+  const w = Math.round(Number(width));
+  const h = Math.round(Number(height));
+  if (!Number.isFinite(w) || !Number.isFinite(h)) return { ok: false, error: '尺寸不合法' };
+  petBaseSize = {
+    width: Math.max(180, Math.min(760, w)),
+    height: Math.max(140, Math.min(960, h))
+  };
+  if (!petWin || petWin.isDestroyed()) return { ok: true, width: petBaseSize.width, height: petBaseSize.height };
+  const s = Math.max(0.3, Math.min(2.5, Number(config.load().petScale) || 1));
+  const [x, y] = petWin.getPosition();
+  const [cw, ch] = petWin.getSize();
+  const bounds = petWindowLayout.boundsForContent(petBaseSize.width, petBaseSize.height, s);
+  const cx = x + cw / 2;
+  const cy = y + ch / 2;
+  let nx = Math.round(cx - bounds.width / 2);
+  let ny = Math.round(cy - bounds.height / 2);
+  try {
+    const display = screen.getDisplayNearestPoint({ x: Math.round(cx), y: Math.round(cy) });
+    const area = display.workArea;
+    nx = Math.max(area.x - bounds.width + 60, Math.min(area.x + area.width - 60, nx));
+    ny = Math.max(area.y, Math.min(area.y + area.height - 60, ny));
+  } catch { /* 屏幕信息不可用时保持原位置 */ }
+  petWin.setBounds({ x: nx, y: ny, ...bounds });
+  return { ok: true, width: petBaseSize.width, height: petBaseSize.height };
 }
 
 // ---------------- 托盘 ----------------
@@ -650,50 +683,195 @@ function registerIpc() {
     return { ok: true, enabled: cfg.mouseRecord };
   });
 
+  // 可用皮肤：返回名字数组（兼容旧设置页）+ 每个皮肤的探测详情
   ipcMain.handle('v2p:pet-model-list', () => {
     const names = new Set();
+    const details = [];
     for (const root of [USER_MODELS_ROOT, MODELS_ROOT]) {
       try {
         for (const d of fs.readdirSync(root, { withFileTypes: true })) {
-          if (d.isDirectory() && fs.readdirSync(path.join(root, d.name)).some((f) => f.endsWith('.model3.json'))) {
-            names.add(d.name);
-          }
+          if (!d.isDirectory()) continue;
+          const dir = path.join(root, d.name);
+          const info = skinPack.inspectDir(dir);
+          if (!info) continue;
+          names.add(d.name);
+          details.push({
+            name: d.name,
+            mode: info.mode,
+            declaredMode: info.declaredMode,
+            entry: info.entry,
+            base: info.base,
+            hasKeys: info.hasKeys,
+            hasBg: info.hasBg,
+            warnings: info.warnings
+          });
         }
       } catch { /* 目录不存在则跳过 */ }
     }
-    return { models: [...names] };
+    return { models: [...names], details };
   });
 
-  // 当前皮肤里的键帽图（敲击高亮用）；每张都是与背景同尺寸的整页图
+  // 当前皮肤里的键帽图（敲击高亮用）；每张都是与画布同尺寸的整页图
   ipcMain.handle('v2p:key-caps', () => {
     const name = config.load().petModel || '';
     const dir = resolveModelDir(name);
-    if (!dir) return { keys: [] };
-    const out = [];
-    for (const sub of ['left-keys', 'right-keys']) {
-      const d = path.join(dir, 'resources', sub);
-      try {
-        for (const f of fs.readdirSync(d)) if (f.endsWith('.png')) out.push(`resources/${sub}/${f}`);
-      } catch { /* 皮肤可能不带键帽 */ }
-    }
-    return { keys: out };
+    if (!dir) return { keys: [], letters: [], left: [], right: [] };
+    const info = skinPack.inspectDir(dir);
+    if (!info) return { keys: [], letters: [], left: [], right: [] };
+    const pkgDir = info.base ? path.join(dir, info.base.split('/').join(path.sep)) : dir;
+    const keys = skinPack.scanKeys(pkgDir);
+    return { keys: keys.all, letters: keys.letters, left: keys.left, right: keys.right };
   });
 
   ipcMain.handle('v2p:pet-image', () => ({ dataUrl: currentPetImageDataUrl() }));
 
-  // Live2D 皮肤：当前模型名 + 可用列表（用户目录与内置 assets/models 下含 *.model3.json 的目录）
-
-  // Live2D 皮肤：当前模型名 + 可用列表（用户目录与内置 assets/models 下含 *.model3.json 的目录）
-
-  // 删除用户自建皮肤（内置皮肤不在用户目录，天然受保护）
-
-  // 画板反推涂装用:皮肤贴图页的 model:// 基址(用户自建与内置都可,只读)
-
-  // Live2D 皮肤：当前模型名 + 可用列表（用户目录与内置 assets/models 下含 *.model3.json 的目录）
+  // Live2D 皮肤：当前模型名 + 入口/mode/包根（嵌套包也能正常给 URL）
   ipcMain.handle('v2p:pet-model', () => {
     const name = config.load().petModel || '';
-    const url = name && resolveModelDir(name) ? `model://${name}/` : '';
-    return { name, url };
+    const dir = name ? resolveModelDir(name) : null;
+    if (!dir) return { name: name, url: '', entry: '', mode: '', base: '' };
+    const info = skinPack.inspectDir(dir);
+    if (!info) return { name, url: '', entry: '', mode: '', error: '皮肤结构无法识别' };
+    const encodePath = (p) => String(p).split('/').map(encodeURIComponent).join('/');
+    const baseUrl = `model://${name}/${info.base ? encodePath(info.base) + '/' : ''}`;
+    return {
+      name,
+      url: baseUrl,
+      entry: encodePath(info.entry),
+      mode: info.mode,
+      declaredMode: info.declaredMode,
+      base: info.base,
+      hasKeys: info.hasKeys,
+      hasBg: info.hasBg,
+      scene: info.scene,
+      warnings: info.warnings
+    };
+  });
+
+  // 皮肤详情（设置页展示 mode/来源/贴图大小/警告）
+  ipcMain.handle('v2p:skin-info', (_e, { name } = {}) => {
+    const skin = skinPack.safeName(name || config.load().petModel || '');
+    const dir = skin ? resolveModelDir(skin) : null;
+    if (!dir) return { ok: false, error: '皮肤不存在' };
+    const info = skinPack.inspectDir(dir);
+    if (!info) return { ok: false, error: '皮肤结构无法识别' };
+    return { ok: true, name: skin, ...info };
+  });
+
+  // 导入皮肤包（zip 或文件夹）
+  ipcMain.handle('v2p:import-skin', async (_e, payload) => {
+    const { zip, filePaths, folderPaths, name, sourceNote, overwrite } = payload || {};
+    const targetRepo = payload && payload.target === 'repo';
+    const target = (zip ? filePaths : folderPaths) || filePaths;
+    const src = Array.isArray(target) ? target[0] : target;
+    if (!src) return { ok: false, error: '未选择皮肤包' };
+    if (targetRepo) {
+      try { fs.accessSync(MODELS_ROOT, fs.constants.W_OK); } catch {
+        return { ok: false, error: '当前安装版不可写内置目录，请取消勾选后导入到用户目录' };
+      }
+    }
+    const r = await skinPack.importPack({
+      zipPath: zip ? src : (/\.zip$/i.test(src) ? src : null),
+      folderPath: zip ? null : src,
+      name,
+      sourceNote,
+      overwrite: targetRepo ? false : !!overwrite
+    }, targetRepo ? MODELS_ROOT : USER_MODELS_ROOT);
+    if (targetRepo && r.exists) {
+      return { ok: false, error: `内置目录已有同名皮肤「${r.name}」，请换个名字`, exists: true, name: r.name };
+    }
+    if (r.ok) {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send('v2p:pet-model-list-changed', {});
+      }
+    }
+    return { ...r, target: targetRepo ? 'repo' : 'user' };
+  });
+
+  // 选择皮肤包（主进程弹框，渲染层不碰文件系统）
+  ipcMain.handle('v2p:pick-skin-pack', async (_e, { zip } = {}) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: zip ? '选择皮肤 zip 包' : '选择皮肤文件夹',
+      filters: zip ? [{ name: '皮肤包', extensions: ['zip'] }] : undefined,
+      properties: zip ? ['openFile'] : ['openDirectory']
+    });
+    return { ok: !canceled && !!filePaths.length, canceled, filePaths };
+  });
+
+  // 模式覆盖：auto / standard / keyboard / gamepad，写入皮肤包元数据
+  ipcMain.handle('v2p:skin-mode-set', (_e, { name, mode } = {}) => {
+    const skin = skinPack.safeName(name || config.load().petModel || '');
+    const dir = skin ? resolveModelDir(skin) : null;
+    if (!dir) return { ok: false, error: '皮肤不存在' };
+    const userDir = path.join(USER_MODELS_ROOT, skin);
+    if (path.resolve(dir) !== path.resolve(userDir)) return { ok: false, error: '内置皮肤只读' };
+    const next = ['auto', 'standard', 'keyboard', 'gamepad'].includes(mode) ? mode : 'auto';
+    try {
+      skinPack.saveMeta(dir, next === 'auto' ? { modeOverride: '' } : { modeOverride: next });
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
+    if (config.load().petModel === skin) petBroadcast('v2p:pet-model-changed', { name: skin });
+    return { ok: true, mode: next };
+  });
+
+  // 渲染层算出的场景裁剪矩形（画布坐标），持久化避免每次加载重算
+  ipcMain.handle('v2p:skin-scene-save', (_e, { name, scene } = {}) => {
+    const skin = skinPack.safeName(name || config.load().petModel || '');
+    const dir = skin ? resolveModelDir(skin) : null;
+    if (!dir || !scene) return { ok: false, error: '参数不合法' };
+    const userDir = path.join(USER_MODELS_ROOT, skin);
+    if (path.resolve(dir) !== path.resolve(userDir)) return { ok: false, error: '内置皮肤只读' };
+    const nums = ['x', 'y', 'w', 'h'].map((k) => Number(scene[k]));
+    if (nums.some((n) => !Number.isFinite(n)) || nums[2] <= 0 || nums[3] <= 0) {
+      return { ok: false, error: '场景矩形不合法' };
+    }
+    try {
+      skinPack.saveMeta(dir, { scene: { x: nums[0], y: nums[1], w: nums[2], h: nums[3] } });
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
+    return { ok: true };
+  });
+
+  // 渲染层算完皮肤场景后回传 CSS 基准尺寸
+  ipcMain.handle('v2p:pet-content-size', (_e, { width, height } = {}) => applyPetBaseSize(width, height));
+
+  // 贴图页列表（整页调色/调试用）
+  ipcMain.handle('v2p:skin-textures', (_e, { name } = {}) => {
+    const skin = skinPack.safeName(name || config.load().petModel || '');
+    const dir = skin ? resolveModelDir(skin) : null;
+    if (!dir) return { ok: false, error: '皮肤不存在' };
+    const info = skinPack.inspectDir(dir);
+    if (!info) return { ok: false, error: '皮肤结构无法识别' };
+    return { ok: true, name: skin, base: info.base, pages: info.textures.map((t) => t.path), mode: info.mode, source: info.source, licenseNote: info.licenseNote };
+  });
+
+  // 贴图微调：只允许改用户目录里的皮肤；路径必须落在包根内
+  ipcMain.handle('v2p:skin-tint-save', (_e, { name, pages } = {}) => {
+    const skin = skinPack.safeName(name || config.load().petModel || '');
+    const dir = skin ? resolveModelDir(skin) : null;
+    if (!dir) return { ok: false, error: '皮肤不存在' };
+    const info = skinPack.inspectDir(dir);
+    if (!info) return { ok: false, error: '皮肤结构无法识别' };
+    const userDir = path.join(USER_MODELS_ROOT, skin);
+    if (path.resolve(dir) !== path.resolve(userDir)) {
+      return { ok: false, error: '内置皮肤不可改贴图，请先导入为用户皮肤' };
+    }
+    const pkgDir = path.resolve(info.base ? path.join(dir, info.base.split('/').join(path.sep)) : dir);
+    let n = 0;
+    for (const [rel, dataUrl] of Object.entries(pages || {})) {
+      const relNorm = String(rel).split('\\').join('/');
+      if (relNorm.includes('..') || path.isAbsolute(relNorm)) return { ok: false, error: '贴图路径不合法' };
+      const fp = path.resolve(pkgDir, relNorm.split('/').join(path.sep));
+      if (!fp.startsWith(pkgDir)) return { ok: false, error: '贴图路径越界' };
+      const b64 = String(dataUrl).replace(/^data:image\/png;base64,/, '');
+      fs.mkdirSync(path.dirname(fp), { recursive: true });
+      fs.writeFileSync(fp, Buffer.from(b64, 'base64'));
+      n++;
+    }
+    if (config.load().petModel === skin) petBroadcast('v2p:pet-model-changed', { name: skin });
+    return { ok: true, pages: n };
   });
 
   // 删除用户自建皮肤（内置皮肤不在用户目录，天然受保护）
@@ -866,6 +1044,19 @@ app.whenReady().then(() => {
   // 置顶保活：别的置顶窗口弹出/全屏应用退出后 z 序可能压过宠物，定期把宠物顶回最上层。
   // moveTop 不抢焦点，不打断打字
   setInterval(() => { if (petWin && !petWin.isDestroyed() && petWin.isVisible()) petWin.moveTop(); }, 4000);
+  // 鼠标跟随：低频推光标相对宠物窗中心的归一化坐标，渲染层只写参数
+  setInterval(() => {
+    if (!petWin || petWin.isDestroyed() || !petWin.isVisible()) return;
+    try {
+      const p = screen.getCursorScreenPoint();
+      const b = petWin.getBounds();
+      const cx = b.x + b.width / 2;
+      const cy = b.y + b.height / 2;
+      const nx = Math.max(-1, Math.min(1, (p.x - cx) / Math.max(b.width / 2, 1)));
+      const ny = Math.max(-1, Math.min(1, (p.y - cy) / Math.max(b.height / 2, 1)));
+      petBroadcast('v2p:mouse-pos', { x: nx, y: ny });
+    } catch { /* ignore */ }
+  }, 150);
   setMouseRecordHook();
   // 调试入口：electron . --paint 直接开画板；--paint-selftest 额外跑越界自检
   if (process.argv.includes('--paint') || process.argv.includes('--paint-selftest')) {

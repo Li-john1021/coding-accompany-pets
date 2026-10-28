@@ -1,0 +1,19 @@
+{
+  "name": "deepseek",
+  "entry": "deepseek.model3.json",
+  "mode": "keyboard",
+  "declaredMode": "standard",
+  "importedAt": "2026-10-28T20:25:13.509Z",
+  "source": "https://github.com/mefist-asuka/Deepseek-standard-mode",
+  "licenseNote": "角色与贴图版权归 赤风RED / EmoteLab；资源包来自 mefist-asuka/Deepseek-standard-mode；随本项目自用分发，商用/再分发请确认原作者授权。",
+  "textures": [
+    {
+      "path": "deepseek.4096/texture_00.png",
+      "width": 4096,
+      "height": 4096
+    }
+  ],
+  "warnings": [
+    "贴图较大（4096×4096），首次加载可能较慢"
+  ]
+}
