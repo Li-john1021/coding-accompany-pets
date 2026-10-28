@@ -99,7 +99,7 @@ function updateActionButtons() {
 if (imageHelp) imageHelp.addEventListener('click', (event) => { event.stopPropagation(); window.v2p.openSettings(); });
 
 function voiceUiBusy() {
-  return ['listening', 'transcribing'].includes(curStage) || starting || isRecording;
+  return ['listening', 'transcribing'].includes(curStage) || starting || isRecording || stopping;
 }
 
 for (const button of actionButtons) {
@@ -193,10 +193,12 @@ let captureGain = null;
 let pcmBuffers = [];
 let isRecording = false;
 let starting = false;   // 堆塞 getUserMedia 挂起期间的双启动竞态
+let stopping = false;   // 停止/flush/提交期间禁止新的录音复用全局采集引用
 let cancelled = false;  // 拖拽取消录音时，不提交半截音频
 let captureFailed = false;
 let captureMode = 'worklet';
-let captureFlushResolve = null;
+let captureSession = 0;
+let captureFlush = null;
 
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -252,117 +254,164 @@ function encodeWav(samples, sampleRate) {
   return new Uint8Array(buf);
 }
 
+function disconnectCapture() {
+  if (captureSource) { try { captureSource.disconnect(); } catch {} captureSource = null; }
+  if (captureNode) { try { captureNode.disconnect(); } catch {} captureNode = null; }
+  if (captureGain) { try { captureGain.disconnect(); } catch {} captureGain = null; }
+}
+
+async function releaseAudioResources() {
+  disconnectCapture();
+  captureFlush = null;
+  if (audioCtx) { try { await audioCtx.close(); } catch {} audioCtx = null; }
+  if (mediaStream) { try { mediaStream.getTracks().forEach((track) => track.stop()); } catch {} mediaStream = null; }
+}
+
 async function startRecording() {
-  if (isRecording || starting) return;
+  if (isRecording || starting || stopping) return;
   starting = true;
   const previousStage = curStage;
   setState('listening');
   updateActionButtons();
-  const admission = await window.v2p.setRecordingFlag(true);
-  if (admission && admission.ok === false) {
-    starting = false;
-    setState(previousStage);
-    updateActionButtons();
-    say(admission.error || '已有操作正在进行');
-    return;
-  }
+  let admitted = false;
   try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch (e) {
-    starting = false;
-    updateActionButtons();
-    window.v2p.setRecordingFlag(false); // 失败回传，避免主进程热键状态失同步
-    setState('error');
-    say('无法访问麦克风：' + (e.message || e));
-    scheduleIdle(3000);
-    return;
-  }
-  starting = false;
-  pcmBuffers = [];
-  cancelled = false;
-  captureFailed = false;
-  audioCtx = new AudioContext();
-  const source = audioCtx.createMediaStreamSource(mediaStream);
-  captureSource = source;
-  try {
-    await audioCtx.audioWorklet.addModule('audio-capture-worklet.js');
-    captureNode = new AudioWorkletNode(audioCtx, 'v2p-pcm-capture', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
-    captureMode = 'worklet';
-    captureNode.addEventListener('processorerror', () => { captureFailed = true; if (isRecording) stopRecording(); });
-    captureNode.port.onmessage = (event) => {
-      if (event.data?.type === 'pcm') pcmBuffers.push(event.data.samples);
-      else if (event.data?.type === 'level') reportLoudness(Float32Array.of(event.data.rms));
-      else if (event.data?.type === 'flushed' && captureFlushResolve) { captureFlushResolve(); captureFlushResolve = null; }
-    };
-    captureSource.connect(captureNode);
-    captureGain = audioCtx.createGain();
-    captureGain.gain.value = 0;
-    captureNode.connect(captureGain).connect(audioCtx.destination);
+    const admission = await window.v2p.setRecordingFlag(true);
+    if (admission && admission.ok === false) {
+      setState(previousStage);
+      updateActionButtons();
+      say(admission.error || '已有操作正在进行');
+      return;
+    }
+    admitted = true;
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      setState('error');
+      say('无法访问麦克风：' + (e.message || e));
+      scheduleIdle(3000);
+      return;
+    }
+    const sessionId = ++captureSession;
+    pcmBuffers = [];
+    cancelled = false;
+    captureFailed = false;
+    try {
+      audioCtx = new AudioContext();
+      const source = audioCtx.createMediaStreamSource(mediaStream);
+      captureSource = source;
+      try {
+        await audioCtx.audioWorklet.addModule('audio-capture-worklet.js');
+        captureNode = new AudioWorkletNode(audioCtx, 'v2p-pcm-capture', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+        captureMode = 'worklet';
+        captureNode.addEventListener('processorerror', () => { captureFailed = true; if (isRecording) stopRecording(); });
+        captureNode.port.onmessage = (event) => {
+          const data = event.data;
+          if (data?.type === 'pcm') pcmBuffers.push(data.samples);
+          else if (data?.type === 'level') reportLoudness(Float32Array.of(data.rms));
+          else if (data?.type === 'flushed' && captureFlush && data.sessionId === captureFlush.sessionId) {
+            const finish = captureFlush.resolve;
+            captureFlush = null;
+            finish();
+          }
+        };
+        captureSource.connect(captureNode);
+        captureGain = audioCtx.createGain();
+        captureGain.gain.value = 0;
+        captureNode.connect(captureGain).connect(audioCtx.destination);
+      } catch (error) {
+        try { captureNode?.disconnect(); } catch {}
+        captureNode = null;
+        captureMode = 'script-processor-fallback';
+        captureNode = audioCtx.createScriptProcessor(4096, 1, 1);
+        captureNode.onaudioprocess = (event) => {
+          const data = event.inputBuffer.getChannelData(0);
+          pcmBuffers.push(downsample(data.slice(), audioCtx.sampleRate, TARGET_SAMPLE_RATE));
+          reportLoudness(data);
+        };
+        captureSource.connect(captureNode);
+        captureNode.connect(audioCtx.destination);
+      }
+      isRecording = true;
+      for (const track of mediaStream.getAudioTracks()) track.addEventListener('ended', () => { if (isRecording) { captureFailed = true; stopRecording(); } }, { once: true });
+      setState('listening');
+      updateActionButtons();
+    } catch (error) {
+      await releaseAudioResources();
+      setState('error');
+      say('无法开始录音：' + (error.message || error));
+      scheduleIdle(4000);
+    }
   } catch (error) {
-    captureMode = 'script-processor-fallback';
-    captureNode = audioCtx.createScriptProcessor(4096, 1, 1);
-    captureNode.onaudioprocess = (event) => {
-      const data = event.inputBuffer.getChannelData(0);
-      pcmBuffers.push(downsample(data.slice(), audioCtx.sampleRate, TARGET_SAMPLE_RATE));
-      reportLoudness(data);
-    };
-    captureSource.connect(captureNode);
-    captureNode.connect(audioCtx.destination);
+    setState('error');
+    say('无法开始录音：' + (error.message || error));
+    scheduleIdle(4000);
+  } finally {
+    starting = false;
+    if (admitted && !isRecording) {
+      try { await window.v2p.setRecordingFlag(false); } catch {}
+    }
   }
-  isRecording = true;
-  for (const track of mediaStream.getAudioTracks()) track.addEventListener('ended', () => { if (isRecording) { captureFailed = true; stopRecording(); } }, { once: true });
-  setState('listening');
-  updateActionButtons();
 }
 
 async function stopRecording() {
-  if (!isRecording) return;
+  if (!isRecording || stopping) return;
   isRecording = false;
+  stopping = true;
   if (window.petLive2d) window.petLive2d.setLoudness(0);
   try {
     if (captureMode === 'worklet' && captureNode) {
+      const sessionId = captureSession;
       const flushed = new Promise((resolve) => {
-        const timer = setTimeout(() => { captureFailed = true; captureFlushResolve = null; resolve(); }, 1500);
-        captureFlushResolve = () => { clearTimeout(timer); resolve(); };
+        const timer = setTimeout(() => {
+          if (captureFlush?.sessionId === sessionId) captureFlush = null;
+          captureFailed = true;
+          resolve();
+        }, 1500);
+        captureFlush = { sessionId, resolve: () => { clearTimeout(timer); resolve(); } };
       });
-      captureNode.port.postMessage('flush');
+      captureNode.port.postMessage({ type: 'flush', sessionId });
       await flushed;
     } else if (captureMode === 'script-processor-fallback' && audioCtx) {
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
-    if (captureSource) { try { captureSource.disconnect(); } catch {} captureSource = null; }
-    if (captureNode) { try { captureNode.disconnect(); } catch {} captureNode = null; }
-    if (captureGain) { try { captureGain.disconnect(); } catch {} captureGain = null; }
-    if (audioCtx) { await audioCtx.close(); audioCtx = null; }
-    mediaStream.getTracks().forEach((t) => t.stop());
-    mediaStream = null;
-  } catch { /* ignore */ }
+  } catch {
+    captureFailed = true;
+  }
+  await releaseAudioResources();
 
-  if (cancelled) {
-    cancelled = false;
-    pcmBuffers = [];
-    setState('idle');
-    say('已取消');
-    window.v2p.setRecordingFlag(false);
-    return;
-  }
-  if (captureFailed) {
-    try {
-      const total = pcmBuffers.reduce((n, block) => n + block.length, 0);
-      const merged = new Float32Array(total);
-      let offset = 0;
-      for (const block of pcmBuffers) { merged.set(block, offset); offset += block.length; }
-      if (merged.length) await window.v2p.audioRecoverySave(encodeWav(merged, TARGET_SAMPLE_RATE));
-    } catch { /* retain the capture failure state even if recovery storage is unavailable */ }
-    pcmBuffers = [];
-    setState('error');
-    say('录音采集中断，请检查并恢复已采集内容', 7000);
-    showAudioRecovery();
-    window.v2p.setRecordingFlag(false);
-    updateActionButtons();
-    return;
-  }
   try {
+    if (cancelled) {
+      cancelled = false;
+      pcmBuffers = [];
+      setState('idle');
+      say('已取消');
+      return;
+    }
+    if (captureFailed) {
+      let saved = null;
+      let saveError = '';
+      try {
+        const total = pcmBuffers.reduce((n, block) => n + block.length, 0);
+        const merged = new Float32Array(total);
+        let offset = 0;
+        for (const block of pcmBuffers) { merged.set(block, offset); offset += block.length; }
+        if (merged.length) {
+          saved = await window.v2p.audioRecoverySave(encodeWav(merged, TARGET_SAMPLE_RATE));
+          if (!saved?.ok || typeof saved.id !== 'string') saveError = saved?.error || '恢复录音保存失败';
+        } else {
+          saveError = '没有采集到音频';
+        }
+      } catch (error) {
+        saveError = String(error.message || error);
+      }
+      pcmBuffers = [];
+      setState('error');
+      if (saved?.ok && typeof saved.id === 'string') say('录音采集中断，已保存可恢复内容', 7000);
+      else say(`录音采集中断；${saveError || '恢复录音保存失败'}`, 7000);
+      try { await window.v2p.setRecordingFlag(false); } catch {}
+      if (saved?.ok && typeof saved.id === 'string') showAudioRecovery(saved.id); else hideAudioRecovery();
+      return;
+    }
     const total = pcmBuffers.reduce((n, b) => n + b.length, 0);
     const merged = new Float32Array(total);
     let off = 0;
@@ -376,18 +425,22 @@ async function stopRecording() {
     if (!res.ok) {
       setState('error');
       say(res.error || '处理失败', 6000);
-      showAudioRecovery();
+      try { await window.v2p.setRecordingFlag(false); } catch {}
+      showAudioRecovery(res.recoveryId);
       scheduleIdle(4000);
     } else {
       hideAudioRecovery();
+      if (res.recoveryError) say(`恢复录音未保存：${res.recoveryError}`, 6000);
     }
   } catch (e) {
     setState('error');
     say('提交失败：' + (e.message || e), 6000);
+    try { await window.v2p.setRecordingFlag(false); } catch {}
     showAudioRecovery();
     scheduleIdle(4000);
   } finally {
-    window.v2p.setRecordingFlag(false);
+    stopping = false;
+    try { await window.v2p.setRecordingFlag(false); } catch {}
     updateActionButtons();
   }
 }
@@ -395,11 +448,14 @@ async function stopRecording() {
 const recoveryButton = document.getElementById('retry-recording');
 const rawRecoveryButton = document.getElementById('copy-recording-text');
 const recoveryPanel = document.getElementById('audio-recovery');
-function showAudioRecovery() {
+function showAudioRecovery(expectedId) {
   if (!recoveryPanel) return;
   window.v2p.audioRecoveryGet().then((saved) => {
-    recoveryPanel.style.display = saved?.wav || saved?.raw ? 'flex' : 'none';
-    rawRecoveryButton.style.display = saved?.raw ? 'block' : 'none';
+    const has = !!(saved?.wav || saved?.raw);
+    const matches = expectedId === undefined ? has : expectedId !== null && saved?.id === expectedId;
+    const visible = has && matches;
+    recoveryPanel.style.display = visible ? 'flex' : 'none';
+    rawRecoveryButton.style.display = visible && saved?.raw ? 'block' : 'none';
   }).catch(() => {});
 }
 function hideAudioRecovery() { if (recoveryPanel) recoveryPanel.style.display = 'none'; }
@@ -426,9 +482,12 @@ recoveryButton.addEventListener('click', async () => {
     setState('transcribing');
     say('正在重新识别录音…', 30000);
     const result = await window.v2p.submit(new Uint8Array(recovered.wav), 'audio/wav', { recoveryCopyOnly: true, mode: 'none' });
-    if (!result?.ok) throw new Error(result?.error || '重新识别失败');
+    if (!result?.ok) {
+      showAudioRecovery(result?.recoveryId);
+      throw new Error(result?.error || '重新识别失败');
+    }
     hideAudioRecovery();
-    say('恢复完成，结果已复制', 5000);
+    say(result.recoveryError ? `恢复完成，但恢复录音未保存：${result.recoveryError}` : '恢复完成，结果已复制', 5000);
     setState('done');
     scheduleIdle(5000);
   } catch (error) {

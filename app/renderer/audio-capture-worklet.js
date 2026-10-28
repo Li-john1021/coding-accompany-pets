@@ -7,13 +7,16 @@ class V2pPcmCapture extends AudioWorkletProcessor {
     this.sum = 0;
     this.count = 0;
     this.samples = [];
+    this.stopped = false;
     this.port.onmessage = (event) => {
-      if (event.data === 'flush') {
-        if (this.count) this.samples.push(this.sum / this.count);
-        this.sum = 0; this.count = 0;
-        this.sendSamples();
-        this.port.postMessage({ type: 'flushed' });
-      }
+      const data = event.data;
+      const type = typeof data === 'string' ? data : data?.type;
+      if (type !== 'flush' || this.stopped) return;
+      this.stopped = true;
+      if (this.count) this.samples.push(this.sum / this.count);
+      this.sum = 0; this.count = 0; this.phase = 0;
+      this.sendSamples();
+      this.port.postMessage({ type: 'flushed', sessionId: typeof data === 'string' ? null : data.sessionId ?? null });
     };
   }
   sendSamples() {
@@ -23,9 +26,10 @@ class V2pPcmCapture extends AudioWorkletProcessor {
     this.port.postMessage({ type: 'pcm', samples }, [samples.buffer]);
   }
   process(inputs, outputs) {
-    const input = inputs[0] && inputs[0][0];
     const output = outputs[0] && outputs[0][0];
     if (output) output.fill(0);
+    if (this.stopped) return true;
+    const input = inputs[0] && inputs[0][0];
     if (!input) return true;
     let energy = 0;
     for (const sample of input) {
