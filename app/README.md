@@ -1,71 +1,61 @@
-# Voice2Prompt 客户端（阶段四 4.1~4.4）
+# coding-accompany-pets（客户端）
 
-> 独立桌面应用：按住宠物说话 → 语音转文字 → AI 整理+优化 → 直达光标。
-> 技术栈：Electron 31 + Node（零第三方运行时依赖，全部原生实现）。
+> 按住宠物说话 → 语音转文字 → AI 整理/优化 → 直达光标；
+> 按 `Alt+A` 框选截图 → 独立识图模型读字。
+> 技术栈：Electron 31 + Node，运行时代码已 vendor，最终产物不需要 Node/npm。
+
+面向用户的下载、安装和玩法说明在仓库根目录的 [README](../README.md)。
 
 ## 启动
 
-```powershell
-cd voice2prompt\app
-npm start        # 依赖已安装；若换机器先 npm install
+```bash
+cd app
+npm install   # 只安装 electron / electron-builder 两个开发依赖
+npm start
 ```
 
 启动后：
-- 屏幕角落出现**宠物悬浮窗**（可拖到任意位置）
-- 托盘出现图标（右键可退出；应用常驻后台，关窗口不退出）
-- 首次启动因未配置模型会自动打开设置页
 
-## 使用
+- 屏幕角落出现宠物悬浮窗（可拖动、滚轮缩放）
+- 托盘出现图标；关闭设置窗口不退出，托盘菜单可退出
+- 首次启动未配置模型时会自动打开设置页
+
+## 当前交互
 
 | 操作 | 效果 |
 |---|---|
-| **长按宠物** | 开始录音（红点闪烁），松开结束并自动跑管线 |
-| **拖动宠物** | 移动悬浮窗位置（拖动会取消录音） |
-| **单击宠物** | 打开设置窗口 |
-| **全局热键** `Ctrl+Shift+Space` | 按一下开始录音，再按一下结束（可在设置中改） |
-| 托盘 → 设置 | 打开模型管理 |
+| 长按宠物 / 单击宠物 | 取决于设置里的「宠物交互方式」：长按录音，或单击开始/结束 |
+| 拖动宠物 | 移动悬浮窗（长按模式下拖动会取消录音） |
+| 滚轮 | 缩放宠物 |
+| 全局热键（默认 `Alt+X`） | 按一下开始录音，再按一下结束；可在设置中录制修改 |
+| 截图热键（默认 `Alt+A`） | 框选屏幕区域，PNG 写入剪贴板 |
+| 鼠标侧键（可选） | 开始/结束录音 |
 
-管线状态会显示在宠物下方的状态条：聆听 → 语音转文字 → 整理优化 → 写入光标 → 完成。
-结果自动粘贴到当前光标处（若目标应用拦截模拟粘贴，会兜底为仅复制到剪贴板）。
+## 模型配置
 
-## 模型配置（重点）
+设置页有三个互相独立的模型列表，可各加多条、单选当前使用：
 
-设置页有两个**互相独立**的模型列表，可各加多个、随时切换（单选按钮 = 当前使用）：
+1. **语音模型（ASR）**：OpenAI 兼容 `transcriptions`，或小米 MiMo `chat` 音频协议。
+2. **文字模型（LLM）**：任意 OpenAI 兼容 `/chat/completions` 端点。
+3. **识图模型（Vision）**：任意 OpenAI 兼容视觉端点，与文字模型是否多模态无关。
 
-1. **🔊 语音模型（ASR）**：Base URL + API Key + 模型名，支持两种协议（行内下拉选择）：
-   - **transcriptions**（OpenAI 兼容 `/audio/transcriptions`）：OpenAI（whisper-1）、Groq、SiliconFlow 等。
-   - **chat（MiMo）**（音频走 `/chat/completions` 多模态，仅收 wav）：小米 MiMo，配置见下表。
-2. **✨ 文字模型（LLM）**：Base URL + API Key + 模型名，调用 `/chat/completions`。
-   兼容：OpenAI、DeepSeek、Moonshot、小米 MiMo（mimo 系列）、Ollama（`http://localhost:11434/v1`）等。
-
-**小米 MiMo 配置参考**（按官方文档）：
-
-| 项 | 值 |
-|---|---|
-| 协议 | chat（MiMo） |
-| Base URL | `https://api.xiaomimimo.com/v1` |
-| 模型名（ASR） | `mimo-v2.5-asr` |
-| API Key | MiMo 控制台获取 |
-
-每条模型旁的 **"校验"按钮**：发一个最小探测请求验证认证/模型名/网络是否真的能调通
-（ASR 用 0.3 秒静音音频探测），✅ 才建议使用，防止配了个无法调用的模型。
-
-Base URL 填到 `/v1` 即可（如 `https://api.deepseek.com/v1`）；填全路径也兼容。
-
-## 宠物自定义
-
-- 设置页 → 宠物形象 → "选择图片…"，挑任意 png/jpg/gif/webp 即可（把喜欢的图发给我也行，我帮你放进代码）
-- 当前默认形象：`assets/pet.png`
-- 状态动画：待机呼吸 / 录音红圈 / 处理蓝圈 / 完成绿圈
+旧配置里勾选过「多模态」的模型会自动迁移成独立识图模型。
 
 ## 配置存储
 
-- 配置文件：`%APPDATA%\voice2prompt\config.json`（API Key 仅 base64 混淆，非加密，个人使用）
-- 设置页"打开配置目录"可直达
+- 配置目录沿用改名前的 `%APPDATA%\Voice2Prompt`（`app.setPath('userData', ...)`），
+  因此升级/改名不会丢模型、皮肤和录音恢复数据。
+- API Key 仅 base64 混淆，不是加密；配置文件不要提交到公开仓库。
 
-## 已知限制
+## 构建
 
-- 录音统一输出 16k 单声道 WAV（兼容 transcriptions 与 MiMo chat 两种协议）
-- ASR 为"录完整段后一次性转写"，非边说边转写的流式模式
-- 模拟粘贴（SendKeys）在个别高权限应用中可能被拦截 → 自动降级为剪贴板
-- 未做打包安装器（个人使用，`npm start` 即可）；需要时再加 electron-builder
+在仓库根目录执行（产物在 `app/dist-exe/`）：
+
+```bash
+./app/node_modules/.bin/electron-builder --win portable nsis --publish never
+```
+
+## 运行时依赖
+
+`app/vendor/` 存放随包分发的第三方运行时代码及许可证清单，详见
+[`vendor/README.md`](vendor/README.md) 与根目录 [README](../README.md) 的 Credits 部分。

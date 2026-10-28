@@ -1,14 +1,14 @@
 {
-  "name": "voice2prompt-open",
+  "name": "coding-accompany-pets",
   "private": true,
-  "version": "1.0.0",
-  "description": "Voice2Prompt 桌宠工具",
+  "version": "1.1.0",
+  "description": "会听写、会截图、会识图的桌面编码搭子",
   "scripts": {
     "dist": "electron-builder --win portable nsis"
   },
   "build": {
-    "appId": "com.voice2prompt.app",
-    "productName": "Voice2Prompt",
+    "appId": "com.codingaccompanypets.app",
+    "productName": "coding-accompany-pets",
     "directories": {
       "output": "app/dist-exe",
       "app": "app"
@@ -35,13 +35,13 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": false,
-      "shortcutName": "Voice2Prompt",
-      "artifactName": "Voice2Prompt-Setup-${version}.exe"
+      "shortcutName": "coding-accompany-pets",
+      "artifactName": "coding-accompany-pets-Setup-${version}.exe"
     },
     "electronVersion": "31.7.7",
     "electronDist": "app/node_modules/electron/dist",
     "portable": {
-      "artifactName": "Voice2Prompt-${version}-Portable.exe"
+      "artifactName": "coding-accompany-pets-${version}-Portable.exe"
     }
   }
 }

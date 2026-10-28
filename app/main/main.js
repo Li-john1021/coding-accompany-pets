@@ -3,6 +3,14 @@ const {
   app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, globalShortcut, dialog, shell, protocol, net, desktopCapturer, screen, clipboard
 } = require('electron');
 const path = require('path');
+// The app was renamed from Voice2Prompt; keep its profile folder so existing
+// configuration, vision providers and audio recovery survive the rename.
+// Tests and portable profiles may point userData elsewhere before this module
+// loads, so only remap the default folder.
+const defaultUserData = path.join(app.getPath('appData'), 'coding-accompany-pets');
+if (path.resolve(app.getPath('userData')) === path.resolve(defaultUserData)) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'Voice2Prompt'));
+}
 const fs = require('fs');
 const { pathToFileURL, domainToUnicode } = require('url');
 const config = require('./config');
@@ -64,7 +72,7 @@ const petActionWorkflow = createPetActionWorkflow({
   }
 });
 
-app.setAppUserModelId('voice2prompt.app');
+app.setAppUserModelId('com.codingaccompanypets.app');
 
 // 单实例:二次启动不重复拉起,把已有实例顶到前台
 const gotLock = app.requestSingleInstanceLock();
@@ -203,7 +211,7 @@ function initializeScreenshotController() {
       const win = new BrowserWindow({
         ...current.bounds, frame: false, transparent: false, resizable: true, movable: false,
         skipTaskbar: true, alwaysOnTop: true, show: false, fullscreen: true, fullscreenable: true,
-        title: `Voice2Prompt 截图 ${current.id}`, backgroundColor: '#000000',
+        title: `coding-accompany-pets 截图 ${current.id}`, backgroundColor: '#000000',
         webPreferences: { preload: path.join(__dirname, 'screenshot-preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
       });
       win.setAlwaysOnTop(true, 'screen-saver');
@@ -308,7 +316,7 @@ function openSettings() {
   settingsWin = new BrowserWindow({
     width: 860,
     height: 700,
-    title: 'Voice2Prompt 设置',
+    title: 'coding-accompany-pets 设置',
     autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, '..', 'preload.js'), contextIsolation: true, nodeIntegration: false }
   });
@@ -410,9 +418,9 @@ function createTray() {
       }
     },
     { type: 'separator' },
-    { label: '退出 Voice2Prompt', click: () => { app.isQuitting = true; app.quit(); } }
+    { label: '退出 coding-accompany-pets', click: () => { app.isQuitting = true; app.quit(); } }
   ]);
-  tray.setToolTip('Voice2Prompt：按住说话，直出高质量提示词');
+  tray.setToolTip('coding-accompany-pets：按住说话，直出高质量提示词');
   tray.setContextMenu(menu);
   tray.on('click', openSettings);
 }

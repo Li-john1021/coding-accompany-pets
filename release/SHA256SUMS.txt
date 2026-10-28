@@ -1,2 +1,2 @@
-b487f54cdf0990938aa15eb2688f41984d01c8245c23be1a9796649cabdf58ca *Voice2Prompt-FeedbackV2.3-1.0.0-Portable.exe
-564674ba145dd86f17abef0fcaa6ddb7d9edfcb4a676d403f601b23dba868955 *Voice2Prompt-FeedbackV2.3-Setup-1.0.0.exe
+93a1600df0f0f9c48e0c1b954ae53ffdd0b2f9954d54fbebb541b2df793cae61 *coding-accompany-pets-1.1.0-Portable.exe
+d682d5dabb700073133d99ef79681c2b17fb9eb5ea25535cd7ef230127ced05c *coding-accompany-pets-Setup-1.1.0.exe

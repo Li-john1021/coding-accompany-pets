@@ -1,14 +1,14 @@
 {
-  "name": "voice2prompt",
-  "productName": "Voice2Prompt",
-  "version": "1.0.0",
-  "description": "语音直出高质量提示词：按住说话，AI 整理+优化，直达光标。",
+  "name": "coding-accompany-pets",
+  "productName": "coding-accompany-pets",
+  "version": "1.1.0",
+  "description": "会听写、会截图、会识图的桌面编码搭子：按住说话，AI 整理并直达光标。",
   "main": "main/main.js",
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win portable nsis"
   },
-  "author": "voice2prompt",
+  "author": "Li-john1021",
   "license": "MIT",
   "private": true,
   "devDependencies": {
