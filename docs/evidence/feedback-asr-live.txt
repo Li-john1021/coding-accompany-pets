@@ -1,0 +1,15 @@
+Feedback v2 live ASR evidence
+Date: 2026-10-28T11:08:24.101Z
+
+Fixture: Windows SAPI Zira TTS, 16k mono PCM WAV
+fixtureSha256: 20c7ea1b0ea1c251f97cd36afd4ddf62ccf82b20a7b845b8331bcbc9658bf8d8
+durationSeconds: 97.22
+
+Provider:
+model: mimo-v2.5-asr
+host: api.xiaomimimo.com
+asrRequests: 4 (new budget max 10; previous calls unchanged)
+chunks: [{"completed":0,"total":4,"index":0},{"completed":1,"total":4,"index":0},{"completed":1,"total":4,"index":1},{"completed":2,"total":4,"index":1},{"completed":2,"total":4,"index":2},{"completed":3,"total":4,"index":2},{"completed":3,"total":4,"index":3},{"completed":4,"total":4,"index":3}]
+ms: 10346
+textSha256: 3491e7a43a4810d4ce03ae9cdf9b60d14873b325127f6182039ce77cebf62ab3
+text: "First segment, alpha one two three. Keep the number three point one four one five nine. First segment, alpha one two three. Keep the number three point one four one five nine. First segment, alpha one two three. Keep the number three point one four one five nine. First segment, alpha one two three.\nKeep the number 3.14159. Second segment, Bravo 456. Order code AB7Q902615. Second segment, Bravo 456. Order code AB7Q902615. Second segment, Bravo 456.\nOrder code AB7Q902615. Second segment, Bravo 456. Order code AB7Q902615. Third segment, Charlie 789. This is the final part. Third segment, Charlie 789. This is the final part.\nThird segment, Charlie seven eight nine. This is the final part. Third segment, Charlie seven eight nine. This is the final part."
