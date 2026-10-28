@@ -675,11 +675,15 @@ window.v2p.onTriggerModeChanged(applyTriggerMode);
 (async () => {
   let live2dOk = false;
   try {
-    const { url } = await window.v2p.petModel();
-    console.log('[pet] model url=' + (url || '(none)'));
-    if (url && window.petLive2d) {
-      const entry = url + 'cat.model3.json';
-      live2dOk = await window.petLive2d.loadModel(entry);
+    const m = await window.v2p.petModel();
+    console.log('[pet] model=' + JSON.stringify({ name: m && m.name, entry: m && m.entry, mode: m && m.mode }));
+    if (m && m.url && window.petLive2d) {
+      live2dOk = await window.petLive2d.loadModel(m.url + (m.entry || 'cat.model3.json'), {
+        mode: m.mode,
+        name: m.name,
+        baseUrl: m.url,
+        scene: m.scene
+      });
       console.log('[pet] live2d load=' + live2dOk);
       if (live2dOk) {
         await new Promise((r) => setTimeout(r, 400));
@@ -688,6 +692,7 @@ window.v2p.onTriggerModeChanged(applyTriggerMode);
         if (!visible) {
           live2dOk = false;
           try { if (window.petLive2d.unload) window.petLive2d.unload(); } catch (e) {}
+          try { if (window.petLive2d.resetLayout) window.petLive2d.resetLayout(); } catch (e) {}
           stage.classList.remove('live2d');
         }
       }
@@ -696,6 +701,11 @@ window.v2p.onTriggerModeChanged(applyTriggerMode);
 
   if (!live2dOk) {
     stage.classList.remove('live2d');
+    try { if (window.petLive2d && window.petLive2d.resetLayout) window.petLive2d.resetLayout(); } catch (e) {}
+    try {
+      const err = window.petLive2d && window.petLive2d.error && window.petLive2d.error();
+      if (err) say(err, 9000);
+    } catch (e) { /* ignore */ }
     const { dataUrl } = await window.v2p.petImage();
     if (dataUrl) {
       petImg.src = dataUrl;
@@ -720,7 +730,26 @@ window.v2p.onTriggerModeChanged(applyTriggerMode);
 
 window.v2p.onPetModelChanged(async () => {
   // 设置页切换皮肤：重新加载，失败回退静态图
-  const { url } = await window.v2p.petModel();
-  const ok = url && window.petLive2d && await window.petLive2d.loadModel(url + 'cat.model3.json');
-  if (!ok) { const { dataUrl } = await window.v2p.petImage(); if (dataUrl) petImg.src = dataUrl; }
+  const m = await window.v2p.petModel();
+  const ok = m && m.url && window.petLive2d && await window.petLive2d.loadModel(m.url + (m.entry || 'cat.model3.json'), {
+    mode: m.mode,
+    name: m.name,
+    baseUrl: m.url,
+    scene: m.scene
+  });
+  if (!ok) {
+    try { if (window.petLive2d && window.petLive2d.resetLayout) window.petLive2d.resetLayout(); } catch (e) {}
+    stage.classList.remove('live2d');
+    try {
+      const err = window.petLive2d && window.petLive2d.error && window.petLive2d.error();
+      if (err) say(err, 9000);
+    } catch (e) { /* ignore */ }
+    const { dataUrl } = await window.v2p.petImage();
+    if (dataUrl) petImg.src = dataUrl;
+  }
 });
+
+// 鼠标跟随：主进程低频推光标，只喂给 Live2D 参数
+if (window.v2p.onMousePos && window.petLive2d) {
+  window.v2p.onMousePos((p) => window.petLive2d.setMouse(p.x, p.y));
+}

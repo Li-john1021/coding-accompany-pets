@@ -2,6 +2,7 @@
 const $ = (sel) => document.querySelector(sel);
 
 let cfg = null;
+let petModelDetails = [];
 
 // unicode 安全的 base64（与主进程 mask() 的 'b64:' 前缀方案对齐）
 function b64encode(s) {
@@ -134,7 +135,8 @@ async function loadPetPreview() {
 }
 
 async function renderPetModelSelect(current) {
-  const { models } = await window.v2p.petModelList();
+  const { models, details } = await window.v2p.petModelList();
+  petModelDetails = Array.isArray(details) ? details : [];
   const sel = $('#pet-model');
   sel.innerHTML = '';
   const opt = (v, t) => {
@@ -146,6 +148,24 @@ async function renderPetModelSelect(current) {
   models.forEach((m) => opt(m, m));
   // 配置里的模型已被删除时列表选不到，回退到静态图
   if (!models.includes(current)) sel.value = '';
+  updateSkinInfo();
+}
+
+function updateSkinInfo() {
+  const row = $('#skin-info-row');
+  const el = $('#skin-info');
+  if (!row || !el) return;
+  const name = $('#pet-model').value;
+  const d = petModelDetails.find((item) => item.name === name);
+  if (!d) { row.style.display = 'none'; el.textContent = ''; return; }
+  const parts = [
+    `模式 ${d.mode}${d.declaredMode && d.declaredMode !== d.mode ? `（包标注 ${d.declaredMode}）` : ''}`,
+    d.hasBg ? '有底图' : '无底图',
+    d.hasKeys ? '有键帽' : '无键帽'
+  ];
+  if (d.warnings && d.warnings.length) parts.push('⚠ ' + d.warnings.join('；'));
+  el.textContent = parts.join(' · ');
+  row.style.display = '';
 }
 
 // 画板里「✨ 生成皮肤」成功后主进程会广播，这里即时刷新下拉框（保住当前选择）
@@ -232,6 +252,10 @@ function applyPetKind(kind) {
   document.querySelectorAll('input[name=pet-kind]').forEach((r) => { r.checked = r.value === kind; });
   $('#live2d-row').style.display = kind === 'live2d' ? '' : 'none';
   $('#image-row').style.display = kind === 'image' ? '' : 'none';
+  const importRow = $('#import-target-row');
+  if (importRow) importRow.style.display = kind === 'live2d' ? '' : 'none';
+  if (kind === 'live2d') updateSkinInfo();
+  else { const infoRow = $('#skin-info-row'); if (infoRow) infoRow.style.display = 'none'; }
 }
 function wirePetKindEvents() {
   document.querySelectorAll('input[name=pet-kind]').forEach((r) =>
@@ -252,6 +276,7 @@ function wirePetKindEvents() {
   // Live2D 下拉框选择后立即生效
   $('#pet-model').addEventListener('change', async (e) => {
     await window.v2p.saveConfig({ petModel: e.target.value });
+    updateSkinInfo();
     const tip = $('#save-tip');
     tip.textContent = '✅ 皮肤已切换';
     setTimeout(() => (tip.textContent = ''), 2000);
@@ -299,6 +324,47 @@ function wireEvents() {
   $('#open-models-folder').addEventListener('click', () => window.v2p.openModelsFolder());
 
   $('#open-paint').addEventListener('click', () => window.v2p.openPaint());
+
+  // ---------- 导入第三方 Live2D / BongoCat 皮肤 ----------
+  async function importSkinPack(zip) {
+    const tip = $('#save-tip');
+    const pick = await window.v2p.pickSkinPack(zip);
+    if (!pick.ok) return;
+    const src = (pick.filePaths || [])[0];
+    if (!src) return;
+    tip.textContent = '导入中…';
+    const payload = {
+      zip: !!zip,
+      filePaths: [src],
+      folderPaths: [src],
+      sourceNote: src,
+      target: ($('#import-to-repo') && $('#import-to-repo').checked) ? 'repo' : 'user'
+    };
+    let r = await window.v2p.importSkin(payload);
+    if (r.exists && payload.target === 'repo') {
+      tip.textContent = `❌ 内置目录已有同名皮肤「${r.name}」，请换个名字或取消勾选`;
+      setTimeout(() => (tip.textContent = ''), 6000);
+      return;
+    }
+    if (r.exists && confirm(`同名皮肤「${r.name}」已存在，覆盖？`)) {
+      r = await window.v2p.importSkin({ ...payload, overwrite: true });
+    }
+    if (!r.ok) {
+      tip.textContent = `❌ ${r.error || '导入失败'}`;
+      setTimeout(() => (tip.textContent = ''), 5000);
+      return;
+    }
+    const warn = r.warnings && r.warnings.length ? `；⚠ ${r.warnings.join('；')}` : '';
+    tip.textContent = `✅ 已导入「${r.name}」到${r.target === 'repo' ? '项目内置目录' : '用户目录'}（${r.mode}）${warn}`;
+    setTimeout(() => (tip.textContent = ''), 6000);
+    await renderPetModelSelect(r.name);
+    $('#pet-model').value = r.name;
+    applyPetKind('live2d');
+    await window.v2p.saveConfig({ petModel: r.name });
+    updateSkinInfo();
+  }
+  $('#import-skin-zip').addEventListener('click', () => importSkinPack(true));
+  $('#import-skin-folder').addEventListener('click', () => importSkinPack(false));
 
   $('#mouse-record').addEventListener('change', async (e) => {
     await window.v2p.setMouseRecord(e.target.checked);

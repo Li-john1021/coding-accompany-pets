@@ -54,6 +54,15 @@ contextBridge.exposeInMainWorld('v2p', {
   petModelDelete: (name) => ipcRenderer.invoke('v2p:pet-model-delete', { name }),
   setMouseRecord: (on) => ipcRenderer.invoke('v2p:set-mouse-record', on),
   petModelTextureBase: (name) => ipcRenderer.invoke('v2p:pet-model-texture-base', { name }),
+  // 他人皮肤整包导入 / 探测 / 模式覆盖 / 场景裁剪
+  pickSkinPack: (zip) => ipcRenderer.invoke('v2p:pick-skin-pack', { zip: !!zip }),
+  importSkin: (payload) => ipcRenderer.invoke('v2p:import-skin', payload),
+  skinInfo: (name) => ipcRenderer.invoke('v2p:skin-info', { name }),
+  skinModeSet: (name, mode) => ipcRenderer.invoke('v2p:skin-mode-set', { name, mode }),
+  skinSceneSave: (name, scene) => ipcRenderer.invoke('v2p:skin-scene-save', { name, scene }),
+  skinTextures: (name) => ipcRenderer.invoke('v2p:skin-textures', { name }),
+  skinTintSave: (payload) => ipcRenderer.invoke('v2p:skin-tint-save', payload),
+  petContentSize: (width, height) => ipcRenderer.invoke('v2p:pet-content-size', { width, height }),
   onModelListChanged: (cb) => ipcRenderer.on('v2p:pet-model-list-changed', () => cb()),
   onPaintSwitchJob: (cb) => ipcRenderer.on('v2p:paint-switch-job', (_e, p) => cb(p.job)),
   onSettingsRefresh: (cb) => ipcRenderer.on('v2p:settings-refresh', () => cb()),
@@ -68,5 +77,6 @@ contextBridge.exposeInMainWorld('v2p', {
   onTriggerModeChanged: (cb) => ipcRenderer.on('v2p:trigger-mode-changed', (_e, p) => cb(p.mode)),
   setHotkeyCapturing: (on) => ipcRenderer.invoke('v2p:hotkey-capturing', on),
   onPetImageChanged: (cb) => ipcRenderer.on('v2p:pet-image-changed', (_e, p) => cb(p.dataUrl)),
-  onPetModelChanged: (cb) => ipcRenderer.on('v2p:pet-model-changed', (_e, p) => cb(p.name))
+  onPetModelChanged: (cb) => ipcRenderer.on('v2p:pet-model-changed', (_e, p) => cb(p.name)),
+  onMousePos: (cb) => ipcRenderer.on('v2p:mouse-pos', (_e, p) => cb(p))
 });
