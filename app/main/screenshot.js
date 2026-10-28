@@ -57,6 +57,7 @@ function createScreenshotController(adapters) {
       });
       session.screens = screens;
       session.done = new Promise((resolve) => { session.resolve = resolve; });
+      session.windowByScreen = new Map();
       const selectorPayload = (screen) => ({
         token: session.token, screen,
         screens: screens.map(({ id, bounds, selectionBounds, pixelWidth, pixelHeight, dataUrl }) => ({ id, bounds, selectionBounds, pixelWidth, pixelHeight, dataUrl }))
@@ -65,6 +66,7 @@ function createScreenshotController(adapters) {
         const win = await adapters.createSelector(selectorPayload(screen));
         session.windows.push(win);
         session.senderIds.add(win.webContents.id);
+        session.windowByScreen.set(String(screen.id), win);
         const onClosed = () => { if (!session.settled) session.resolve?.({ ok: false, reason: 'cancelled' }); };
         session.closedHandlers ||= new Map();
         session.closedHandlers.set(win, onClosed);
@@ -134,8 +136,14 @@ function createScreenshotController(adapters) {
         return true;
       }
       active.expectedSize = { width: plan.width, height: plan.height };
-      active.composingSenderId = event.sender.id;
-      event.sender.send('v2p:screenshot:compose', { token: active.token, selection, plan });
+      const releaseScreen = active.screens.find((screen) => {
+        const bounds = screen.selectionBounds || screen.bounds;
+        return payload.x >= bounds.x && payload.x < bounds.x + bounds.width && payload.y >= bounds.y && payload.y < bounds.y + bounds.height;
+      });
+      const releaseWindow = releaseScreen && active.windowByScreen?.get(String(releaseScreen.id));
+      const target = releaseWindow && !releaseWindow.isDestroyed() ? releaseWindow.webContents : event.sender;
+      active.composingSenderId = target.id;
+      target.send('v2p:screenshot:compose', { token: active.token, selection, plan });
     }
     return true;
   }
