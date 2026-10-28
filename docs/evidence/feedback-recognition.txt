@@ -1,0 +1,26 @@
+Feedback v2 U3 recognition evidence
+Date: 2026-10-28T10:52:50.514Z
+
+Fixture: app/main/vision-validation.png
+fixtureSha256: e8485edd4791b1b58f7e3f3d2d0a13636343e4c4de52684b95ea27ca83b1d0ff
+promptSha256: 5fc2e2dafcf214263f454f34d4d593acb6bfe8e5f08345e0788a82a71969b4ae
+adapterSha256: 4e0ec90dd5787fe4e32146da4c80d09fc029a1494f7f711d0f318c32e3485467
+
+Gate (real config copy, multimodal=false, no provider request):
+reason: 请在设置中为当前文字模型勾选“多模态”
+recognizeError: 当前文字模型未配置为多模态模型
+
+Mock provider (local HTTP, no external request):
+requests: 1, model: vision-fixture, image: 260x72
+clipboard: true
+
+Real provider:
+model: mimo-v2.6-flash
+host: api.xiaomimimo.com
+visionRequests: 1 (new budget max 2, v1 eight calls unchanged)
+userProfileModified: multimodal enabled for b52kdw0d only
+backup: config.json.bak-vision-1793184768201
+ms: 1102
+textSha256: c7b62f2376d55f1cfe3f33ba7bf4045a232b52342b2e47e5b41e94adc47eb181
+text: "V2P-7KQ2"
+clipboardMatches: true
