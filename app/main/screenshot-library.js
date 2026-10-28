@@ -20,7 +20,7 @@ const { showAndStabilize } = require('./window-restore');
 
 function createScreenshotLibrary(options = {}) {
   const electron = options.electron || require('electron');
-  const Screenshots = options.Screenshots || require('electron-screenshots');
+  const Screenshots = options.Screenshots || require('../vendor/electron-screenshots');
   const { BrowserWindow, clipboard, nativeImage } = electron;
   const dialog = options.dialog || electron.dialog;
   const fs = options.fs || require('fs');

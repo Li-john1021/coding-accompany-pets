@@ -6,7 +6,7 @@
   "main": "main/main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win portable"
+    "dist": "electron-builder --win portable nsis"
   },
   "author": "voice2prompt",
   "license": "MIT",
@@ -14,11 +14,5 @@
   "devDependencies": {
     "electron": "^31.7.7",
     "electron-builder": "^26.15.3"
-  },
-  "dependencies": {
-    "electron-screenshots": "^0.6.2",
-    "pixi-live2d-display": "^0.4.0",
-    "pixi.js": "^7.4.2",
-    "uiohook-napi": "^1.5.5"
   }
 }

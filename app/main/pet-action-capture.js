@@ -138,7 +138,7 @@ function createWindowsAdapters() {
       return clipboard.readText();
     },
     sendCopy: (strategy) => {
-      const { uIOhook, UiohookKey } = require('uiohook-napi');
+      const { uIOhook, UiohookKey } = require('../vendor/uiohook-napi');
       sendWindowsCopy(strategy, (key, modifiers) => uIOhook.keyTap(key, modifiers), UiohookKey);
     },
     now: () => Date.now(),

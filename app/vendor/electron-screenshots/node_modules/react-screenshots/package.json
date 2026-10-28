@@ -1,0 +1,63 @@
+{
+  "name": "react-screenshots",
+  "version": "0.6.1",
+  "description": "a screenshot cropper tool by react",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./lib/Screenshots/index.d.ts",
+      "import": "./lib/Screenshots/index.js",
+      "require": "./lib/Screenshots/index.js"
+    },
+    "./dist/*": {
+      "types": "./dist/*",
+      "import": "./dist/*",
+      "require": "./dist/*"
+    }
+  },
+  "types": "./lib/Screenshots/index.d.ts",
+  "files": [
+    "lib/**",
+    "dist/**"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nashaofu/screenshots.git"
+  },
+  "keywords": [
+    "screenshot",
+    "cropper",
+    "react"
+  ],
+  "author": "nashaofu",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/nashaofu/screenshots/issues"
+  },
+  "homepage": "https://github.com/nashaofu/screenshots/tree/master/packages/react-screenshots#readme",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "react": ">=16.9.0",
+    "react-dom": ">=16.9.0"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "^1.7.3",
+    "@rsbuild/plugin-less": "^1.6.0",
+    "@rsbuild/plugin-react": "^1.4.5",
+    "@rslib/core": "^0.19.5",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "rimraf": "^6.1.2",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "build": "rsbuild build && rslib build",
+    "dev": "rsbuild dev",
+    "preview": "rsbuild preview",
+    "clean": "rimraf dist lib"
+  }
+}

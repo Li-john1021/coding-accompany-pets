@@ -1284,7 +1284,7 @@ let activeSelectionGesture = null;
 
 function setMouseRecordHook() {
     try {
-      const { uIOhook } = require('uiohook-napi');
+      const { uIOhook } = require('../vendor/uiohook-napi');
       if (!inputDirtyGuard) inputDirtyGuard = createInputDirtyGuard({ hook: uIOhook,
         // uiohook exposes no injection origin; native hooks own Windows dirty tracking.
         markDirty: () => { if (!nativeInputSession.running) resultDelivery.markDirty(); },

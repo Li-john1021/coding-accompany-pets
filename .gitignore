@@ -1,5 +1,8 @@
 # 依赖
 node_modules/
+# vendor 内是随仓库分发的运行时依赖，需要保留嵌套 node_modules
+!app/vendor/**/node_modules/
+!app/vendor/**/node_modules/**
 
 # 打包产物
 app/dist-exe/

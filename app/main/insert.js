@@ -160,7 +160,7 @@ async function readSelection() {
   clipboard.writeText(marker);
   let pressed = false;
   try {
-    const { uIOhook, UiohookKey } = require('uiohook-napi');
+    const { uIOhook, UiohookKey } = require('../vendor/uiohook-napi');
     uIOhook.keyTap(UiohookKey.C, [UiohookKey.Ctrl]);
     pressed = true;
   } catch (e) {

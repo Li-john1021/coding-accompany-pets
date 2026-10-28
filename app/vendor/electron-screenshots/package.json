@@ -1,0 +1,55 @@
+{
+  "name": "electron-screenshots",
+  "version": "0.6.2",
+  "description": "electron 截图插件",
+  "types": "lib/index.d.ts",
+  "main": "lib/index.cjs.js",
+  "module": "lib/index.js",
+  "type": "commonjs",
+  "files": [
+    "lib/**"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nashaofu/screenshots.git"
+  },
+  "keywords": [
+    "electron",
+    "shortcut",
+    "screenshot",
+    "cropper"
+  ],
+  "author": "nashaofu",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/nashaofu/screenshots/issues"
+  },
+  "homepage": "https://github.com/nashaofu/screenshots/tree/master/packages/electron-screenshots#readme",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "dependencies": {
+    "debug": "^4.4.3",
+    "fs-extra": "^11.3.3",
+    "node-screenshots": "^0.2.8",
+    "react-screenshots": "0.6.1"
+  },
+  "peerDependencies": {
+    "electron": ">=20"
+  },
+  "devDependencies": {
+    "@types/debug": "^4.1.12",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^25.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^39.8.4",
+    "rimraf": "^6.1.2",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "start": "cross-env DEBUG=electron-screenshots electron lib/demo.js",
+    "dev": "tsc --sourceMap --watch",
+    "build": "npm run clean && tsc",
+    "clean": "rimraf lib"
+  }
+}

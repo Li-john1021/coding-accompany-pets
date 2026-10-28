@@ -18,6 +18,7 @@
       "main/**/*",
       "renderer/**/*",
       "assets/**/*",
+      "vendor/**/*",
       "build/icon.ico",
       "preload.js",
       "package.json"

@@ -1,0 +1,2 @@
+b487f54cdf0990938aa15eb2688f41984d01c8245c23be1a9796649cabdf58ca *Voice2Prompt-FeedbackV2.3-1.0.0-Portable.exe
+564674ba145dd86f17abef0fcaa6ddb7d9edfcb4a676d403f601b23dba868955 *Voice2Prompt-FeedbackV2.3-Setup-1.0.0.exe

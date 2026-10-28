@@ -106,3 +106,13 @@ V2P_ALLOW_REAL_CONFIG=1 node app/main/vision-e2e.runtime.test.js
 - 兼容性更新：P5 E2E 改为验证 vision-a/vision-b 切换与“文字模型切换不影响识图”；设置 E2E 改为验证识图列表持久化；`pet-restore-ui` 使用独立 visionProviders；旧截图测试继续通过。
 - 回归：单元 43/43 PASS；vision gate/mock PASS；settings E2E 四场景 PASS；P5 vision E2E PASS；pet-restore-ui PASS；p3/native PASS。本轮无真实 provider 调用。
 - 证据：`docs/evidence/feedback-vision-settings.txt`。
+
+## 依赖自包含与双产物（2026-10-29）
+
+- 运行时第三方代码全部 vendor 到 `app/vendor/`（electron-screenshots + react-screenshots + node-screenshots/win32-x64 + debug/ms/fs-extra 等 + uiohook-napi/win32-x64 + node-gyp-build + pixi dist），代码改用 vendor 路径；`app/package.json` 移除四个生产依赖，只保留 electron/electron-builder 开发依赖。
+- 构建配置加入 `vendor/**/*`；`app/vendor/**/node_modules` 在 .gitignore 中保留。打包后的 `resources/app` 无 `node_modules`，vendor 与两个原生 `.node` 均在。
+- 无 `app/node_modules` 的源码副本直接用 Electron 启动成功（日志 `[mouse] hook on`，无 `Cannot find module`），证明运行时不再依赖 npm。
+- 离线构建 portable + NSIS：`release/Voice2Prompt-FeedbackV2.3-1.0.0-Portable.exe`（74,057,544 bytes）与 `release/Voice2Prompt-FeedbackV2.3-Setup-1.0.0.exe`（74,305,527 bytes）；SHA-256 见 `release/SHA256SUMS.txt`。
+- 便携版启动正常；安装版静默安装退出码 0，按本机已有安装位置升级到 `D:\v2p\Voice2Prompt`，安装后启动正常。
+- 回归：单元 43/43；vendor 版截图 runtime 与桌宠恢复+识图 runtime PASS。未做真实 provider 调用。
+- 证据：`docs/evidence/feedback-deps-selfcontained.txt`；许可证清单：`app/vendor/README.md`。

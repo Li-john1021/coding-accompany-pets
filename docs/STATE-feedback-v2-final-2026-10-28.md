@@ -203,3 +203,15 @@ V2P_ALLOW_REAL_CONFIG=1 node app/main/vision-e2e.runtime.test.js
   - 75,728,005 bytes
   - SHA-256 `9c1a693d683b628445037f2cd6ec3163dd20e7db7948e63b5f9a406a723ddc8a`
 - 旧 V2.1 保留；V2.2 首次启动自动迁移配置。ASR 未改动。
+
+## 12. 依赖自包含与双产物（2026-10-29）
+
+- 运行时第三方代码已 vendor 到 `app/vendor/`：electron-screenshots 0.6.2（含 react-screenshots 0.6.1、node-screenshots 0.2.8 + win32-x64 原生）、debug/ms/fs-extra/graceful-fs/jsonfile/universalify、uiohook-napi 1.5.5（win32-x64 prebuild + node-gyp-build）、pixi.js 7.4.2 / pixi-live2d-display 0.4.0 的两个 dist 文件。
+- 代码已改用 `../vendor/...`；`app/package.json` 生产依赖清空，只保留 electron/electron-builder 开发依赖；`app/package-lock.json` 已离线重建；构建 `files` 加入 `vendor/**/*`；`.gitignore` 保留 vendor 内嵌套 node_modules。
+- 打包后的 `resources/app` 不含 node_modules，vendor 与两个原生 `.node` 均在；无 `app/node_modules` 的源码副本用 Electron 直接启动成功（`[mouse] hook on`）。
+- 双产物（已纳入仓库 `release/`）：
+  - `Voice2Prompt-FeedbackV2.3-1.0.0-Portable.exe`：74,057,544 bytes，SHA-256 `b487f54cdf0990938aa15eb2688f41984d01c8245c23be1a9796649cabdf58ca`
+  - `Voice2Prompt-FeedbackV2.3-Setup-1.0.0.exe`：74,305,527 bytes，SHA-256 `564674ba145dd86f17abef0fcaa6ddb7d9edfcb4a676d403f601b23dba868955`
+- 便携版启动正常；安装版静默安装退出码 0，NSIS 沿用本机已有安装位置并升级到 `D:\v2p\Voice2Prompt`，安装后启动正常。其他机器可自选安装目录。
+- 重新构建仍需 electron/electron-builder；最终产物运行时不需要 Node/npm/网络。Live2D Cubism Core 仍是专有组件，源码仓库不提交；当前 release 由本机构建，包含本机已下载文件，对外分发前确认许可。
+- 证据：`docs/evidence/feedback-deps-selfcontained.txt`；许可证与上游清单：`app/vendor/README.md`；产物说明：`release/README.md`。
