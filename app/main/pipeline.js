@@ -1,6 +1,5 @@
 // pipeline.js — 核心管线：音频 → ASR → 按需整理 → 写入；文本整理可被选区/预览共用
 const fs = require('fs');
-const audioRecovery = require('./audio-recovery');
 const os = require('os');
 const path = require('path');
 const config = require('./config');
@@ -178,6 +177,7 @@ async function processText(raw, mode = 'default', onState = () => {}) {
 // state 回调：onState(stage) stage ∈ listening|transcribing|polishing|inserting|done|error
 async function run(audioBuffer, mime, onState, options = {}) {
   const cfg = config.load();
+  const audioRecovery = require('./audio-recovery');
   const tmpFile = path.join(os.tmpdir(), `v2p-${Date.now()}.${extForMime(mime)}`);
   fs.writeFileSync(tmpFile, audioBuffer);
   const recovery = audioRecovery.save(audioBuffer);
